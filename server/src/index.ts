@@ -17,12 +17,9 @@ import { authenticateToken } from './middleware/auth.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT: number = parseInt(process.env.PORT || '10000');
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true,
-}));
+app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
@@ -36,13 +33,8 @@ app.use('/api/tickets', authenticateToken, ticketsRouter);
 app.use('/api/dashboard', authenticateToken, dashboardRouter);
 app.use('/api/ip-management', authenticateToken, ipManagementRouter);
 
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    name: 'FibraNexus Manager',
-    version: '1.0.0'
-  });
+app.get('/api/health', (req: any, res: any) => {
+  res.json({ status: 'ok', name: 'FibraNexus Manager', version: '1.0.0' });
 });
 
 app.use(errorHandler);

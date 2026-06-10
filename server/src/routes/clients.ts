@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { clients, users } from '../db/schema.js';
 import { eq, like, or } from 'drizzle-orm';
@@ -6,16 +6,12 @@ import { AuthRequest, requireRole } from '../middleware/auth.js';
 
 export const clientsRouter = Router();
 
-clientsRouter.get('/', requireRole('admin', 'technician'), async (req: AuthRequest, res) => {
+clientsRouter.get('/', requireRole('admin', 'technician'), async (req: AuthRequest, res: Response) => {
   try {
-    const { search, limit = '50', offset = '0' } = req.query;
-    let conditions = [];
+    const search = req.query.search as string;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
     
-    if (search) {
-      const searchTerm = `%${search}%`;
-      conditions.push(or(like(users.fullName, searchTerm), like(users.email, searchTerm)));
-    }
-
     const allClients = await db
       .select({
         id: clients.id,
@@ -26,17 +22,12 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req: AuthReque
         city: clients.city,
         region: clients.region,
         createdAt: clients.createdAt,
-        user: {
-          fullName: users.fullName,
-          email: users.email,
-          phone: users.phone,
-          isActive: users.isActive,
-        },
+        user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
       })
       .from(clients)
       .leftJoin(users, eq(clients.userId, users.id))
-      .limit(Number(limit))
-      .offset(Number(offset));
+      .limit(limit)
+      .offset(offset);
 
     res.json(allClients);
   } catch (error) {
@@ -44,25 +35,15 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req: AuthReque
   }
 });
 
-clientsRouter.get('/:id', requireRole('admin', 'technician'), async (req: AuthRequest, res) => {
+clientsRouter.get('/:id', requireRole('admin', 'technician'), async (req: AuthRequest, res: Response) => {
   try {
-    const clientId = Number(req.params.id);
+    const clientId = parseInt(req.params.id);
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, clientId),
-      with: {
-        user: true,
-        services: { with: { plan: true } },
-        equipment: true,
-        invoices: { limit: 10 },
-        tickets: { limit: 10 },
-      },
+      with: { user: true, services: { with: { plan: true } }, equipment: true, invoices: { limit: 10 }, tickets: { limit: 10 } },
     });
-
-    if (!client) {
-      return res.status(404).json({ error: 'Cliente no encontrado' });
-    }
-
-    const { password: _, ...userWithoutPassword } = client.user;
+    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const { password: _, ...userWithoutPassword }: any = client.user;
     res.json({ ...client, user: userWithoutPassword });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener cliente' });
