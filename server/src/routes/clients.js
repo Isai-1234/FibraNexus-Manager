@@ -63,3 +63,49 @@ clientsRouter.post('/', requireRole('admin'), async (req, res) => {
     res.status(500).json({ error: 'Error al crear cliente: ' + error.message });
   }
 });
+
+// PUT /:id - Actualizar cliente
+clientsRouter.put('/:id', requireRole('admin'), async (req, res) => {
+  try {
+    const clientId = parseInt(req.params.id);
+    const { fullName, email, phone, clientType, rut, address, city, region, password } = req.body;
+    const existing = await db.query.clients.findFirst({
+      where: eq(clients.id, clientId), with: { user: true }
+    });
+    if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const userUpdate: any = {};
+    if (fullName) userUpdate.fullName = fullName;
+    if (email) userUpdate.email = email;
+    if (phone) userUpdate.phone = phone;
+    if (password) userUpdate.password = await bcrypt.hash(password, 10);
+    userUpdate.updatedAt = new Date();
+    if (Object.keys(userUpdate).length > 1) {
+      await db.update(users).set(userUpdate).where(eq(users.id, existing.userId));
+    }
+    const [updated] = await db.update(clients).set({
+      clientType: clientType || existing.clientType,
+      rut: rut ?? existing.rut,
+      address: address ?? existing.address,
+      city: city ?? existing.city,
+      region: region ?? existing.region,
+      updatedAt: new Date()
+    }).where(eq(clients.id, clientId)).returning();
+    res.json({ ...updated, user: { fullName, email, phone } });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error al actualizar cliente: ' + error.message });
+  }
+});
+
+// DELETE /:id - Eliminar cliente
+clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+  try {
+    const clientId = parseInt(req.params.id);
+    const existing = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
+    if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
+    await db.delete(clients).where(eq(clients.id, clientId));
+    await db.delete(users).where(eq(users.id, existing.userId));
+    res.json({ message: 'Cliente eliminado' });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error al eliminar: ' + error.message });
+  }
+});
