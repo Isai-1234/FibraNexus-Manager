@@ -35,3 +35,13 @@ ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => 
     res.status(500).json({ error: 'Error al crear ticket' });
   }
 });
+
+// DELETE /:id
+ticketsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+  try {
+    await db.delete(tickets).where(eq(tickets.id, parseInt(req.params.id)));
+    res.json({ message: 'Ticket eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar ticket' });
+  }
+});

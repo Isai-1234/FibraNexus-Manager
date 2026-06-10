@@ -24,3 +24,13 @@ ipManagementRouter.post('/', requireRole('admin'), async (req, res) => {
   const [ip] = await db.insert(ipAddresses).values({ address, subnet, gateway, vlan: parseInt(vlan) || null }).returning();
   res.status(201).json(ip);
 });
+
+// DELETE /:id
+ipManagementRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+  try {
+    await db.delete(ipAddresses).where(eq(ipAddresses.id, parseInt(req.params.id)));
+    res.json({ message: 'IP eliminada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar IP' });
+  }
+});
