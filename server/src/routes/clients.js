@@ -91,7 +91,7 @@ clientsRouter.put('/:id', requireRole('admin'), async (req, res) => {
       updatedAt: new Date()
     }).where(eq(clients.id, clientId)).returning();
     res.json({ ...updated, user: { fullName, email, phone } });
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: 'Error al actualizar cliente: ' + error.message });
   }
 });
@@ -105,7 +105,7 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     await db.delete(clients).where(eq(clients.id, clientId));
     await db.delete(users).where(eq(users.id, existing.userId));
     res.json({ message: 'Cliente eliminado' });
-  } catch (error: any) {
+  } catch (error) {
     res.status(500).json({ error: 'Error al eliminar: ' + error.message });
   }
 });
