@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, FileText, Network, Plus, Search, X, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, Network, Plus, X, MapPin, Power, PowerOff, CreditCard, TrendingUp, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
 import axios from 'axios'
 
 const API = 'https://fibranexus-manager.onrender.com/api'
@@ -17,19 +17,28 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<any>({})
+  const [stats, setStats] = useState<any>({})
+  const [showAssign, setShowAssign] = useState(false)
 
   useEffect(() => { loadData() }, [activeTab])
 
   async function loadData() {
     setLoading(true)
     try {
-      const endpoints: Record<string, string> = {
-        clients: '/clients', plans: '/plans', invoices: '/invoices',
-        tickets: '/tickets', equipment: '/equipment'
-      }
-      if (endpoints[activeTab]) {
-        const res = await api().get(endpoints[activeTab])
-        setData(res.data || [])
+      if (activeTab === 'dashboard') {
+        const res = await api().get('/dashboard/admin')
+        setStats(res.data.stats || {})
+        setData(res.data.recentClients || [])
+      } else {
+        const endpoints: Record<string, string> = {
+          clients: '/clients', plans: '/plans', services: '/services',
+          invoices: '/invoices', tickets: '/tickets', equipment: '/equipment',
+          ips: '/ip-management'
+        }
+        if (endpoints[activeTab]) {
+          const res = await api().get(endpoints[activeTab])
+          setData(res.data || [])
+        }
       }
     } catch (err) { console.error(err) }
     setLoading(false)
@@ -38,7 +47,8 @@ export default function AdminDashboard({ user }: { user: any }) {
   async function handleCreate() {
     try {
       const endpoints: Record<string, string> = {
-        clients: '/clients', plans: '/plans', tickets: '/tickets', equipment: '/equipment'
+        clients: '/clients', plans: '/plans', services: '/services',
+        tickets: '/tickets', equipment: '/equipment', ips: '/ip-management'
       }
       await api().post(endpoints[activeTab], form)
       setShowForm(false)
@@ -49,20 +59,34 @@ export default function AdminDashboard({ user }: { user: any }) {
     }
   }
 
+  async function handleAction(action: string, id: number, extra?: any) {
+    try {
+      if (action === 'suspend') await api().put(`/services/${id}/suspend`)
+      else if (action === 'reactivate') await api().put(`/services/${id}/reactivate`)
+      else if (action === 'pay') await api().post('/payments', extra)
+      else if (action === 'invoiceStatus') await api().put(`/invoices/${id}/status`, extra)
+      loadData()
+    } catch (err: any) { alert('Error: ' + (err.response?.data?.error || err.message)) }
+  }
+
+  async function handleGenerateInvoices() {
+    const month = prompt('Período (YYYY-MM):', new Date().toISOString().slice(0, 7))
+    const due = prompt('Fecha vencimiento (YYYY-MM-DD):', new Date().toISOString().slice(0, 10))
+    if (month && due) {
+      await api().post('/invoices/generate', { billingPeriod: month, dueDate: due })
+      loadData()
+    }
+  }
+
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clients', label: 'Clientes', icon: Users },
-    { id: 'plans', label: 'Planes', icon: Wifi },
+    { id: 'services', label: 'Servicios', icon: Wifi },
+    { id: 'plans', label: 'Planes', icon: TrendingUp },
     { id: 'equipment', label: 'Equipos', icon: Network },
+    { id: 'ips', label: 'Gestión IP', icon: MapPin },
     { id: 'invoices', label: 'Facturación', icon: DollarSign },
     { id: 'tickets', label: 'Tickets', icon: Ticket },
-  ]
-
-  const stats = [
-    { label: 'Clientes', value: activeTab === 'clients' ? data.length : '...', icon: Users, color: 'text-blue-600' },
-    { label: 'Planes', value: activeTab === 'plans' ? data.length : '...', icon: Wifi, color: 'text-green-600' },
-    { label: 'Equipos', value: activeTab === 'equipment' ? data.length : '...', icon: Server, color: 'text-purple-600' },
-    { label: 'Tickets', value: activeTab === 'tickets' ? data.length : '...', icon: Ticket, color: 'text-yellow-600' },
   ]
 
   const logout = () => { localStorage.removeItem('token'); window.location.reload() }
@@ -75,7 +99,15 @@ export default function AdminDashboard({ user }: { user: any }) {
         { name: 'phone', label: 'Teléfono', type: 'text' },
         { name: 'password', label: 'Contraseña', type: 'password' },
         { name: 'clientType', label: 'Tipo', type: 'select', options: ['individual', 'business'] },
+        { name: 'rut', label: 'RUT', type: 'text' },
         { name: 'city', label: 'Ciudad', type: 'text' },
+        { name: 'address', label: 'Dirección', type: 'text' },
+      ],
+      services: [
+        { name: 'clientId', label: 'ID Cliente', type: 'number' },
+        { name: 'planId', label: 'ID Plan', type: 'number' },
+        { name: 'ipAddress', label: 'IP', type: 'text' },
+        { name: 'macAddress', label: 'MAC', type: 'text' },
       ],
       plans: [
         { name: 'name', label: 'Nombre', type: 'text' },
@@ -92,7 +124,14 @@ export default function AdminDashboard({ user }: { user: any }) {
         { name: 'ipAddress', label: 'IP', type: 'text' },
         { name: 'location', label: 'Ubicación', type: 'text' },
       ],
+      ips: [
+        { name: 'address', label: 'Dirección IP', type: 'text' },
+        { name: 'subnet', label: 'Subred', type: 'text' },
+        { name: 'gateway', label: 'Gateway', type: 'text' },
+        { name: 'vlan', label: 'VLAN', type: 'number' },
+      ],
       tickets: [
+        { name: 'clientId', label: 'ID Cliente', type: 'number' },
         { name: 'subject', label: 'Asunto', type: 'text' },
         { name: 'description', label: 'Descripción', type: 'textarea' },
         { name: 'priority', label: 'Prioridad', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
@@ -102,7 +141,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     const currentFields = fields[activeTab] || []
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4">
+        <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold">Nuevo {activeTab.slice(0, -1)}</h3>
             <button onClick={() => setShowForm(false)}><X className="h-5 w-5" /></button>
@@ -137,6 +176,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     <div className="min-h-screen bg-gray-100 flex">
       {showForm && renderForm()}
       
+      {/* Sidebar */}
       <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col">
         <div className="p-6"><h2 className="text-xl font-bold">FibraNexus</h2><p className="text-gray-400 text-sm">Panel Admin</p></div>
         <nav className="flex-1 mt-4">
@@ -155,11 +195,15 @@ export default function AdminDashboard({ user }: { user: any }) {
         </div>
       </div>
 
+      {/* Main */}
       <div className="flex-1 overflow-auto">
         <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 capitalize">{activeTab}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 capitalize">{activeTab === 'ips' ? 'Gestión IP' : activeTab}</h1>
           <div className="flex gap-3">
             <button onClick={loadData} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Actualizar</button>
+            {activeTab === 'invoices' && (
+              <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Generar Facturas</button>
+            )}
             {activeTab !== 'dashboard' && activeTab !== 'invoices' && (
               <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
@@ -169,43 +213,54 @@ export default function AdminDashboard({ user }: { user: any }) {
         </header>
 
         <main className="p-8">
+          {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <>
               <div className="grid grid-cols-4 gap-6 mb-8">
-                {stats.map(s => (
+                {[
+                  { label: 'Clientes', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+                  { label: 'Servicios Activos', value: stats?.activeServices || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50' },
+                  { label: 'Planes', value: stats?.totalPlans || 0, icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50' },
+                  { label: 'Tickets Abiertos', value: stats?.openTickets || 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+                  { label: 'Equipos', value: stats?.totalEquipment || 0, icon: Server, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                  { label: 'Pendiente Cobro', value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50' },
+                ].map(s => (
                   <div key={s.label} className="bg-white p-6 rounded-xl shadow-sm">
                     <div className="flex items-center gap-4">
-                      <s.icon className={`h-8 w-8 ${s.color}`} />
-                      <div><p className="text-sm text-gray-500">{s.label}</p><p className="text-2xl font-bold">{s.value}</p></div>
+                      <div className={`p-3 rounded-lg ${s.bg}`}><s.icon className={`h-6 w-6 ${s.color}`} /></div>
+                      <div><p className="text-sm text-gray-500">{s.label}</p><p className="text-xl font-bold">{s.value}</p></div>
                     </div>
                   </div>
                 ))}
               </div>
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-8 text-white">
-                <h2 className="text-2xl font-bold mb-2">¡FibraNexus Manager!</h2>
-                <p className="text-blue-100">Sistema de gestión ISP. Usa el menú lateral para gestionar clientes, planes, equipos, facturación y tickets.</p>
-                <p className="text-blue-100 mt-2">Backend: Render + Supabase | Frontend: Vercel | Admin: admin@fibranexus.cl</p>
+                <h2 className="text-2xl font-bold mb-2">¡FibraNexus Manager v1.0!</h2>
+                <p className="text-blue-100">Sistema de gestión ISP completo. Navega por el menú lateral para gestionar clientes, servicios, planes, equipos, facturación y tickets.</p>
               </div>
             </>
           )}
 
+          {/* CLIENTS */}
           {activeTab === 'clients' && (
             <div className="bg-white rounded-xl shadow-sm p-6">
               {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No hay clientes. ¡Crea el primero!</p>
+                <p className="text-center py-8 text-gray-500">No hay clientes registrados.</p>
               ) : (
                 <table className="w-full">
                   <thead className="bg-gray-50"><tr>
                     <th className="text-left p-3">Nombre</th><th className="text-left p-3">Email</th>
-                    <th className="text-left p-3">Ciudad</th><th className="text-left p-3">Tipo</th>
+                    <th className="text-left p-3">Teléfono</th><th className="text-left p-3">Ciudad</th>
+                    <th className="text-left p-3">Tipo</th><th className="text-left p-3">Estado</th>
                   </tr></thead>
                   <tbody>
                     {data.map((c: any) => (
                       <tr key={c.id} className="border-t hover:bg-gray-50">
                         <td className="p-3 font-medium">{c.user?.fullName || 'N/A'}</td>
                         <td className="p-3 text-gray-600">{c.user?.email || 'N/A'}</td>
+                        <td className="p-3">{c.user?.phone || 'N/A'}</td>
                         <td className="p-3">{c.city || 'N/A'}</td>
                         <td className="p-3"><span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">{c.clientType}</span></td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${c.user?.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{c.user?.isActive ? 'Activo' : 'Inactivo'}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -214,6 +269,41 @@ export default function AdminDashboard({ user }: { user: any }) {
             </div>
           )}
 
+          {/* SERVICES */}
+          {activeTab === 'services' && (
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No hay servicios. Asigna un plan a un cliente.</p>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-gray-50"><tr>
+                    <th className="text-left p-3">Cliente</th><th className="text-left p-3">Plan</th>
+                    <th className="text-left p-3">IP</th><th className="text-left p-3">Estado</th>
+                    <th className="text-left p-3">Acciones</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.map((s: any) => (
+                      <tr key={s.id} className="border-t hover:bg-gray-50">
+                        <td className="p-3">{s.client?.fullName || 'N/A'}</td>
+                        <td className="p-3">{s.plan?.name || 'N/A'} ({s.plan?.downloadSpeed}Mbps)</td>
+                        <td className="p-3">{s.ipAddress || 'N/A'}</td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${s.status === 'active' ? 'bg-green-100 text-green-800' : s.status === 'suspended' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{s.status}</span></td>
+                        <td className="p-3">
+                          {s.status === 'active' ? (
+                            <button onClick={() => handleAction('suspend', s.id)} className="text-yellow-600 hover:text-yellow-800 text-sm flex items-center gap-1"><PowerOff className="h-3 w-3" /> Suspender</button>
+                          ) : (
+                            <button onClick={() => handleAction('reactivate', s.id)} className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"><Power className="h-3 w-3" /> Reactivar</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* PLANS */}
           {activeTab === 'plans' && (
             <div className="bg-white rounded-xl shadow-sm p-6">
               {loading ? <p className="text-center py-8">Cargando...</p> : (
@@ -223,8 +313,9 @@ export default function AdminDashboard({ user }: { user: any }) {
                       <Wifi className="h-8 w-8 text-blue-600 mb-2" />
                       <h3 className="font-semibold text-lg">{p.name}</h3>
                       <p className="text-2xl font-bold text-blue-600">${Number(p.price).toLocaleString('es-CL')}</p>
-                      <p className="text-sm text-gray-500">{p.downloadSpeed} Mbps / {p.uploadSpeed} Mbps</p>
+                      <p className="text-sm text-gray-500">{p.downloadSpeed} Mbps ↓ / {p.uploadSpeed} Mbps ↑</p>
                       <span className="inline-block mt-2 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{p.type}</span>
+                      {p.description && <p className="text-xs text-gray-400 mt-2">{p.description}</p>}
                     </div>
                   ))}
                 </div>
@@ -232,23 +323,28 @@ export default function AdminDashboard({ user }: { user: any }) {
             </div>
           )}
 
+          {/* EQUIPMENT */}
           {activeTab === 'equipment' && (
             <div className="bg-white rounded-xl shadow-sm p-6">
               {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No hay equipos registrados.</p>
+                <p className="text-center py-8 text-gray-500">No hay equipos. Agrega routers, switches, OLTs, etc.</p>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
                   {data.map((eq: any) => (
-                    <div key={eq.id} className="border rounded-xl p-4">
+                    <div key={eq.id} className="border rounded-xl p-4 hover:shadow-sm">
                       <div className="flex items-center gap-3">
                         <Server className="h-8 w-8 text-gray-400" />
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold">{eq.name}</h3>
-                          <p className="text-sm text-gray-500">{eq.brand} {eq.model}</p>
+                          <p className="text-sm text-gray-500">{eq.brand} {eq.model} | {eq.type}</p>
                         </div>
-                        <span className={`ml-auto px-2 py-1 rounded-full text-xs ${eq.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{eq.status}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${eq.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{eq.status}</span>
                       </div>
-                      {eq.ipAddress && <p className="text-sm text-gray-500 mt-2">IP: {eq.ipAddress}</p>}
+                      <div className="grid grid-cols-2 gap-2 mt-3 text-sm text-gray-500">
+                        {eq.ipAddress && <div>IP: {eq.ipAddress}</div>}
+                        {eq.location && <div>📍 {eq.location}</div>}
+                        {eq.serialNumber && <div>S/N: {eq.serialNumber}</div>}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -256,24 +352,27 @@ export default function AdminDashboard({ user }: { user: any }) {
             </div>
           )}
 
-          {activeTab === 'invoices' && (
+          {/* IPs */}
+          {activeTab === 'ips' && (
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-lg font-semibold mb-4">Facturación</h2>
-              {loading ? <p>Cargando...</p> : data.length === 0 ? (
-                <p className="text-gray-500">No hay facturas. Usa el botón para generar facturas del mes.</p>
+              {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No hay IPs registradas.</p>
               ) : (
                 <table className="w-full">
                   <thead className="bg-gray-50"><tr>
-                    <th className="text-left p-3">Nº</th><th className="text-left p-3">Cliente</th>
-                    <th className="text-left p-3">Total</th><th className="text-left p-3">Estado</th>
+                    <th className="text-left p-3">Dirección</th><th className="text-left p-3">Subred</th>
+                    <th className="text-left p-3">Gateway</th><th className="text-left p-3">VLAN</th>
+                    <th className="text-left p-3">Estado</th><th className="text-left p-3">Asignado a</th>
                   </tr></thead>
                   <tbody>
-                    {data.map((inv: any) => (
-                      <tr key={inv.id} className="border-t">
-                        <td className="p-3">{inv.invoiceNumber}</td>
-                        <td className="p-3">{inv.client?.fullName || 'N/A'}</td>
-                        <td className="p-3 font-semibold">${Number(inv.total).toLocaleString('es-CL')}</td>
-                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${inv.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{inv.status}</span></td>
+                    {data.map((ip: any) => (
+                      <tr key={ip.id} className="border-t hover:bg-gray-50">
+                        <td className="p-3 font-mono">{ip.address}</td>
+                        <td className="p-3">{ip.subnet || '-'}</td>
+                        <td className="p-3">{ip.gateway || '-'}</td>
+                        <td className="p-3">{ip.vlan || '-'}</td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${ip.status === 'available' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{ip.status}</span></td>
+                        <td className="p-3">{ip.assignedTo?.fullName || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -282,20 +381,63 @@ export default function AdminDashboard({ user }: { user: any }) {
             </div>
           )}
 
+          {/* INVOICES */}
+          {activeTab === 'invoices' && (
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No hay facturas. Usa "Generar Facturas" para crear las del mes.</p>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-gray-50"><tr>
+                    <th className="text-left p-3">Nº Factura</th><th className="text-left p-3">Cliente</th>
+                    <th className="text-left p-3">Período</th><th className="text-left p-3">Neto</th>
+                    <th className="text-left p-3">IVA</th><th className="text-left p-3">Total</th>
+                    <th className="text-left p-3">Estado</th><th className="text-left p-3">Acción</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.map((inv: any) => (
+                      <tr key={inv.id} className="border-t hover:bg-gray-50">
+                        <td className="p-3 font-medium text-indigo-600">{inv.invoiceNumber}</td>
+                        <td className="p-3">{inv.client?.fullName || 'N/A'}</td>
+                        <td className="p-3">{inv.billingPeriod}</td>
+                        <td className="p-3">${Number(inv.amount).toLocaleString('es-CL')}</td>
+                        <td className="p-3">${Number(inv.tax).toLocaleString('es-CL')}</td>
+                        <td className="p-3 font-bold">${Number(inv.total).toLocaleString('es-CL')}</td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${inv.status === 'paid' ? 'bg-green-100 text-green-800' : inv.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>{inv.status}</span></td>
+                        <td className="p-3">
+                          {inv.status !== 'paid' && (
+                            <button onClick={() => {
+                              const amt = prompt('Monto a pagar:', inv.total)
+                              if (amt) handleAction('pay', 0, { invoiceId: inv.id, clientId: inv.clientId || 1, amount: amt, method: 'transfer' })
+                            }} className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"><CreditCard className="h-3 w-3" /> Pagar</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* TICKETS */}
           {activeTab === 'tickets' && (
             <div className="bg-white rounded-xl shadow-sm p-6">
               {loading ? <p className="text-center py-8">Cargando...</p> : data.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No hay tickets.</p>
+                <p className="text-center py-8 text-gray-500">No hay tickets de soporte.</p>
               ) : (
                 <div className="space-y-3">
                   {data.map((t: any) => (
-                    <div key={t.id} className="border rounded-lg p-4">
+                    <div key={t.id} className="border rounded-lg p-4 hover:shadow-sm">
                       <div className="flex justify-between items-start">
                         <div>
                           <h3 className="font-semibold">{t.subject}</h3>
-                          <p className="text-sm text-gray-500">{t.ticketNumber} - {t.client?.fullName || 'N/A'}</p>
+                          <p className="text-sm text-gray-500">{t.ticketNumber} | {t.client?.fullName || t.client?.email || 'N/A'}</p>
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs ${t.status === 'open' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{t.status}</span>
+                        <div className="flex gap-2">
+                          <span className={`px-2 py-1 rounded-full text-xs ${t.priority === 'critical' ? 'bg-red-100 text-red-800' : t.priority === 'high' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>{t.priority}</span>
+                          <span className={`px-2 py-1 rounded-full text-xs ${t.status === 'open' ? 'bg-yellow-100 text-yellow-800' : t.status === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{t.status}</span>
+                        </div>
                       </div>
                     </div>
                   ))}
