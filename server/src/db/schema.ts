@@ -10,7 +10,8 @@ import {
   pgEnum,
   json,
   date,
-  index
+  index,
+  jsonb
 } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['admin', 'technician', 'client']);
@@ -51,7 +52,7 @@ export const clients = pgTable('clients', {
   latitude: decimal('latitude', { precision: 10, scale: 8 }),
   longitude: decimal('longitude', { precision: 11, scale: 8 }),
   notes: text('notes'),
-  tags: json('tags').$type<string[]>(),
+  tags: jsonb('tags').$type<string[]>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -66,7 +67,7 @@ export const plans = pgTable('plans', {
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
   setupPrice: decimal('setup_price', { precision: 10, scale: 2 }).default('0'),
   isActive: boolean('is_active').default(true).notNull(),
-  features: json('features').$type<string[]>(),
+  features: jsonb('features').$type<string[]>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -101,7 +102,7 @@ export const equipment = pgTable('equipment', {
   longitude: decimal('longitude', { precision: 11, scale: 8 }),
   clientId: integer('client_id').references(() => clients.id),
   parentId: integer('parent_id'),
-  credentials: json('credentials').$type<{username: string, password: string}>(),
+  credentials: jsonb('credentials').$type<{username: string, password: string}>(),
   snmpCommunity: varchar('snmp_community', { length: 100 }),
   notes: text('notes'),
   lastSeen: timestamp('last_seen'),
@@ -160,7 +161,7 @@ export const ticketMessages = pgTable('ticket_messages', {
   userId: integer('user_id').references(() => users.id).notNull(),
   message: text('message').notNull(),
   isInternal: boolean('is_internal').default(false),
-  attachments: json('attachments').$type<string[]>(),
+  attachments: jsonb('attachments').$type<string[]>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -184,7 +185,7 @@ export const activityLog = pgTable('activity_log', {
   action: varchar('action', { length: 255 }).notNull(),
   entity: varchar('entity', { length: 100 }).notNull(),
   entityId: integer('entity_id'),
-  details: json('details'),
+  details: jsonb('details'),
   ipAddress: varchar('ip_address', { length: 45 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
