@@ -73,7 +73,7 @@ clientsRouter.put('/:id', requireRole('admin'), async (req, res) => {
       where: eq(clients.id, clientId), with: { user: true }
     });
     if (!existing) return res.status(404).json({ error: 'Cliente no encontrado' });
-    const userUpdate: any = {};
+    const userUpdate = {};
     if (fullName) userUpdate.fullName = fullName;
     if (email) userUpdate.email = email;
     if (phone) userUpdate.phone = phone;
