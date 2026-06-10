@@ -30,15 +30,16 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
 clientsRouter.get('/:id', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const clientId = parseInt(req.params.id);
-    const client = await db.query.clients.findFirst({
-      where: eq(clients.id, clientId),
-      with: { user: true },
-    });
-    if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
-    const { password: _, ...userData } = client.user;
-    res.json({ ...client, user: userData });
+    const result = await db.select({
+      id: clients.id, userId: clients.userId, clientType: clients.clientType,
+      rut: clients.rut, address: clients.address, city: clients.city,
+      region: clients.region, notes: clients.notes, createdAt: clients.createdAt,
+      user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive }
+    }).from(clients).leftJoin(users, eq(clients.userId, users.id)).where(eq(clients.id, clientId)).limit(1);
+    if (!result.length) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(result[0]);
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener cliente' });
+    res.status(500).json({ error: 'Error al obtener cliente: ' + error.message });
   }
 });
 
