@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
+import RouterManager from './RouterManager'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
+  const [showRouters, setShowRouters] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -141,6 +143,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     { id: 'ips', label: 'Gestión IP', icon: MapPin },
     { id: 'invoices', label: 'Facturación', icon: DollarSign },
     { id: 'tickets', label: 'Tickets', icon: Ticket },
+    { id: 'routers', label: 'Routers', icon: Server },
   ]
 
   const formFields: Record<string, any[]> = {
@@ -265,6 +268,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           </div>
         </div>
         <ClientDetail clientId={selectedClientId} API={API} onBack={() => { setSelectedClientId(null); setActiveTab('clients') }} />
+      if (showRouters) return (
+        <div className="min-h-screen bg-gray-100 flex">
+          <RouterManager API={API} onBack={() => setShowRouters(false)} />
+        </div>
+      )
       </div>
     )
   }
@@ -333,7 +341,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         </div>
         <nav className="flex-1 mt-2 overflow-y-auto">
           {menuItems.map(item => (
-            <button key={item.id} onClick={() => { setActiveTab(item.id); setData([]); setError('') }}
+            <button key={item.id} onClick={() => { if (item.id === 'routers') { setShowRouters(true) } else { setActiveTab(item.id); setData([]); setError('') } }}
               className={`w-full flex items-center gap-3 px-6 py-3 text-left text-sm transition ${activeTab === item.id ? 'bg-blue-600 border-r-4 border-blue-300 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
               <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
             </button>
