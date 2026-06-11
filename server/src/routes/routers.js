@@ -73,3 +73,76 @@ routersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar router' });
   }
 });
+
+// POST - test connection to router directly
+routersRouter.post('/test-connection', requireRole('admin'), async (req, res) => {
+  try {
+    const { routerType, routerIp, routerPort, routerUser, routerPass } = req.body;
+    if (!routerIp || !routerUser || !routerPass) {
+      return res.status(400).json({ error: 'IP, usuario y contraseña son requeridos' });
+    }
+    const port = routerPort || (routerType === 'mikrotik_v6' ? '8728' : '443');
+    const url = `https://${routerIp}:${port}/rest/system/resource`;
+    const auth = Buffer.from(`${routerUser}:${routerPass}`).toString('base64');
+    const https = await import('https');
+    const result = await new Promise((resolve, reject) => {
+      const req = https.default.request(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Basic ${auth}` },
+        rejectUnauthorized: false,
+        timeout: 5000,
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode === 200) resolve(JSON.parse(data));
+          else reject(new Error(`HTTP ${res.statusCode}`));
+        });
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout - router no responde')); });
+      req.end();
+    });
+    res.json({ success: true, routerInfo: result });
+  } catch (error) {
+    res.status(503).json({ error: 'No se pudo conectar: ' + error.message });
+  }
+});
+
+// GET - generar RouterScript para Mikrotik
+routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res) => {
+  try {
+    const routerId = parseInt(req.params.id);
+    const routers = await db.select().from(equipment).where(eq(equipment.id, routerId));
+    if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
+    const router = routers[0];
+    const token = router.credentials?.agentToken;
+    if (!token) return res.status(400).json({ error: 'Router sin token de agente' });
+    const serverUrl = process.env.RENDER_EXTERNAL_URL || 'https://fibranexus-manager.onrender.com';
+    const script = `:local token "${token}"
+:local serverUrl "${serverUrl}/api/routers/agent/heartbeat"
+:local routerId "${routerId}"
+
+/tool fetch url=$serverUrl \\
+  http-method=post \\
+  http-header-field="Content-Type: application/json" \\
+  http-data=("{\\\"agentToken\\\":\\\"" . $token . "\\\",\\\"routerInfo\\\":{\\\"id\\\":\\\"" . $routerId . "\\\",\\\"version\\\":[/system resource get version],\\\"uptime\\\":[/system resource get uptime],\\\"cpuLoad\\\":[/system resource get cpu-load]}}") \\
+  output=none`;
+    res.json({
+      script,
+      installInstructions: [
+        '1. Abre Winbox y conéctate a tu router',
+        '2. Ve a System → Scripts → haz clic en "+"',
+        '3. Nombre: fibranexus-agent',
+        '4. Pega el script en el campo "Source"',
+        '5. Ve a System → Scheduler → haz clic en "+"',
+        '6. Nombre: fibranexus-heartbeat',
+        '7. Interval: 00:00:30 (cada 30 segundos)',
+        '8. On Event: fibranexus-agent',
+        '9. Haz clic en OK — listo',
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error generando script: ' + error.message });
+  }
+});
