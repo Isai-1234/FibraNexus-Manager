@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [equipmentSubTab, setEquipmentSubTab] = useState('infrastructure')
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [showRouters, setShowRouters] = useState(false)
   const [data, setData] = useState<any[]>([])
@@ -25,9 +26,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     })
   }
 
-  useEffect(() => { loadData() }, [activeTab])
+  useEffect(() => { loadData() }, [activeTab, equipmentSubTab])
 
-  // Preload clients and plans for selectors
   useEffect(() => {
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
     api().get('/plans').then(r => setPlans(Array.isArray(r.data) ? r.data : [])).catch(() => {})
@@ -43,7 +43,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       } else {
         const endpoints: Record<string, string> = {
           clients: '/clients', plans: '/plans', services: '/services',
-          invoices: '/invoices', tickets: '/tickets', equipment: '/equipment', ips: '/ip-management'
+          invoices: '/invoices', tickets: '/tickets',
+          equipment: equipmentSubTab === 'routers' ? '/routers' : '/equipment',
+          ips: '/ip-management'
         }
         if (endpoints[activeTab]) {
           const res = await api().get(endpoints[activeTab])
@@ -93,20 +95,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   function openEdit(item: any) {
     setEditingItem(item)
-    // Flatten nested fields for editing
     const flat: any = { ...item }
-    if (item.user) {
-      flat.fullName = item.user.fullName
-      flat.email = item.user.email
-      flat.phone = item.user.phone
-    }
+    if (item.user) { flat.fullName = item.user.fullName; flat.email = item.user.email; flat.phone = item.user.phone }
     setForm(flat)
-    setShowForm(true)
-  }
-
-  function openNew() {
-    setEditingItem(null)
-    setForm({})
     setShowForm(true)
   }
 
@@ -115,7 +106,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       if (action === 'suspend') await api().put(`/services/${id}/suspend`)
       else if (action === 'reactivate') await api().put(`/services/${id}/reactivate`)
       else if (action === 'pay') {
-        const method = prompt('Método de pago:', 'transfer')
+        const method = prompt('Método de pago (transfer/cash/card/flow):', 'transfer')
         if (method) await api().post('/payments', { invoiceId: id, method })
       }
       loadData()
@@ -143,7 +134,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     { id: 'ips', label: 'Gestión IP', icon: MapPin },
     { id: 'invoices', label: 'Facturación', icon: DollarSign },
     { id: 'tickets', label: 'Tickets', icon: Ticket },
-    { id: 'routers', label: 'Routers', icon: Server },
   ]
 
   const formFields: Record<string, any[]> = {
@@ -162,7 +152,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       { name: 'clientId', label: 'Cliente', type: 'client-select', required: true },
       { name: 'planId', label: 'Plan', type: 'plan-select', required: true },
       { name: 'ipAddress', label: 'Dirección IP', type: 'text' },
-      { name: 'macAddress', label: 'MAC Address (AA:BB:CC:DD:EE:FF)', type: 'text' },
+      { name: 'macAddress', label: 'MAC Address', type: 'text' },
       { name: 'status', label: 'Estado', type: 'select', options: ['active', 'suspended', 'pending', 'cancelled', 'cut'] },
     ],
     plans: [
@@ -196,7 +186,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     tickets: [
       { name: 'clientId', label: 'Cliente', type: 'client-select', required: true },
       { name: 'subject', label: 'Asunto', type: 'text', required: true },
-      { name: 'description', label: 'Descripción del problema', type: 'textarea', required: true },
+      { name: 'description', label: 'Descripción', type: 'textarea', required: true },
       { name: 'priority', label: 'Prioridad', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
       { name: 'category', label: 'Categoría', type: 'select', options: ['technical', 'billing', 'installation', 'speed', 'other'] },
       { name: 'status', label: 'Estado', type: 'select', options: ['open', 'in_progress', 'waiting_client', 'resolved', 'closed'] },
@@ -204,75 +194,48 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   const statusColor: Record<string, string> = {
-    active: 'bg-green-100 text-green-700',
-    suspended: 'bg-yellow-100 text-yellow-700',
-    cancelled: 'bg-red-100 text-red-700',
-    pending: 'bg-blue-100 text-blue-700',
-    cut: 'bg-red-100 text-red-700',
-    paid: 'bg-green-100 text-green-700',
-    overdue: 'bg-red-100 text-red-700',
-    open: 'bg-yellow-100 text-yellow-700',
-    in_progress: 'bg-blue-100 text-blue-700',
-    resolved: 'bg-green-100 text-green-700',
-    closed: 'bg-gray-100 text-gray-600',
-    online: 'bg-green-100 text-green-700',
-    offline: 'bg-gray-100 text-gray-600',
-    maintenance: 'bg-yellow-100 text-yellow-700',
-    error: 'bg-red-100 text-red-700',
-    critical: 'bg-red-100 text-red-700',
-    high: 'bg-orange-100 text-orange-700',
-    medium: 'bg-blue-100 text-blue-700',
-    low: 'bg-gray-100 text-gray-600',
+    active: 'bg-green-100 text-green-700', suspended: 'bg-yellow-100 text-yellow-700',
+    cancelled: 'bg-red-100 text-red-700', pending: 'bg-blue-100 text-blue-700', cut: 'bg-red-100 text-red-700',
+    paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700',
+    open: 'bg-yellow-100 text-yellow-700', in_progress: 'bg-blue-100 text-blue-700',
+    resolved: 'bg-green-100 text-green-700', closed: 'bg-gray-100 text-gray-600',
+    online: 'bg-green-100 text-green-700', offline: 'bg-gray-100 text-gray-600',
+    maintenance: 'bg-yellow-100 text-yellow-700', error: 'bg-red-100 text-red-700',
+    critical: 'bg-red-100 text-red-700', high: 'bg-orange-100 text-orange-700',
+    medium: 'bg-blue-100 text-blue-700', low: 'bg-gray-100 text-gray-600',
+    individual: 'bg-blue-100 text-blue-700', business: 'bg-purple-100 text-purple-700',
   }
 
   const statusLabel: Record<string, string> = {
-    active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado',
-    pending: 'Pendiente', cut: 'Cortado', paid: 'Pagada', overdue: 'Vencida',
-    open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto', closed: 'Cerrado',
-    online: 'Online', offline: 'Offline', maintenance: 'Mantenimiento', error: 'Error',
-    critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
+    active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Pendiente', cut: 'Cortado',
+    paid: 'Pagada', overdue: 'Vencida', open: 'Abierto', in_progress: 'En proceso',
+    resolved: 'Resuelto', closed: 'Cerrado', online: 'Online', offline: 'Offline',
+    maintenance: 'Mantenimiento', error: 'Error', critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
     fiber: 'Fibra', wisp: 'WISP', copper: 'Cobre', wireless: 'Inalámbrico',
-    router: 'Router', switch: 'Switch', olt: 'OLT', ont: 'ONT',
-    ap: 'AP', cpe: 'CPE', server: 'Servidor', other: 'Otro',
+    router: 'Router', switch: 'Switch', olt: 'OLT', ont: 'ONT', ap: 'AP', cpe: 'CPE', server: 'Servidor', other: 'Otro',
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
 
+  // Vista detalle cliente
   if (selectedClientId) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col flex-shrink-0">
-          <div className="p-6 border-b border-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center"><Wifi className="h-6 w-6" /></div>
-              <div><h2 className="text-lg font-bold">FibraNexus</h2><p className="text-gray-400 text-xs">ISP Manager Pro</p></div>
-            </div>
-          </div>
-          <nav className="flex-1 mt-2">
-            {menuItems.map(item => (
-              <button key={item.id} onClick={() => { setSelectedClientId(null); setActiveTab(item.id) }}
-                className="w-full flex items-center gap-3 px-6 py-3 text-left text-sm hover:bg-gray-800 text-gray-300 transition">
-                <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
-              </button>
-            ))}
-          </nav>
-          <div className="p-4 border-t border-gray-800 bg-gray-950">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-sm font-bold">{user?.fullName?.charAt(0) || 'A'}</div>
-                <div><p className="text-xs font-medium truncate max-w-[100px]">{user?.fullName}</p><p className="text-xs text-gray-400 capitalize">{user?.role}</p></div>
-              </div>
-              <button onClick={logout} className="text-gray-400 hover:text-red-400 transition p-1"><LogOut className="h-4 w-4" /></button>
-            </div>
-          </div>
-        </div>
+        <Sidebar menuItems={menuItems} activeTab={activeTab} user={user} logout={logout}
+          onTabClick={(id) => { setSelectedClientId(null); setActiveTab(id) }} />
         <ClientDetail clientId={selectedClientId} API={API} onBack={() => { setSelectedClientId(null); setActiveTab('clients') }} />
-      if (showRouters) return (
-        <div className="min-h-screen bg-gray-100 flex">
-          <RouterManager API={API} onBack={() => setShowRouters(false)} />
-        </div>
-      )
+      </div>
+    )
+  }
+
+  // Vista gestión de routers
+  if (showRouters) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex">
+        <Sidebar menuItems={menuItems} activeTab="equipment" user={user} logout={logout}
+          onTabClick={(id) => { setShowRouters(false); setActiveTab(id) }} />
+        <RouterManager API={API} onBack={() => { setShowRouters(false); setActiveTab('equipment') }} />
       </div>
     )
   }
@@ -287,17 +250,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowForm(false)}>
           <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5 border-b pb-4">
-              <h3 className="text-lg font-bold text-gray-900">
-                {editingItem ? '✏️ Editar' : '➕ Nuevo'} {activeTab === 'ips' ? 'IP' : activeTab.slice(0, -1)}
-              </h3>
-              <button onClick={() => setShowForm(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+              <h3 className="text-lg font-bold">{editingItem ? '✏️ Editar' : '➕ Nuevo'} {activeTab === 'ips' ? 'IP' : activeTab.slice(0, -1)}</h3>
+              <button onClick={() => setShowForm(false)}><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-4">
               {(formFields[activeTab] || []).map(f => (
                 <div key={f.name}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {f.label} {f.required && <span className="text-red-500">*</span>}
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
                   {f.type === 'client-select' ? (
                     <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
                       <option value="">Seleccionar cliente...</option>
@@ -316,7 +275,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   ) : f.type === 'textarea' ? (
                     <textarea className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" rows={3} value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})} />
                   ) : (
-                    <input type={f.type} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})} placeholder={f.type === 'number' ? '0' : ''} />
+                    <input type={f.type} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})} />
                   )}
                 </div>
               ))}
@@ -331,50 +290,23 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         </div>
       )}
 
-      {/* Sidebar */}
-      <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col flex-shrink-0">
-        <div className="p-6 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center"><Wifi className="h-6 w-6" /></div>
-            <div><h2 className="text-lg font-bold">FibraNexus</h2><p className="text-gray-400 text-xs">ISP Manager Pro</p></div>
-          </div>
-        </div>
-        <nav className="flex-1 mt-2 overflow-y-auto">
-          {menuItems.map(item => (
-            <button key={item.id} onClick={() => { if (item.id === 'routers') { setShowRouters(true) } else { setActiveTab(item.id); setData([]); setError('') } }}
-              className={`w-full flex items-center gap-3 px-6 py-3 text-left text-sm transition ${activeTab === item.id ? 'bg-blue-600 border-r-4 border-blue-300 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
-              <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-4 border-t border-gray-800 bg-gray-950">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-sm font-bold">{user?.fullName?.charAt(0) || 'A'}</div>
-              <div><p className="text-xs font-medium truncate max-w-[100px]">{user?.fullName}</p><p className="text-xs text-gray-400 capitalize">{user?.role}</p></div>
-            </div>
-            <button onClick={logout} title="Cerrar sesión" className="text-gray-400 hover:text-red-400 transition p-1"><LogOut className="h-4 w-4" /></button>
-          </div>
-        </div>
-      </div>
+      <Sidebar menuItems={menuItems} activeTab={activeTab} user={user} logout={logout}
+        onTabClick={(id) => { setActiveTab(id); setData([]); setError('') }} />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
         <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
           <div>
             <h1 className="text-xl font-bold text-gray-900">{activeTab === 'ips' ? 'Gestión de IPs' : menuItems.find(m => m.id === activeTab)?.label || activeTab}</h1>
-            {activeTab === 'dashboard' && <p className="text-sm text-gray-500">Resumen general del sistema</p>}
             {activeTab !== 'dashboard' && <p className="text-sm text-gray-500">{data.length} registro{data.length !== 1 ? 's' : ''}</p>}
           </div>
           <div className="flex gap-2">
             <button onClick={loadData} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium">🔄 Actualizar</button>
             {activeTab === 'invoices' && (
-              <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">
-                📄 Generar Facturas
-              </button>
+              <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && (
-              <button onClick={openNew} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && (
+              <button onClick={() => { setEditingItem(null); setForm({}); setShowForm(true) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
             )}
@@ -382,11 +314,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         </header>
 
         <main className="p-8">
-          {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 flex-shrink-0" /> {error}
-            </div>
-          )}
+          {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2"><AlertTriangle className="h-5 w-5 flex-shrink-0" /> {error}</div>}
 
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
@@ -413,8 +341,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 <div className="bg-gradient-to-br from-blue-600 to-purple-700 rounded-xl p-6 text-white">
                   <h2 className="text-xl font-bold mb-1">🚀 FibraNexus Manager v1.0</h2>
                   <p className="text-blue-100 text-sm mb-4">Sistema de gestión integral para ISPs chilenos</p>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-blue-50">
-                    {['CRM Completo', 'Facturación + IVA', 'Gestión de Red', 'Tickets de Soporte', 'Panel Admin', 'Multi-Router'].map(f => (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {['CRM Completo', 'Facturación + IVA', 'Gestión de Red', 'Tickets de Soporte', 'Multi-Router', 'Portal Cliente'].map(f => (
                       <div key={f} className="bg-white/10 rounded-lg px-3 py-2 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {f}</div>
                     ))}
                   </div>
@@ -440,14 +368,73 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             </div>
           )}
 
-          {/* DATA TABLES */}
-          {activeTab !== 'dashboard' && (
+          {/* EQUIPOS con subtabs */}
+          {activeTab === 'equipment' && (
+            <div className="space-y-4">
+              {/* Subtabs */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                {[
+                  { id: 'infrastructure', label: '🖥️ Infraestructura' },
+                  { id: 'routers', label: '📡 Routers / Agentes' },
+                ].map(t => (
+                  <button key={t.id} onClick={() => { setEquipmentSubTab(t.id); if (t.id === 'routers') setShowRouters(true) }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${equipmentSubTab === t.id ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Botón nuevo equipo */}
+              <div className="flex justify-end">
+                <button onClick={() => { setEditingItem(null); setForm({}); setShowForm(true) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Nuevo equipo
+                </button>
+              </div>
+
+              {/* Tabla equipos */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                {loading ? (
+                  <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>
+                ) : data.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <Server className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                    <p className="font-medium text-gray-500">Sin equipos registrados</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>{['Equipo', 'Tipo', 'IP', 'Ubicación', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}</tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {data.map((item: any) => (
+                          <tr key={item.id} className="hover:bg-blue-50/30 transition">
+                            <td className="p-4 font-medium">{item.name}<br/><span className="text-xs text-gray-400">{item.brand} {item.model}</span></td>
+                            <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
+                            <td className="p-4 font-mono text-sm">{item.ipAddress || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 text-sm">{item.location || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4">
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>
+                                <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TABLAS GENERALES */}
+          {activeTab !== 'dashboard' && activeTab !== 'equipment' && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100">
               {loading ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
-                  <p className="text-gray-500">Cargando datos...</p>
-                </div>
+                <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div></div>
               ) : data.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                   <div className="text-6xl mb-4">📭</div>
@@ -462,7 +449,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         {activeTab === 'clients' && ['Cliente', 'Email', 'Teléfono', 'Ciudad', 'Tipo', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'services' && ['Cliente', 'Plan', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'plans' && ['Plan', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'equipment' && ['Equipo', 'Tipo', 'IP', 'Ubicación', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'ips' && ['Dirección IP', 'Subred', 'Gateway', 'VLAN', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'invoices' && ['Nº Factura', 'Cliente', 'Período', 'Neto', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'tickets' && ['Ticket', 'Cliente', 'Categoría', 'Prioridad', 'Estado', 'Fecha', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
@@ -475,28 +461,21 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 font-medium text-gray-900">{item.user?.fullName || 'N/A'}</td>
                             <td className="p-4 text-gray-600 text-sm">{item.user?.email || 'N/A'}</td>
                             <td className="p-4 text-sm">{item.user?.phone || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-sm">{item.city ? `${item.city}` : <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.clientType] || 'bg-gray-100 text-gray-600'}`}>{statusLabel[item.clientType] || item.clientType}</span></td>
+                            <td className="p-4 text-sm">{item.city || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.clientType] || 'bg-gray-100'}`}>{statusLabel[item.clientType] || item.clientType}</span></td>
                           </>}
                           {activeTab === 'services' && <>
                             <td className="p-4 font-medium">{item.client?.fullName || 'N/A'}</td>
                             <td className="p-4 text-sm">{item.plan?.name || 'N/A'}<br/><span className="text-xs text-gray-400">{item.plan?.downloadSpeed}/{item.plan?.uploadSpeed} Mbps</span></td>
                             <td className="p-4 font-mono text-sm">{item.ipAddress || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 font-mono text-xs text-gray-500">{item.macAddress || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100 text-gray-600'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
                           </>}
                           {activeTab === 'plans' && <>
                             <td className="p-4 font-medium">{item.name}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700`}>{statusLabel[item.type] || item.type}</span></td>
-                            <td className="p-4 text-sm font-mono">{item.downloadSpeed}/{item.uploadSpeed} Mbps</td>
+                            <td className="p-4"><span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
+                            <td className="p-4 font-mono text-sm">{item.downloadSpeed}/{item.uploadSpeed} Mbps</td>
                             <td className="p-4 font-bold text-blue-600">${Number(item.price).toLocaleString('es-CL')}</td>
-                          </>}
-                          {activeTab === 'equipment' && <>
-                            <td className="p-4 font-medium">{item.name}<br/><span className="text-xs text-gray-400">{item.brand} {item.model}</span></td>
-                            <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
-                            <td className="p-4 font-mono text-sm">{item.ipAddress || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-sm">{item.location || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
                           </>}
                           {activeTab === 'ips' && <>
                             <td className="p-4 font-mono font-medium">{item.address}</td>
@@ -516,13 +495,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           </>}
                           {activeTab === 'tickets' && <>
                             <td className="p-4"><span className="font-medium text-sm">{item.subject}</span><br/><span className="text-xs text-gray-400 font-mono">{item.ticketNumber}</span></td>
-                            <td className="p-4 text-sm">{item.client?.fullName || item.client?.email || 'N/A'}</td>
+                            <td className="p-4 text-sm">{item.client?.fullName || 'N/A'}</td>
                             <td className="p-4 text-sm text-gray-600">{item.category || '—'}</td>
                             <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.priority] || 'bg-gray-100'}`}>{statusLabel[item.priority] || item.priority}</span></td>
                             <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
                             <td className="p-4 text-sm text-gray-500">{new Date(item.createdAt).toLocaleDateString('es-CL')}</td>
                           </>}
-                          {/* Actions */}
                           <td className="p-4">
                             <div className="flex items-center gap-1">
                               {activeTab === 'services' && (
@@ -531,16 +509,16 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                   : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">▶ Reactivar</button>
                               )}
                               {activeTab === 'invoices' && item.status === 'pending' && (
-                                <button onClick={() => handleAction('pay', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">💰 Marcar pagada</button>
+                                <button onClick={() => handleAction('pay', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">💰 Pagar</button>
                               )}
                               {canEdit.includes(activeTab) && activeTab !== 'services' && (
-                                <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition" title="Editar"><Edit2 className="h-4 w-4" /></button>
+                                <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>
                               )}
                               {activeTab === 'clients' && (
                                 <button onClick={() => setSelectedClientId(item.id)} className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded transition" title="Ver detalle"><Eye className="h-4 w-4" /></button>
                               )}
                               {canDelete.includes(activeTab) && (
-                                <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="Eliminar"><Trash2 className="h-4 w-4" /></button>
+                                <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                               )}
                             </div>
                           </td>
@@ -553,6 +531,37 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             </div>
           )}
         </main>
+      </div>
+    </div>
+  )
+}
+
+// Sidebar como componente separado para reutilizar
+function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
+  return (
+    <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col flex-shrink-0">
+      <div className="p-6 border-b border-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center"><Wifi className="h-6 w-6" /></div>
+          <div><h2 className="text-lg font-bold">FibraNexus</h2><p className="text-gray-400 text-xs">ISP Manager Pro</p></div>
+        </div>
+      </div>
+      <nav className="flex-1 mt-2 overflow-y-auto">
+        {menuItems.map((item: any) => (
+          <button key={item.id} onClick={() => onTabClick(item.id)}
+            className={`w-full flex items-center gap-3 px-6 py-3 text-left text-sm transition ${activeTab === item.id ? 'bg-blue-600 border-r-4 border-blue-300 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
+            <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
+          </button>
+        ))}
+      </nav>
+      <div className="p-4 border-t border-gray-800 bg-gray-950">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-sm font-bold">{user?.fullName?.charAt(0) || 'A'}</div>
+            <div><p className="text-xs font-medium truncate max-w-[100px]">{user?.fullName}</p><p className="text-xs text-gray-400 capitalize">{user?.role}</p></div>
+          </div>
+          <button onClick={logout} className="text-gray-400 hover:text-red-400 transition p-1"><LogOut className="h-4 w-4" /></button>
+        </div>
       </div>
     </div>
   )
