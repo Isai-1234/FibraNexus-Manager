@@ -55,6 +55,7 @@ export default function RouterManager({ API, onBack }: Props) {
   const [showToken, setShowToken] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+  const [mikrotikScript, setMikrotikScript] = useState<any>(null)
 
   function api() {
     return axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } })
@@ -75,6 +76,13 @@ export default function RouterManager({ API, onBack }: Props) {
     try {
       const res = await api().post('/routers', form)
       setNewRouter(res.data)
+      // Si es Mikrotik, obtener el script automáticamente
+      if (form.routerType?.startsWith('mikrotik') && res.data.id) {
+        try {
+          const scriptRes = await api().get(`/routers/${res.data.id}/mikrotik-script`)
+          setMikrotikScript(scriptRes.data)
+        } catch { }
+      }
       setStep(4)
       loadRouters()
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
@@ -117,6 +125,7 @@ export default function RouterManager({ API, onBack }: Props) {
     setForm({ routerType: '', connectionMethod: '' })
     setNewRouter(null)
     setTestResult(null)
+    setMikrotikScript(null)
   }
 
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
@@ -319,7 +328,41 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   </div>
 
-                  {form.connectionMethod === 'agent' ? (
+                  {/* Mikrotik RouterScript — la opción más elegante */}
+                  {form.routerType?.startsWith('mikrotik') && mikrotikScript ? (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="font-semibold text-blue-900 text-sm mb-1 flex items-center gap-2">
+                          📡 Script para instalar directo en el Mikrotik
+                        </p>
+                        <p className="text-xs text-blue-700">Sin agente, sin Node.js — el script corre dentro del propio router.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Script (copiar en Winbox → System → Scripts)</label>
+                        <div className="bg-gray-900 rounded-lg p-3 relative">
+                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{mikrotikScript.script}</code>
+                          <button onClick={() => copyText(mikrotikScript.script, 'script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded">
+                            {copied === 'script' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                          <Terminal className="h-4 w-4" /> Pasos de instalación en Winbox
+                        </p>
+                        <ol className="space-y-1.5">
+                          {mikrotikScript.installInstructions.map((step: string, i: number) => (
+                            <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                              <span className="font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{i + 1}</span>
+                              {step.replace(/^\d+\. /, '')}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+                  ) : form.connectionMethod === 'agent' ? (
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
