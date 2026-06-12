@@ -4,7 +4,7 @@ import axios from 'axios'
 import Login from './pages/auth/Login'
 import AdminDashboard from './pages/admin/Dashboard'
 
-const API = 'https://fibranexus-manager.onrender.com/api'
+const API = import.meta.env.VITE_API_URL || '/api'
 
 function App() {
   const [user, setUser] = useState(null)

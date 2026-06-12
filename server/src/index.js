@@ -1,3 +1,6 @@
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -38,7 +41,16 @@ app.use('/api/routers', authenticateToken, routersRouter);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'FibraNexus Manager', version: '1.0.0' });
 });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.join(__dirname, '../../client/dist');
 
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 app.use(errorHandler);
 
 app.listen(PORT, () => {

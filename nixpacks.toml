@@ -3,9 +3,9 @@ nixPkgs = ["nodejs_20"]
 
 [phases.build]
 cmds = [
-  "cd server && npm install",
-  "cd server && npm run build"
+  "cd client && npm install && npm run build",
+  "cd server && npm install"
 ]
 
 [start]
-cmd = "cd server && node dist/index.js"
+cmd = "cd server && node src/index.js"
