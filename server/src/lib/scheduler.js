@@ -10,6 +10,22 @@ export function startScheduler() {
 
   console.log('Billing scheduler active');
 
+  // Primera pasada SNMP ~15s después del arranque
+  setTimeout(async () => {
+    try {
+      const { db } = await import('../db/index.js');
+      const { organizations } = await import('../db/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { dispatch, JobNames } = await import('./jobs/queue.js');
+      const orgs = await db.select({ id: organizations.id }).from(organizations)
+        .where(eq(organizations.isActive, true));
+      for (const org of orgs) await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
+      console.log('SNMP initial poll completed for %d org(s)', orgs.length);
+    } catch (err) {
+      console.error('SNMP initial poll error:', err.message);
+    }
+  }, 15000);
+
   setInterval(async () => {
     const hour = new Date().getHours();
     if (hour === lastSchedulerHour) return;
@@ -50,4 +66,21 @@ export function startScheduler() {
       console.error('Overdue mark error:', err.message);
     }
   }, 6 * 60 * 60 * 1000);
+
+  // SNMP: antenas/CPE con IP + community — cada 3 minutos por ISP activo
+  setInterval(async () => {
+    try {
+      const { db } = await import('../db/index.js');
+      const { organizations } = await import('../db/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { dispatch, JobNames } = await import('./jobs/queue.js');
+      const orgs = await db.select({ id: organizations.id }).from(organizations)
+        .where(eq(organizations.isActive, true));
+      for (const org of orgs) {
+        await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
+      }
+    } catch (err) {
+      console.error('SNMP scheduler error:', err.message);
+    }
+  }, 3 * 60 * 1000);
 }

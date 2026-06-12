@@ -29,6 +29,11 @@ export const jobTasks = {
   'snmp-poll-batch': async ({ items, routerBySiteId }) =>
     pollEquipmentList(items, new Map(Object.entries(routerBySiteId || {}))),
 
+  'snmp-poll-org': async ({ orgId }) => {
+    const { pollAllSnmpForOrg } = await import('../equipmentStatus.js');
+    return pollAllSnmpForOrg(orgId);
+  },
+
   'billing-org': async ({ orgId }) => runBillingJobsForOrg(orgId),
 };
 

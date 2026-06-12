@@ -264,8 +264,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       { name: 'macAddress', label: 'MAC Address', type: 'text' },
       { name: 'serialNumber', label: 'Número de serie', type: 'text' },
       { name: 'location', label: 'Ubicación/Nodo', type: 'text' },
-      { name: 'status', label: 'Estado', type: 'select', options: ['online', 'offline', 'maintenance', 'error', 'installing'] },
-      { name: 'snmpCommunity', label: 'SNMP Community', type: 'text' },
+      { name: 'snmpCommunity', label: 'SNMP Community (estado auto si IP + community)', type: 'text' },
     ],
     ips: [
       { name: 'address', label: 'Dirección IP', type: 'text', required: true },
@@ -672,6 +671,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 ))}
               </div>
 
+              {equipmentSubTab === 'infrastructure' && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-5 py-3 text-sm text-emerald-900">
+                  <strong>Estado automático vía SNMP</strong> — Si la antena tiene IP y community configurada (ej. <code className="font-mono text-xs">internetsur-lab</code>),
+                  el sistema la consulta cada ~3 min y al abrir esta lista. Verde = responde SNMP; gris/rojo = no responde.
+                  Activa SNMP en airOS con la misma community. No hace falta marcar &quot;Online&quot; a mano.
+                </div>
+              )}
+
               {/* Botón nuevo equipo */}
               <div className="flex justify-end">
                 <button onClick={() => { setEditingItem(null); setForm({}); setShowForm(true) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
@@ -701,9 +708,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
                             <td className="p-4 font-mono text-sm">{item.ipAddress || item.credentials?.tunnelHostname || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-xs">{item.routerInfo?.version?.split(' ')[0] || item.firmware || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-xs">{item.routerInfo?.uptime || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 text-xs">{item.snmpUptime || item.credentials?.lastSnmp?.uptime || item.routerInfo?.uptime || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-xs">{item.routerInfo?.cpuLoad != null ? `${item.routerInfo.cpuLoad}%` : <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4">
+                              <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${item.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                <span className={`w-2 h-2 rounded-full ${item.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                {statusLabel[item.status] || item.status}
+                              </span>
+                              {item.snmpCommunity && item.status !== 'online' && (
+                                <p className="text-xs text-amber-600 mt-1">Revisar SNMP en antena</p>
+                              )}
+                            </td>
                             <td className="p-4">
                               <div className="flex items-center gap-1">
                                 <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>

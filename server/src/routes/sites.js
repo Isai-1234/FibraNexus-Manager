@@ -9,6 +9,7 @@ import { inferConnectionMethod } from '../lib/tenant.js';
 import { listPppoeActive, listPppoeSecrets, listSimpleQueues } from '../lib/mikrotikClient.js';
 import { loadRouter } from '../lib/networkProvision.js';
 import { assignEquipmentToClient, enrichEquipmentWithClients, syncEquipmentToClientService } from '../lib/equipmentClientLink.js';
+import { refreshStaleEquipmentStatus, attachSnmpDisplay } from '../lib/equipmentStatus.js';
 
 export const sitesRouter = Router();
 
@@ -42,16 +43,18 @@ sitesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
 
     const flatSites = await db.select().from(sites).where(orgFilter(sites, orgId));
     const allEquipment = await db.select().from(equipment).where(orgFilter(equipment, orgId));
+    const polledEquipment = await refreshStaleEquipmentStatus(allEquipment, orgId);
 
     const enrichedEquipment = await enrichEquipmentWithClients(
-      allEquipment.map((item) => {
+      polledEquipment.map((item) => {
         const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
-        return {
-          ...item,
+        const base = {
+          ...attachSnmpDisplay(item),
           connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
           agentConnected: item.type === 'router' && (connectedAgents.has(item.id.toString()) || item.status === 'online'),
           agentLastSeen: agent?.lastSeen || item.lastSeen || null,
         };
+        return base;
       }),
       orgId,
     );
@@ -267,6 +270,10 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     if (result.clientId) {
       await syncEquipmentToClientService(result, result.clientId, orgId);
     }
+
+    const { refreshStaleEquipmentStatus } = await import('../lib/equipmentStatus.js');
+    const [polled] = await refreshStaleEquipmentStatus([result], orgId, { maxPoll: 1 });
+    result = polled || result;
 
     const [enriched] = await enrichEquipmentWithClients([result], orgId);
     res.json(enriched[0]);

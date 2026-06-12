@@ -8,6 +8,7 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { listClientEquipment } from '../lib/equipmentClientLink.js';
+import { refreshStaleEquipmentStatus } from '../lib/equipmentStatus.js';
 
 export const clientsRouter = Router();
 
@@ -63,7 +64,8 @@ clientsRouter.get('/:id/equipment', requireRole('admin', 'technician'), async (r
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const clientId = parseInt(req.params.id, 10);
-    const items = await listClientEquipment(clientId, orgId);
+    let items = await listClientEquipment(clientId, orgId);
+    items = await refreshStaleEquipmentStatus(items, orgId);
     res.json(items);
   } catch (error) {
     const status = error.message === 'Abonado no encontrado' ? 404 : 500;

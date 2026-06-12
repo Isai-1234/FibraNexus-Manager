@@ -823,7 +823,7 @@ export default function NetworkManager({ API, onBack }: Props) {
                 {equipForm.type === 'router'
                   ? 'Para MikroTik completo con túnel Cloudflare, usa también "Gestión Routers" del menú.'
                   : equipForm.type === 'cpe'
-                    ? 'Estado online vía SNMP/UISP — próxima fase. Por ahora se registra en el nodo.'
+                    ? 'Estado online/offline vía SNMP automático (IP + community). Consulta cada ~3 min.'
                     : ''}
               </p>
             </div>
