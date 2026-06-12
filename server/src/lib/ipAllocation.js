@@ -7,6 +7,7 @@ import {
   listDhcpLeases,
   listDhcpNetworks,
   listDhcpServers,
+  findDhcpLeaseByAddress,
 } from './mikrotikNetwork.js';
 import { mikrotikRequest } from './mikrotikClient.js';
 import { loadRouter } from './networkProvision.js';
@@ -169,4 +170,69 @@ export async function findNextFreeIpForSite(orgId, siteId, { routerId, poolName 
   }
 
   throw new Error(`No quedan IPs libres en pool "${pool.name}" (${pool.ranges})`);
+}
+
+async function loadSiteRouter(orgId, siteId, routerId) {
+  if (routerId) {
+    return loadRouter(parseInt(routerId, 10), orgId);
+  }
+  if (!siteId) return null;
+  const [siteRouter] = await db.select().from(equipment)
+    .where(and(
+      eq(equipment.siteId, parseInt(siteId, 10)),
+      eq(equipment.type, 'router'),
+      orgFilter(equipment, orgId),
+    ))
+    .limit(1);
+  return siteRouter || null;
+}
+
+/** Busca MAC en lease DHCP (o tabla ARP) del MikroTik del nodo para una IP. */
+export async function resolveMacForIp(orgId, siteId, ipAddress, { routerId } = {}) {
+  const ip = String(ipAddress || '').split('/')[0].trim();
+  if (!ip) return { macAddress: null, source: null };
+
+  const router = await loadSiteRouter(orgId, siteId, routerId);
+  if (!router) {
+    return { macAddress: null, source: null, error: 'Sin router en el nodo' };
+  }
+
+  const lease = await findDhcpLeaseByAddress(router, ip);
+  const leaseMac = lease?.['mac-address']?.trim();
+  if (leaseMac) {
+    return {
+      macAddress: leaseMac,
+      source: 'dhcp-lease',
+      leaseStatus: lease.status || null,
+      hostname: lease['host-name'] || null,
+      routerId: router.id,
+      routerName: router.name,
+    };
+  }
+
+  try {
+    const arpData = await mikrotikRequest(router, 'GET', '/ip/arp');
+    const arpList = Array.isArray(arpData) ? arpData : arpData ? [arpData] : [];
+    const arpEntry = arpList.find((a) => String(a.address).split('/')[0] === ip);
+    const arpMac = arpEntry?.['mac-address']?.trim();
+    if (arpMac) {
+      return {
+        macAddress: arpMac,
+        source: 'arp',
+        routerId: router.id,
+        routerName: router.name,
+      };
+    }
+  } catch {
+    /* ARP opcional */
+  }
+
+  return { macAddress: null, source: null, routerId: router.id, routerName: router.name };
+}
+
+/** Completa macAddress desde MikroTik si hay IP pero falta MAC. */
+export async function enrichMacFromDhcp(orgId, { siteId, ipAddress, macAddress, routerId } = {}) {
+  if (macAddress?.trim() || !ipAddress?.trim()) return macAddress?.trim() || null;
+  const result = await resolveMacForIp(orgId, siteId, ipAddress, { routerId });
+  return result.macAddress || null;
 }

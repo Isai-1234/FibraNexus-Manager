@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, users, invoices, tickets, clientServices, payments } from '../db/schema.js';
+import { clients, users, invoices, tickets, clientServices, payments, equipment } from '../db/schema.js';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
@@ -9,6 +9,7 @@ import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { listClientEquipment } from '../lib/equipmentClientLink.js';
 import { refreshStaleEquipmentStatus } from '../lib/equipmentStatus.js';
+import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 
 export const clientsRouter = Router();
 
@@ -65,6 +66,23 @@ clientsRouter.get('/:id/equipment', requireRole('admin', 'technician'), async (r
     if (!orgId) return;
     const clientId = parseInt(req.params.id, 10);
     let items = await listClientEquipment(clientId, orgId);
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.ipAddress && !item.macAddress && item.siteId) {
+        const mac = await enrichMacFromDhcp(orgId, {
+          siteId: item.siteId,
+          ipAddress: item.ipAddress,
+          macAddress: null,
+        });
+        if (mac) {
+          await db.update(equipment).set({ macAddress: mac, updatedAt: new Date() })
+            .where(eq(equipment.id, item.id));
+          items[i] = { ...item, macAddress: mac };
+        }
+      }
+    }
+
     items = await refreshStaleEquipmentStatus(items, orgId);
     res.json(items);
   } catch (error) {

@@ -205,6 +205,20 @@ export default function NetworkManager({ API, onBack }: Props) {
     } catch (e: any) { alert(e.response?.data?.error || e.message) }
   }
 
+  async function lookupMacForIp(ip: string, siteId: number, form: 'create' | 'edit') {
+    const cleanIp = String(ip || '').split('/')[0].trim()
+    if (!cleanIp || !siteId) return
+    try {
+      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const q = routerId ? `&routerId=${routerId}` : ''
+      const res = await api().get(`/network/sites/${siteId}/mac-for-ip?ip=${encodeURIComponent(cleanIp)}${q}`)
+      if (!res.data.macAddress) return
+      if (form === 'edit') setEditEquipForm((f: any) => ({ ...f, macAddress: res.data.macAddress }))
+      else setEquipForm((f: any) => ({ ...f, macAddress: res.data.macAddress }))
+      setIpSuggestHint((h) => h.includes('MAC') ? h : `${h} · MAC ${res.data.macAddress} (DHCP)`)
+    } catch { /* sin lease */ }
+  }
+
   async function suggestFreeIpForEdit() {
     const siteId = selectedSite?.id
     if (!siteId) {
@@ -217,18 +231,17 @@ export default function NetworkManager({ API, onBack }: Props) {
       const routerId = siteRouters[0]?.id || selectedRouter?.id
       const q = routerId ? `?routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
-      setEditEquipForm((f: any) => ({ ...f, ipAddress: res.data.ip }))
-      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}`)
+      setEditEquipForm((f: any) => ({
+        ...f,
+        ipAddress: res.data.ip,
+        ...(res.data.macAddress ? { macAddress: res.data.macAddress } : {}),
+      }))
+      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}${res.data.macAddress ? ` · MAC ${res.data.macAddress}` : ''}`)
+      if (!res.data.macAddress) await lookupMacForIp(res.data.ip, siteId, 'edit')
     } catch (e: any) {
       alert(e.response?.data?.error || e.message)
     }
     setSuggestingIp(false)
-  }
-
-  function clientLabel(c: any) {
-    const name = c.user?.fullName || c.fullName || `Abonado #${c.id}`
-    const extra = c.user?.email || c.rut || ''
-    return extra ? `${name} (${extra})` : name
   }
 
   async function suggestFreeIp() {
@@ -243,12 +256,24 @@ export default function NetworkManager({ API, onBack }: Props) {
       const routerId = siteRouters[0]?.id || selectedRouter?.id
       const q = routerId ? `?routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
-      setEquipForm((f: any) => ({ ...f, ipAddress: res.data.ip, siteId }))
-      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}`)
+      setEquipForm((f: any) => ({
+        ...f,
+        ipAddress: res.data.ip,
+        siteId,
+        ...(res.data.macAddress ? { macAddress: res.data.macAddress } : {}),
+      }))
+      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}${res.data.macAddress ? ` · MAC ${res.data.macAddress}` : ''}`)
+      if (!res.data.macAddress) await lookupMacForIp(res.data.ip, siteId, 'create')
     } catch (e: any) {
       alert(e.response?.data?.error || e.message)
     }
     setSuggestingIp(false)
+  }
+
+  function clientLabel(c: any) {
+    const name = c.user?.fullName || c.fullName || `Abonado #${c.id}`
+    const extra = c.user?.email || c.rut || ''
+    return extra ? `${name} (${extra})` : name
   }
 
   async function assignToSite(equipmentId: number, siteId: number | null) {
@@ -781,7 +806,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                 <div className="flex gap-2 mt-1">
                   <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm" placeholder="172.16.140.50"
                     value={equipForm.ipAddress || ''}
-                    onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
+                    onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })}
+                    onBlur={e => lookupMacForIp(e.target.value, equipForm.siteId || selectedSite?.id, 'create')} />
                   <button type="button" onClick={suggestFreeIp} disabled={suggestingIp || !selectedSite}
                     className="shrink-0 px-3 py-2 border rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-40 flex items-center gap-1.5"
                     title="Buscar siguiente IP libre en el MikroTik del nodo">
@@ -877,7 +903,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                 <div className="flex gap-2 mt-1">
                   <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
                     value={editEquipForm.ipAddress || ''}
-                    onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })} />
+                    onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })}
+                    onBlur={e => lookupMacForIp(e.target.value, selectedSite?.id, 'edit')} />
                   <button type="button" onClick={suggestFreeIpForEdit} disabled={suggestingIp || !selectedSite}
                     className="shrink-0 px-3 py-2 border rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-40 flex items-center gap-1.5">
                     <Search className={`h-4 w-4 ${suggestingIp ? 'animate-pulse' : ''}`} />

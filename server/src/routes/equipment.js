@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 import { connectedAgents } from './routers.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import { refreshStaleEquipmentStatus, attachSnmpDisplay, isPollable } from '../lib/equipmentStatus.js';
+import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 
 export const equipmentRouter = Router();
 
@@ -27,6 +28,17 @@ async function patchEquipmentRow(orgId, equipmentId, body) {
   if (model !== undefined) patch.model = model;
   if (ipAddress !== undefined) patch.ipAddress = ipAddress || null;
   if (macAddress !== undefined) patch.macAddress = macAddress || null;
+
+  const mergedIp = ipAddress !== undefined ? (ipAddress || null) : existing.ipAddress;
+  const mergedMac = macAddress !== undefined ? (macAddress || null) : existing.macAddress;
+  const mergedSiteId = siteId !== undefined ? (siteId ? parseInt(siteId, 10) : null) : existing.siteId;
+  const dhcpMac = await enrichMacFromDhcp(orgId, {
+    siteId: mergedSiteId,
+    ipAddress: mergedIp,
+    macAddress: mergedMac,
+  });
+  if (dhcpMac && !mergedMac) patch.macAddress = dhcpMac;
+
   if (serialNumber !== undefined) patch.serialNumber = serialNumber || null;
   if (location !== undefined) patch.location = location || null;
   if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;

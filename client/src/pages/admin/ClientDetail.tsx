@@ -308,14 +308,35 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       const q = routerId ? `?routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${sid}/next-free-ip${q}`)
       const ip = res.data.ip
-      if (target === 'edit') setEditEquipForm((f: any) => ({ ...f, ipAddress: ip }))
-      else if (target === 'service') setServiceForm((f: any) => ({ ...f, ipAddress: ip }))
-      else setEquipForm((f: any) => ({ ...f, ipAddress: ip, siteId: sid }))
-      setIpSuggestHint(`Desde pool ${res.data.pool} · ${res.data.ranges}`)
+      const mac = res.data.macAddress
+      if (target === 'edit') setEditEquipForm((f: any) => ({ ...f, ipAddress: ip, ...(mac ? { macAddress: mac } : {}) }))
+      else if (target === 'service') setServiceForm((f: any) => ({ ...f, ipAddress: ip, ...(mac ? { macAddress: mac } : {}) }))
+      else setEquipForm((f: any) => ({ ...f, ipAddress: ip, siteId: sid, ...(mac ? { macAddress: mac } : {}) }))
+      const macHint = mac ? ` · MAC ${mac} (DHCP)` : ''
+      setIpSuggestHint(`Desde pool ${res.data.pool} · ${res.data.ranges}${macHint}`)
+      if (!mac) await lookupMacForIp(ip, sid, target)
     } catch (e: any) {
       alert(e.response?.data?.error || e.message)
     }
     setSuggestingIp(false)
+  }
+
+  async function lookupMacForIp(ip: string, siteId: number | string, target: 'create' | 'edit' | 'service' = 'create') {
+    const cleanIp = String(ip || '').split('/')[0].trim()
+    if (!cleanIp || !siteId) return
+    try {
+      const routerId = siteRoutersFor(siteId)[0]?.id
+      const q = routerId ? `&routerId=${routerId}` : ''
+      const res = await api().get(`/network/sites/${siteId}/mac-for-ip?ip=${encodeURIComponent(cleanIp)}${q}`)
+      if (!res.data.macAddress) return
+      const mac = res.data.macAddress
+      if (target === 'edit') setEditEquipForm((f: any) => ({ ...f, macAddress: mac }))
+      else if (target === 'service') setServiceForm((f: any) => ({ ...f, macAddress: mac }))
+      else setEquipForm((f: any) => ({ ...f, macAddress: mac }))
+      if (res.data.source === 'dhcp-lease') {
+        setIpSuggestHint((h) => h ? h : `MAC ${mac} desde lease DHCP del MikroTik`)
+      }
+    } catch { /* sin lease aún */ }
   }
 
   async function createClientEquipment() {
@@ -703,7 +724,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 <label className="block text-sm font-medium mb-1">IP</label>
                 <div className="flex gap-2">
                   <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
-                    value={equipForm.ipAddress || ''} onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
+                    value={equipForm.ipAddress || ''}
+                    onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })}
+                    onBlur={e => lookupMacForIp(e.target.value, equipForm.siteId, 'create')} />
                   <button type="button" disabled={suggestingIp || !equipForm.siteId}
                     onClick={() => suggestFreeIp('create')}
                     className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
@@ -761,7 +784,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 <label className="block text-sm font-medium mb-1">IP</label>
                 <div className="flex gap-2">
                   <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
-                    value={editEquipForm.ipAddress || ''} onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })} />
+                    value={editEquipForm.ipAddress || ''}
+                    onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })}
+                    onBlur={e => lookupMacForIp(e.target.value, editEquipForm.siteId || editingEquip?.siteId, 'edit')} />
                   <button type="button" disabled={suggestingIp} onClick={() => suggestFreeIp('edit')}
                     className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
                     <Search className="h-4 w-4" />
@@ -772,7 +797,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               <div>
                 <label className="block text-sm font-medium mb-1">MAC</label>
                 <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                  placeholder="Auto desde DHCP del MikroTik"
                   value={editEquipForm.macAddress || ''} onChange={e => setEditEquipForm({ ...editEquipForm, macAddress: e.target.value })} />
+                <p className="text-xs text-gray-500 mt-1">Se completa al salir del campo IP si hay lease DHCP en el router.</p>
               </div>
               {editEquipForm.type === 'cpe' && (
                 <div>

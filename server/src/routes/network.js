@@ -18,7 +18,7 @@ import {
 } from '../lib/mikrotikNetwork.js';
 import { pollEquipmentList } from '../lib/snmpPoller.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
-import { findNextFreeIpForSite } from '../lib/ipAllocation.js';
+import { findNextFreeIpForSite, resolveMacForIp } from '../lib/ipAllocation.js';
 
 export const networkRouter = Router();
 
@@ -40,6 +40,25 @@ networkRouter.get('/sites/:siteId/next-free-ip', requireRole('admin', 'technicia
     const result = await findNextFreeIpForSite(orgId, siteId, {
       routerId: routerId ? parseInt(routerId, 10) : undefined,
       poolName: poolName || undefined,
+    });
+    const macLookup = await resolveMacForIp(orgId, siteId, result.ip, {
+      routerId: routerId ? parseInt(routerId, 10) : result.routerId,
+    });
+    res.json({ ...result, macAddress: macLookup.macAddress || null, macSource: macLookup.source || null });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+networkRouter.get('/sites/:siteId/mac-for-ip', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const siteId = parseInt(req.params.siteId, 10);
+    const { ip, routerId } = req.query;
+    if (!ip) return res.status(400).json({ error: 'Parámetro ip requerido' });
+    const result = await resolveMacForIp(orgId, siteId, String(ip), {
+      routerId: routerId ? parseInt(routerId, 10) : undefined,
     });
     res.json(result);
   } catch (error) {

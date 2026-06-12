@@ -10,6 +10,7 @@ import { listPppoeActive, listPppoeSecrets, listSimpleQueues } from '../lib/mikr
 import { loadRouter } from '../lib/networkProvision.js';
 import { assignEquipmentToClient, enrichEquipmentWithClients, syncEquipmentToClientService } from '../lib/equipmentClientLink.js';
 import { refreshStaleEquipmentStatus, attachSnmpDisplay } from '../lib/equipmentStatus.js';
+import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 
 export const sitesRouter = Router();
 
@@ -205,15 +206,22 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       if (!clientRow) return res.status(404).json({ error: 'Abonado no encontrado' });
     }
 
+    const parsedSiteId = siteId ? parseInt(siteId, 10) : null;
+    const resolvedMac = await enrichMacFromDhcp(orgId, {
+      siteId: parsedSiteId,
+      ipAddress,
+      macAddress,
+    });
+
     const [created] = await db.insert(equipment).values({
       organizationId: orgId,
-      siteId: siteId ? parseInt(siteId) : null,
+      siteId: parsedSiteId,
       name,
       type,
       brand: brand || 'Generic',
       model: model || 'Unknown',
       ipAddress: ipAddress || null,
-      macAddress: macAddress || null,
+      macAddress: resolvedMac || macAddress || null,
       snmpCommunity: snmpCommunity || null,
       notes: notes || null,
       status: 'offline',
@@ -251,6 +259,17 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     if (model !== undefined) patch.model = model;
     if (ipAddress !== undefined) patch.ipAddress = ipAddress || null;
     if (macAddress !== undefined) patch.macAddress = macAddress || null;
+
+    const mergedIp = patch.ipAddress !== undefined ? patch.ipAddress : existing.ipAddress;
+    const mergedMac = patch.macAddress !== undefined ? patch.macAddress : existing.macAddress;
+    const mergedSiteId = patch.siteId !== undefined ? patch.siteId : existing.siteId;
+    const dhcpMac = await enrichMacFromDhcp(orgId, {
+      siteId: mergedSiteId,
+      ipAddress: mergedIp,
+      macAddress: mergedMac,
+    });
+    if (dhcpMac && !mergedMac) patch.macAddress = dhcpMac;
+
     if (snmpCommunity !== undefined) patch.snmpCommunity = snmpCommunity || null;
     if (notes !== undefined) patch.notes = notes || null;
     if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
