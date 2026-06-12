@@ -3,13 +3,34 @@ import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
+import { connectedAgents } from './routers.js';
 
 export const equipmentRouter = Router();
+
+function inferConnectionMethod(item) {
+  const creds = item.credentials || {};
+  if (creds.connectionMethod) return creds.connectionMethod;
+  if (creds.tunnelHostname || (item.ipAddress && String(item.ipAddress).includes('fibranexus.cl'))) {
+    return 'cloudflare_tunnel';
+  }
+  return creds.agentToken ? 'agent' : 'direct';
+}
 
 equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const allEquipment = await db.select().from(equipment).limit(50);
-    res.json(allEquipment);
+    const enriched = allEquipment.map(item => {
+      if (item.type !== 'router') return item;
+      const agent = connectedAgents.get(item.id.toString());
+      const routerInfo = agent?.routerInfo || item.credentials?.lastRouterInfo || null;
+      return {
+        ...item,
+        connectionMethod: inferConnectionMethod(item),
+        routerInfo,
+        agentLastSeen: agent?.lastSeen || item.lastSeen || null,
+      };
+    });
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar equipos' });
   }

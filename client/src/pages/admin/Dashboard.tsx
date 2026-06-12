@@ -404,15 +404,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50 border-b">
-                        <tr>{['Equipo', 'Tipo', 'IP', 'Ubicación', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}</tr>
+                        <tr>{['Equipo', 'Tipo', 'IP / Host', 'RouterOS', 'Uptime', 'CPU', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {data.map((item: any) => (
                           <tr key={item.id} className="hover:bg-blue-50/30 transition">
                             <td className="p-4 font-medium">{item.name}<br/><span className="text-xs text-gray-400">{item.brand} {item.model}</span></td>
                             <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
-                            <td className="p-4 font-mono text-sm">{item.ipAddress || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-sm">{item.location || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 font-mono text-sm">{item.ipAddress || item.credentials?.tunnelHostname || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 text-xs">{item.routerInfo?.version?.split(' ')[0] || item.firmware || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 text-xs">{item.routerInfo?.uptime || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 text-xs">{item.routerInfo?.cpuLoad != null ? `${item.routerInfo.cpuLoad}%` : <span className="text-gray-400">—</span>}</td>
                             <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
                             <td className="p-4">
                               <div className="flex items-center gap-1">

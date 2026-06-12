@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor } from 'lucide-react'
+import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud } from 'lucide-react'
 import axios from 'axios'
 
 interface Props { API: string; onBack: () => void }
@@ -13,35 +13,94 @@ const ROUTER_TYPES = [
   { value: 'snmp', label: 'Genérico SNMP', description: 'Cualquier dispositivo SNMP', brand: 'Generic' },
 ]
 
+const DEVICE_PROFILES: Record<string, { defaultMethod: string; methods: string[]; hint: string }> = {
+  mikrotik_v7: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent', 'cloudflare_tunnel'],
+    hint: 'CCR, RB, hAP con IP/DDNS → directo. Sin IP pública → VPN o agente. L009/containers → Cloudflare en router (avanzado).',
+  },
+  mikrotik_v6: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'RouterOS 6 usa API puerto 8728. Sin container mode — no aplica túnel Cloudflare en router.',
+  },
+  ubiquiti: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'UniFi/AirMax vía IP pública, VPN o agente en la red del cliente.',
+  },
+  olt_huawei: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'OLT Huawei: FibraNexus se conecta por SNMP/Telnet si hay ruta de red (IP, VPN o agente).',
+  },
+  olt_zte: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'OLT ZTE: igual que Huawei — requiere acceso de red al equipo.',
+  },
+  snmp: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'Dispositivo SNMP genérico: polling desde FibraNexus cuando hay conectividad.',
+  },
+}
+
 const CONNECTION_METHODS = [
   {
     value: 'direct',
-    label: 'IP pública directa',
+    label: 'IP pública / DDNS',
     icon: Globe,
-    description: 'El router tiene IP pública o DDNS. Conexión directa sin intermediarios.',
-    pros: ['Sin agente', 'Más simple', 'Tiempo real'],
-    cons: ['Requiere IP pública o DDNS'],
+    description: 'El método más común. FibraNexus conecta directo al dispositivo.',
+    pros: ['Sin agente', 'Tiempo real', 'Funciona con casi todo'],
+    cons: ['Requiere IP pública, DDNS o túnel externo'],
     fields: ['routerIp', 'routerPort', 'routerUser', 'routerPass'],
+    recommended: true,
   },
   {
     value: 'vpn',
     label: 'VPN WireGuard',
     icon: Lock,
-    description: 'Túnel cifrado entre tu red y FibraNexus. Máxima seguridad.',
-    pros: ['Sin IP pública', 'Máxima seguridad', 'Sin agente'],
-    cons: ['Configuración en Mikrotik requerida'],
+    description: 'Túnel cifrado ISP ↔ FibraNexus. Ideal para redes sin IP pública.',
+    pros: ['Sin IP pública', 'Seguro', 'Multi-dispositivo'],
+    cons: ['Configuración VPN en el nodo'],
     fields: ['routerIp', 'routerPort', 'routerUser', 'routerPass', 'vpnEndpoint'],
   },
   {
     value: 'agent',
-    label: 'Agente en PC local',
+    label: 'Agente en red local',
     icon: Monitor,
-    description: 'Instala un programa en cualquier PC de tu red. Funciona sin IP pública.',
-    pros: ['Sin IP pública', 'Funciona detrás de NAT', 'Fácil de instalar'],
-    cons: ['Necesita PC encendido'],
+    description: 'Un mini-agente en cualquier PC/Raspberry de la red del cliente.',
+    pros: ['Sin IP pública', 'Universal', 'OLTs, switches, routers'],
+    cons: ['Dispositivo siempre encendido'],
     fields: ['routerIp', 'routerUser', 'routerPass'],
   },
+  {
+    value: 'cloudflare_tunnel',
+    label: 'Cloudflare en router (avanzado)',
+    icon: Cloud,
+    description: 'Solo MikroTik RouterOS 7 con container mode (L009, CHR, x86). Caso especial ARM32.',
+    pros: ['Sin IP pública', 'Sin PC extra'],
+    cons: ['Solo RouterOS 7 + container', 'ARM32 requiere imagen alternativa', 'Configuración compleja'],
+    fields: ['routerIp', 'tunnelHostname', 'tunnelToken', 'routerUser', 'routerPass'],
+    advanced: true,
+  },
 ]
+
+function methodsForDevice(routerType: string) {
+  const profile = DEVICE_PROFILES[routerType]
+  if (!profile) return CONNECTION_METHODS
+  return CONNECTION_METHODS.filter(m => profile.methods.includes(m.value))
+}
+
+function resolveConnectionMethod(router: any) {
+  if (router.connectionMethod) return router.connectionMethod
+  if (router.credentials?.connectionMethod) return router.credentials.connectionMethod
+  if (router.credentials?.tunnelHostname || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
+    return 'cloudflare_tunnel'
+  }
+  return 'agent'
+}
 
 export default function RouterManager({ API, onBack }: Props) {
   const [routers, setRouters] = useState<any[]>([])
@@ -62,6 +121,11 @@ export default function RouterManager({ API, onBack }: Props) {
   }
 
   useEffect(() => { loadRouters() }, [])
+
+  useEffect(() => {
+    const interval = setInterval(loadRouters, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function loadRouters() {
     setLoading(true)
@@ -161,7 +225,11 @@ export default function RouterManager({ API, onBack }: Props) {
                   <p className="text-sm text-gray-500 mb-4">¿Qué tipo de dispositivo quieres agregar?</p>
                   <div className="grid grid-cols-2 gap-3">
                     {ROUTER_TYPES.map(rt => (
-                      <button key={rt.value} onClick={() => { setForm({ ...form, routerType: rt.value }); setStep(2) }}
+                      <button key={rt.value} onClick={() => {
+                        const profile = DEVICE_PROFILES[rt.value]
+                        setForm({ ...form, routerType: rt.value, connectionMethod: profile?.defaultMethod || 'direct' })
+                        setStep(2)
+                      }}
                         className="text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition">
                         <div className="flex items-center gap-2 mb-1">
                           <Server className="h-4 w-4 text-blue-600" />
@@ -182,17 +250,24 @@ export default function RouterManager({ API, onBack }: Props) {
                     <p className="text-sm font-medium text-blue-900">{selectedType?.label}</p>
                     <button onClick={() => setStep(1)} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
                   </div>
-                  <p className="text-sm text-gray-500 mb-4">¿Cómo se conectará FibraNexus a tu router?</p>
+                  <p className="text-sm text-gray-500 mb-2">¿Cómo se conectará FibraNexus a tu equipo?</p>
+                  {DEVICE_PROFILES[form.routerType]?.hint && (
+                    <p className="text-xs text-gray-600 bg-gray-50 border rounded-lg px-3 py-2 mb-4">{DEVICE_PROFILES[form.routerType].hint}</p>
+                  )}
                   <div className="space-y-3">
-                    {CONNECTION_METHODS.map(m => (
+                    {methodsForDevice(form.routerType).map(m => (
                       <button key={m.value} onClick={() => { setForm({ ...form, connectionMethod: m.value }); setStep(3) }}
-                        className="w-full text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition">
+                        className={`w-full text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition ${m.recommended ? 'border-blue-200' : m.advanced ? 'border-amber-200' : ''}`}>
                         <div className="flex items-start gap-3">
                           <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                             <m.icon className="h-5 w-5 text-blue-600" />
                           </div>
                           <div className="flex-1">
-                            <p className="font-semibold text-sm mb-1">{m.label}</p>
+                            <p className="font-semibold text-sm mb-1 flex items-center gap-2 flex-wrap">
+                              {m.label}
+                              {m.recommended && <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">Más común</span>}
+                              {m.advanced && <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full">Avanzado</span>}
+                            </p>
                             <p className="text-xs text-gray-500 mb-2">{m.description}</p>
                             <div className="flex flex-wrap gap-2">
                               {m.pros.map(p => <span key={p} className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ {p}</span>)}
@@ -232,11 +307,11 @@ export default function RouterManager({ API, onBack }: Props) {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {form.connectionMethod === 'agent' ? 'IP local del router' : 'IP pública o dominio'}
+                        {form.connectionMethod === 'cloudflare_tunnel' ? 'IP local del router (LAN)' : form.connectionMethod === 'agent' ? 'IP local del router' : 'IP pública o dominio'}
                         <span className="text-red-500"> *</span>
                       </label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
-                        placeholder={form.connectionMethod === 'agent' ? '192.168.1.1' : 'router.miempresa.cl'} 
+                        placeholder={form.connectionMethod === 'cloudflare_tunnel' ? '192.168.3.253' : form.connectionMethod === 'agent' ? '192.168.1.1' : 'router.miempresa.cl'} 
                         value={form.routerIp || ''} onChange={e => setForm({ ...form, routerIp: e.target.value })} />
                     </div>
                     <div>
@@ -246,6 +321,25 @@ export default function RouterManager({ API, onBack }: Props) {
                         value={form.routerPort || ''} onChange={e => setForm({ ...form, routerPort: e.target.value })} />
                     </div>
                   </div>
+
+                  {form.connectionMethod === 'cloudflare_tunnel' && (
+                    <div className="space-y-3 p-4 bg-sky-50 border border-sky-200 rounded-xl">
+                      <p className="text-sm font-medium text-sky-900">Cloudflare Tunnel</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Hostname del túnel <span className="text-red-500">*</span></label>
+                        <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
+                          placeholder="l009-cliente.fibranexus.cl" 
+                          value={form.tunnelHostname || ''} onChange={e => setForm({ ...form, tunnelHostname: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Token del túnel <span className="text-red-500">*</span></label>
+                        <input type="password" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono text-xs" 
+                          placeholder="eyJhIjoi..." 
+                          value={form.tunnelToken || ''} onChange={e => setForm({ ...form, tunnelToken: e.target.value })} />
+                        <p className="text-xs text-gray-500 mt-1">Cloudflare Zero Trust → Networks → Tunnels → copiar token</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -278,8 +372,8 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   </div>
 
-                  {/* Test de conexión (solo para IP pública y VPN) */}
-                  {form.connectionMethod !== 'agent' && form.routerIp && form.routerUser && form.routerPass && (
+                  {/* Test de conexión */}
+                  {form.connectionMethod !== 'agent' && form.routerUser && form.routerPass && (form.connectionMethod === 'cloudflare_tunnel' ? form.tunnelHostname : form.routerIp) && (
                     <div>
                       <button onClick={handleTestConnection} disabled={testing}
                         className="w-full py-2.5 border-2 border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-medium flex items-center justify-center gap-2 disabled:opacity-50">
@@ -307,7 +401,7 @@ export default function RouterManager({ API, onBack }: Props) {
 
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Atrás</button>
-                    <button onClick={handleCreate} disabled={!form.name || !form.routerIp || !form.routerUser || !form.routerPass}
+                    <button onClick={handleCreate} disabled={!form.name || !form.routerIp || !form.routerUser || !form.routerPass || (form.connectionMethod === 'cloudflare_tunnel' && (!form.tunnelHostname || !form.tunnelToken))}
                       className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
                       Registrar router →
                     </button>
@@ -333,16 +427,20 @@ export default function RouterManager({ API, onBack }: Props) {
                     <div className="space-y-4">
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <p className="font-semibold text-blue-900 text-sm mb-1 flex items-center gap-2">
-                          📡 Script para instalar directo en el Mikrotik
+                          📡 Script único — pegar en Terminal del MikroTik
                         </p>
-                        <p className="text-xs text-blue-700">Sin agente, sin Node.js — el script corre dentro del propio router.</p>
+                        <p className="text-xs text-blue-700">
+                          {form.connectionMethod === 'cloudflare_tunnel'
+                            ? 'Caso avanzado L009/container: script con túnel + heartbeat + arranque automático.'
+                            : 'Script de heartbeat para monitoreo desde el propio router MikroTik.'}
+                        </p>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Script (copiar en Winbox → System → Scripts)</label>
-                        <div className="bg-gray-900 rounded-lg p-3 relative">
-                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{mikrotikScript.script}</code>
-                          <button onClick={() => copyText(mikrotikScript.script, 'script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Script completo (Winbox → New Terminal → pegar → Enter)</label>
+                        <div className="bg-gray-900 rounded-lg p-3 relative max-h-64 overflow-y-auto">
+                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{mikrotikScript.fullSetupScript || mikrotikScript.script}</code>
+                          <button onClick={() => copyText(mikrotikScript.fullSetupScript || mikrotikScript.script, 'script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded sticky">
                             {copied === 'script' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
                           </button>
                         </div>
@@ -430,8 +528,8 @@ export default function RouterManager({ API, onBack }: Props) {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-4">
           <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold text-blue-900 text-sm">Integración segura — 3 métodos disponibles</p>
-            <p className="text-sm text-blue-700 mt-0.5">IP pública directa · VPN WireGuard · Agente en PC local. Compatible con Mikrotik, Ubiquiti, OLTs y SNMP.</p>
+            <p className="font-semibold text-blue-900 text-sm">Multi-dispositivo — elige el método según tu equipo</p>
+            <p className="text-sm text-blue-700 mt-0.5">MikroTik, Ubiquiti, OLTs, SNMP. IP directa · VPN · Agente · Cloudflare en router (solo L009/container avanzado).</p>
           </div>
         </div>
 
@@ -447,9 +545,10 @@ export default function RouterManager({ API, onBack }: Props) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {routers.map((router: any) => {
-              const method = router.credentials?.connectionMethod || 'agent'
+              const method = resolveConnectionMethod(router)
               const methodInfo = CONNECTION_METHODS.find(m => m.value === method)
-              const MethodIcon = methodInfo?.icon || Monitor
+              const MethodIcon = methodInfo?.icon || Globe
+              const info = router.routerInfo || (router.firmware ? { version: router.firmware } : null)
               return (
                 <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
@@ -462,9 +561,30 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                   </div>
+
+                  {router.status === 'online' && info && (
+                    <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">RouterOS</p>
+                        <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
+                      </div>
+                      <div className="text-center border-x border-slate-200">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">Uptime</p>
+                        <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">CPU</p>
+                        <p className="text-xs font-medium text-gray-800">{info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2 text-sm mb-4">
-                    <div className="flex justify-between"><span className="text-gray-500">IP/Host</span><span className="font-mono text-xs">{router.ipAddress || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Host</span><span className="font-mono text-xs">{router.ipAddress || router.credentials?.tunnelHostname || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Ubicación</span><span>{router.location || '—'}</span></div>
+                    {!info && router.firmware && (
+                      <div className="flex justify-between"><span className="text-gray-500">Firmware</span><span className="text-xs">{router.firmware}</span></div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500">Tipo</span>
                       <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
@@ -473,8 +593,8 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500">Conexión</span>
-                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <MethodIcon className="h-3 w-3" /> {methodInfo?.label || 'Agente'}
+                      <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${method === 'cloudflare_tunnel' ? 'bg-sky-100 text-sky-800' : 'bg-blue-100 text-blue-700'}`}>
+                        <MethodIcon className="h-3 w-3" /> {methodInfo?.label || 'IP directa'}
                       </span>
                     </div>
                   </div>
