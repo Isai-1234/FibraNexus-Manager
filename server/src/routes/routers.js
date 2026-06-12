@@ -38,20 +38,20 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
   }
 });
 
-routersRouter.post('/agent/heartbeat', async (req, res) => {
+export async function agentHeartbeatHandler(req, res) {
   try {
     const { agentToken, routerInfo } = req.body;
-    if (!agentToken) return res.status(401).json({ error: 'Token requerido' });
+    if (!agentToken) return res.status(403).json({ error: 'Token de agente requerido' });
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials && r.credentials.agentToken === agentToken);
-    if (!router) return res.status(401).json({ error: 'Token inválido' });
+    if (!router) return res.status(403).json({ error: 'Token de agente inválido' });
     await db.update(equipment).set({ status: 'online', lastSeen: new Date() }).where(eq(equipment.id, router.id));
     connectedAgents.set(router.id.toString(), { routerId: router.id, lastSeen: new Date(), routerInfo });
     res.json({ status: 'ok', routerId: router.id, routerName: router.name });
   } catch (error) {
     res.status(500).json({ error: 'Error en heartbeat: ' + error.message });
   }
-});
+}
 
 routersRouter.get('/:id/stats', requireRole('admin', 'technician'), async (req, res) => {
   try {
@@ -118,15 +118,19 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
     const router = routers[0];
     const token = router.credentials?.agentToken;
     if (!token) return res.status(400).json({ error: 'Router sin token de agente' });
-    const serverUrl = process.env.RENDER_EXTERNAL_URL || 'https://fibranexus-manager.onrender.com';
-    const script = `:local token "${token}"
+    const serverUrl = process.env.PUBLIC_URL || process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'https://app.fibranexus.cl';
+        const script = `:local token "${token}"
 :local serverUrl "${serverUrl}/api/routers/agent/heartbeat"
 :local routerId "${routerId}"
+:local ver [/system resource get version]
+:local up [/system resource get uptime]
+:local cpu [/system resource get cpu-load]
+:local payload ("{\\"agentToken\\":\\"" . $token . "\\",\\"routerInfo\\":{\\"id\\":\\"" . $routerId . "\\",\\"version\\":\\"" . $ver . "\\",\\"uptime\\":\\"" . $up . "\\",\\"cpuLoad\\":\\"" . $cpu . "\\"}}")
 
 /tool fetch url=$serverUrl \\
   http-method=post \\
   http-header-field="Content-Type: application/json" \\
-  http-data=("{\\\"agentToken\\\":\\\"" . $token . "\\\",\\\"routerInfo\\\":{\\\"id\\\":\\\"" . $routerId . "\\\",\\\"version\\\":[/system resource get version],\\\"uptime\\\":[/system resource get uptime],\\\"cpuLoad\\\":[/system resource get cpu-load]}}") \\
+  http-data=$payload \\
   output=none`;
     res.json({
       script,

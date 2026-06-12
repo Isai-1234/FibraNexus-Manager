@@ -14,7 +14,7 @@ import { paymentsRouter } from './routes/payments.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { ipManagementRouter } from './routes/ipManagement.js';
-import { routersRouter } from './routes/routers.js';
+import { routersRouter, agentHeartbeatHandler } from './routes/routers.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
 
@@ -36,6 +36,7 @@ app.use('/api/payments', authenticateToken, paymentsRouter);
 app.use('/api/tickets', authenticateToken, ticketsRouter);
 app.use('/api/dashboard', authenticateToken, dashboardRouter);
 app.use('/api/ip-management', authenticateToken, ipManagementRouter);
+app.post('/api/routers/agent/heartbeat', agentHeartbeatHandler);
 app.use('/api/routers', authenticateToken, routersRouter);
 
 app.get('/api/health', (req, res) => {
