@@ -53,6 +53,8 @@ export function attachSnmpDisplay(item) {
     snmpUptime: lastSnmp?.uptime || null,
     snmpPolledAt: lastSnmp?.polledAt || item.lastSeen || null,
     snmpError: lastSnmp?.error || null,
+    snmpPollMethod: lastSnmp?.pollMethod || null,
+    snmpSysDescr: lastSnmp?.sysDescr || null,
     wirelessSignal: wireless?.signalDbm ?? null,
     wirelessRssi: wireless?.rssiDbm ?? null,
     wirelessCcq: wireless?.ccqPercent ?? null,
@@ -60,6 +62,7 @@ export function attachSnmpDisplay(item) {
     wirelessTxRate: wireless?.txRateMbps ?? null,
     wirelessRxRate: wireless?.rxRateMbps ?? null,
     wirelessWarnings: wireless?.warnings || [],
+    wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
   };
 }

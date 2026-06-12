@@ -181,6 +181,19 @@ export async function mikrotikSnmpGet(router, { address, community, oid }) {
   return res ?? null;
 }
 
+export async function mikrotikSnmpWalk(router, { address, community, oid }) {
+  try {
+    const res = await mikrotikRequest(router, 'POST', '/tool/snmp-walk', {
+      address,
+      community,
+      oid,
+    });
+    return asList(res);
+  } catch {
+    return [];
+  }
+}
+
 export async function snmpGetViaRouter(router, host, community, oids) {
   const out = {};
   for (const oid of oids) {
@@ -190,6 +203,17 @@ export async function snmpGetViaRouter(router, host, community, oids) {
     } catch {
       /* OID no disponible */
     }
+  }
+  return out;
+}
+
+export async function snmpWalkViaRouter(router, host, community, baseOid) {
+  const rows = await mikrotikSnmpWalk(router, { address: host, community, oid: baseOid });
+  const out = {};
+  for (const row of rows) {
+    const oid = row.oid ?? row['.oid'] ?? row.name;
+    const val = row.value ?? row['value'];
+    if (oid && val != null) out[String(oid)] = String(val);
   }
   return out;
 }

@@ -21,6 +21,8 @@ interface Props {
     linkQuality?: number | null
     snmpPolledAt?: string | null
     snmpUptime?: string | null
+    snmpPollMethod?: string | null
+    wirelessDebugHint?: string | null
   } | null
   siteName?: string
   immersive?: boolean
@@ -509,9 +511,22 @@ export default function CpeLinkVisualizer({
       )}
 
       {!signal && online && (
-        <div className="mx-4 mb-4 flex items-center gap-2.5 text-xs text-slate-500 rounded-xl bg-white/[0.02] border border-white/[0.04] px-4 py-3">
-          <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
-          Enlace activo — habilita SNMP en airOS para métricas en vivo y detección de desalineación.
+        <div className="mx-4 mb-4 flex flex-col gap-1 text-xs text-slate-500 rounded-xl bg-white/[0.02] border border-white/[0.04] px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
+            <span>
+              {equipment.wirelessDebugHint || (
+                equipment.snmpPollMethod === 'router'
+                  ? 'Antena online vía MikroTik (IP privada). Las métricas dBm/CCQ usan MIB Ubiquiti — pulsa ↻ para reintentar.'
+                  : 'Antena online — habilita SNMP en airOS (Services → SNMP) con la misma community del equipo.'
+              )}
+            </span>
+          </div>
+          {equipment.snmpPollMethod === 'router' && (
+            <p className="text-[10px] text-slate-600 pl-6">
+              Poll enrutado: Render → túnel → MikroTik Torre → 172.16.x.x (no requiere IP pública en la antena).
+            </p>
+          )}
         </div>
       )}
 

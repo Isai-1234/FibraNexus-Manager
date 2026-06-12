@@ -1,5 +1,5 @@
 import snmp from 'net-snmp';
-import { snmpGetViaRouter } from './mikrotikNetwork.js';
+import { snmpGetViaRouter, snmpWalkViaRouter, mikrotikSnmpGet } from './mikrotikNetwork.js';
 
 const SYS_DESCR = '1.3.6.1.2.1.1.1.0';
 const SYS_NAME = '1.3.6.1.2.1.1.5.0';
@@ -8,12 +8,12 @@ const SNMP_OIDS = [SYS_DESCR, SYS_NAME, SYS_UPTIME];
 
 const UBNT_WL_STAT = '1.3.6.1.4.1.41112.1.4.5.1';
 const UBNT_COLS = {
-  signal: '.5',
-  rssi: '.6',
-  ccq: '.7',
-  txRate: '.9',
-  rxRate: '.10',
-  noiseFloor: '.8',
+  signal: 5,
+  rssi: 6,
+  ccq: 7,
+  noiseFloor: 8,
+  txRate: 9,
+  rxRate: 10,
 };
 
 function formatUptime(timeticks) {
@@ -41,6 +41,18 @@ function normalizeCcq(value) {
   return n;
 }
 
+function parseWalkByColumn(walkData) {
+  const byCol = {};
+  for (const [oid, raw] of Object.entries(walkData)) {
+    for (const [key, col] of Object.entries(UBNT_COLS)) {
+      if (oid.includes(`.${col}.`) || oid.endsWith(`.${col}`)) {
+        if (byCol[key] == null) byCol[key] = raw;
+      }
+    }
+  }
+  return byCol;
+}
+
 export function snmpGet(host, community, oids, { port = 161, timeout = 5000 } = {}) {
   return new Promise((resolve, reject) => {
     const session = snmp.createSession(host, community, {
@@ -63,7 +75,7 @@ export function snmpGet(host, community, oids, { port = 161, timeout = 5000 } = 
   });
 }
 
-export function snmpWalk(host, community, baseOid, { port = 161, timeout = 8000, maxRows = 32 } = {}) {
+export function snmpWalk(host, community, baseOid, { port = 161, timeout = 8000, maxRows = 48 } = {}) {
   return new Promise((resolve, reject) => {
     const session = snmp.createSession(host, community, {
       port,
@@ -87,31 +99,105 @@ export function snmpWalk(host, community, baseOid, { port = 161, timeout = 8000,
   });
 }
 
-async function walkUbntWireless(host, community, router = null) {
-  const cols = Object.entries(UBNT_COLS);
+async function getIndexedViaRouter(router, host, community) {
   const merged = {};
-
-  for (const [key, suffix] of cols) {
-    const base = `${UBNT_WL_STAT}${suffix}`;
-    try {
-      let data = {};
+  for (const [key, col] of Object.entries(UBNT_COLS)) {
+    for (const idx of [1, 2, 3, 0]) {
+      const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
       try {
-        data = await snmpWalk(host, community, base);
-      } catch {
-        if (router) data = await snmpGetViaRouter(router, host, community, [base]);
-      }
-      const first = Object.values(data)[0];
-      if (first != null) merged[key] = first;
-    } catch { /* column unavailable on this firmware */ }
+        const val = await mikrotikSnmpGet(router, { address: host, community, oid });
+        if (val != null && val !== '') {
+          merged[key] = val;
+          break;
+        }
+      } catch { /* siguiente índice */ }
+    }
+  }
+  return merged;
+}
+
+async function getIndexedDirect(host, community) {
+  const merged = {};
+  for (const [key, col] of Object.entries(UBNT_COLS)) {
+    for (const idx of [1, 2, 3, 0]) {
+      const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
+      try {
+        const data = await snmpGet(host, community, [oid], { timeout: 4000 });
+        const val = data[oid];
+        if (val != null && val !== '') {
+          merged[key] = val;
+          break;
+        }
+      } catch { /* siguiente índice */ }
+    }
+  }
+  return merged;
+}
+
+async function fetchUbntWireless(host, community, router, pollMethod) {
+  const attempts = [];
+  let merged = {};
+
+  if (pollMethod === 'router' && router) {
+    try {
+      const walkData = await snmpWalkViaRouter(router, host, community, UBNT_WL_STAT);
+      merged = parseWalkByColumn(walkData);
+      if (Object.keys(merged).length) attempts.push('router-walk');
+    } catch (e) {
+      attempts.push(`router-walk-fail:${e.message}`);
+    }
+
+    if (!Object.keys(merged).length) {
+      merged = await getIndexedViaRouter(router, host, community);
+      if (Object.keys(merged).length) attempts.push('router-index');
+    }
   }
 
-  if (!Object.keys(merged).length) return null;
+  if (!Object.keys(merged).length) {
+    try {
+      const walkData = await snmpWalk(host, community, UBNT_WL_STAT);
+      merged = parseWalkByColumn(walkData);
+      if (Object.keys(merged).length) attempts.push('direct-walk');
+    } catch (e) {
+      attempts.push(`direct-walk-fail:${e.message}`);
+    }
+  }
+
+  if (!Object.keys(merged).length) {
+    merged = await getIndexedDirect(host, community);
+    if (Object.keys(merged).length) attempts.push('direct-index');
+  }
+
+  // Si el poll básico fue directo pero wireless falló, reintentar vía router (IP privada)
+  if (!Object.keys(merged).length && router && pollMethod !== 'router') {
+    try {
+      const walkData = await snmpWalkViaRouter(router, host, community, UBNT_WL_STAT);
+      merged = parseWalkByColumn(walkData);
+      if (Object.keys(merged).length) attempts.push('router-walk-fallback');
+    } catch { /* ignore */ }
+    if (!Object.keys(merged).length) {
+      merged = await getIndexedViaRouter(router, host, community);
+      if (Object.keys(merged).length) attempts.push('router-index-fallback');
+    }
+  }
+
+  if (!Object.keys(merged).length) {
+    return {
+      wireless: null,
+      wirelessDebug: {
+        attempts,
+        hint: pollMethod === 'router'
+          ? 'SNMP básico OK vía MikroTik; MIB wireless Ubiquiti no respondió. Verifica que la LiteBeam esté enlazada al AP y SNMP activo en airOS.'
+          : 'MIB wireless Ubiquiti no respondió en la antena.',
+      },
+    };
+  }
 
   const signal = normalizeDbm(merged.signal ?? merged.rssi);
   const rssi = normalizeDbm(merged.rssi ?? merged.signal);
   const ccq = normalizeCcq(merged.ccq);
   const noiseFloor = normalizeDbm(merged.noiseFloor);
-  const snr = signal != null && noiseFloor != null ? signal - noiseFloor : null;
+  const snr = signal != null && noiseFloor != null ? Math.round(signal - noiseFloor) : null;
 
   const warnings = [];
   if (signal != null && signal < -72) {
@@ -127,20 +213,23 @@ async function walkUbntWireless(host, community, router = null) {
   }
 
   return {
-    signalDbm: signal,
-    rssiDbm: rssi,
-    ccqPercent: ccq,
-    noiseFloorDbm: noiseFloor,
-    snrDb: snr,
-    txRateMbps: merged.txRate ? Number(merged.txRate) : null,
-    rxRateMbps: merged.rxRate ? Number(merged.rxRate) : null,
-    warnings,
-    linkQuality: ccq ?? (signal != null ? Math.min(100, Math.max(0, 100 + signal)) : null),
+    wireless: {
+      signalDbm: signal,
+      rssiDbm: rssi,
+      ccqPercent: ccq,
+      noiseFloorDbm: noiseFloor,
+      snrDb: snr,
+      txRateMbps: merged.txRate ? Number(merged.txRate) : null,
+      rxRateMbps: merged.rxRate ? Number(merged.rxRate) : null,
+      warnings,
+      linkQuality: ccq ?? (signal != null ? Math.min(100, Math.max(0, 100 + signal)) : null),
+    },
+    wirelessDebug: { attempts, raw: merged },
   };
 }
 
 export async function pollDeviceSnmp(equipment, router = null) {
-  const host = equipment.ipAddress?.trim();
+  const host = equipment.ipAddress?.trim().split('/')[0];
   const community = equipment.snmpCommunity?.trim() || 'public';
   if (!host) throw new Error('Equipo sin IP para SNMP');
 
@@ -162,13 +251,15 @@ export async function pollDeviceSnmp(equipment, router = null) {
   const online = uptimeRaw != null;
 
   let wireless = null;
-  const isUbiquiti = /ubiquiti|litebeam|nanostation|powerbeam|airmax/i.test(
+  let wirelessDebug = null;
+  const isUbiquiti = /ubiquiti|litebeam|nanostation|powerbeam|airmax|airos/i.test(
     `${equipment.brand || ''} ${equipment.model || ''} ${equipment.name || ''} ${data[SYS_DESCR] || ''}`,
   );
+
   if (online && isUbiquiti) {
-    try {
-      wireless = await walkUbntWireless(host, community, pollMethod === 'router' ? router : null);
-    } catch { /* wireless stats optional */ }
+    const wl = await fetchUbntWireless(host, community, router, pollMethod);
+    wireless = wl.wireless;
+    wirelessDebug = wl.wirelessDebug;
   }
 
   return {
@@ -178,6 +269,7 @@ export async function pollDeviceSnmp(equipment, router = null) {
     uptime: uptimeRaw != null ? formatUptime(uptimeRaw) : null,
     uptimeTicks: uptimeRaw,
     wireless,
+    wirelessDebug,
     polledAt: new Date().toISOString(),
     host,
     pollMethod,
