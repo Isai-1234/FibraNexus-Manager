@@ -41,7 +41,10 @@ export default function Login({ onLogin }: { onLogin: (e: string, p: string) => 
           </button>
         </form>
         <p className="text-center text-sm text-gray-500 mt-4">
-          ¿Nuevo ISP? <Link to="/register" className="text-blue-600 hover:underline font-medium">Crear cuenta gratis — 14 días trial</Link>
+          ¿Nuevo ISP? <Link to="/register" className="text-blue-600 hover:underline font-medium">Registrar ISP — trial 14 días</Link>
+        </p>
+        <p className="text-center text-xs text-gray-400 mt-2">
+          Super Admin · Admin ISP · Portal abonado — según tu cuenta
         </p>
       </div>
     </div>

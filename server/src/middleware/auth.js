@@ -15,7 +15,9 @@ export async function authenticateToken(req, res, next) {
       return res.status(403).json({ error: 'Usuario inactivo o no encontrado' });
     }
 
-    user = await ensureOrgStaffAccess(user);
+    if (user.role !== 'superadmin') {
+      user = await ensureOrgStaffAccess(user);
+    }
 
     req.user = {
       id: user.id,
