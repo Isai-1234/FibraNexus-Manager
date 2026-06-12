@@ -1,10 +1,12 @@
 import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
+import cpeLitebeamImg from '../assets/link/cpe-litebeam.png'
+import towerSectorImg from '../assets/link/tower-sector.png'
 
-/** PNG personalizados — colocar en client/public/assets/link/ */
+/** PNG empaquetados por Vite (evita 404 en Vercel SPA) */
 export const LINK_VISUAL_ASSETS = {
-  cpe: '/assets/link/cpe-litebeam.png',
-  tower: '/assets/link/tower-sector.png',
+  cpe: cpeLitebeamImg,
+  tower: towerSectorImg,
 } as const
 
 type WirelessWarning = { type: string; label: string; severity: string }
