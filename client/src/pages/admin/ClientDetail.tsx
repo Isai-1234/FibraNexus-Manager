@@ -79,12 +79,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
 
   useEffect(() => { loadAll() }, [clientId])
 
-  async function provisionNetwork(serviceId: number) {
-    if (!provisionRouterId) {
+  async function provisionNetwork(serviceId: number, serviceRouterId?: number | null) {
+    const routerId = provisionRouterId || serviceRouterId || null
+    if (!routerId) {
       alert('Selecciona un router MikroTik')
       return
     }
-    const router = routers.find((r) => r.id === provisionRouterId)
+    const router = routers.find((r) => r.id === routerId)
     if (router && !router.hasApiCredentials) {
       if (!routerCredForm.routerUser || !routerCredForm.routerPass) {
         alert('Configura usuario y contraseña API del router antes de provisionar')
@@ -92,7 +93,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       }
       setSavingRouterCred(true)
       try {
-        await api().patch(`/routers/${provisionRouterId}`, {
+        await api().patch(`/routers/${routerId}`, {
           routerUser: routerCredForm.routerUser,
           routerPass: routerCredForm.routerPass,
           tunnelHostname: routerCredForm.tunnelHostname || router.credentials?.tunnelHostname || router.ipAddress,
@@ -110,12 +111,16 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     setProvisioning(true)
     try {
       const res = await api().post(`/services/${serviceId}/provision`, {
-        routerId: provisionRouterId,
+        routerId,
         provisionMode,
       })
       const parts = []
       if (res.data.username) parts.push(`PPPoE: ${res.data.username}\nClave: ${res.data.password}`)
-      if (res.data.queueName) parts.push(`Cola: ${res.data.queueName} (${res.data.maxLimit})`)
+      if (res.data.queueName) {
+        const qAction = res.data.actions?.queue?.action === 'updated' ? 'actualizada' : 'creada'
+        parts.push(`Cola ${qAction}: ${res.data.queueName} (${res.data.maxLimit})`)
+      }
+      if (res.data.actions?.pppoe?.action === 'updated') parts.unshift('PPPoE actualizado (sin duplicar)')
       if (res.data.service) {
         setServices((prev) => prev.map((s) => (s.id === serviceId
           ? { ...s, ...res.data.service, plan: s.plan, client: s.client }
@@ -678,12 +683,12 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                               <option value="pppoe">Solo PPPoE</option>
                               <option value="queue">Solo Simple Queue</option>
                             </select>
-                            <button disabled={provisioning || savingRouterCred} onClick={() => provisionNetwork(s.id)}
+                            <button disabled={provisioning || savingRouterCred} onClick={() => provisionNetwork(s.id, s.routerId)}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-                              <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : savingRouterCred ? 'Guardando API...' : 'Aplicar en router'}
+                              <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : savingRouterCred ? 'Guardando API...' : (s.queueName || s.pppoeUsername ? 'Actualizar en router' : 'Aplicar en router')}
                             </button>
                           </div>
-                          {provisionRouterId && !routers.find(r => r.id === provisionRouterId)?.hasApiCredentials && (
+                          {provisionRouterId && !routers.find(r => r.id === (provisionRouterId || s.routerId))?.hasApiCredentials && (
                             <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-2">
                               <p className="md:col-span-3 text-xs text-amber-800">
                                 Este router no tiene credenciales API. Ingresa el usuario/contraseña de Winbox (REST habilitado en puerto 443).

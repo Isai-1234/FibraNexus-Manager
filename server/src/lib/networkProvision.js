@@ -4,11 +4,12 @@ import { clientServices, clients, plans, users, equipment } from '../db/schema.j
 import { eq, and } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import {
-  createPppoeSecret,
-  createSimpleQueue,
+  upsertPppoeSecret,
+  upsertSimpleQueue,
   setPppoeSecretDisabled,
   disableSimpleQueue,
   removeSimpleQueue,
+  findSimpleQueueByTarget,
   buildQueueLimits,
   testRouterConnection,
 } from './mikrotikClient.js';
@@ -89,10 +90,11 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
     : ctx.service.queueName;
   const maxLimit = buildQueueLimits(ctx.plan.uploadSpeed, ctx.plan.downloadSpeed);
   const queueComment = `${ctx.client.fullName} — ${ctx.plan.name}`;
+  const actions = { pppoe: null, queue: null };
 
   if (doPppoe) {
     if (!username || !password) throw new Error('PPPoE requiere usuario — crea primero el secret o usa modo cola con IP');
-    await createPppoeSecret(router, {
+    actions.pppoe = await upsertPppoeSecret(router, {
       username,
       password,
       profile,
@@ -103,11 +105,15 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
   if (doQueue) {
     const target = username || ctx.service.ipAddress;
     if (!target) throw new Error('Simple Queue requiere usuario PPPoE o una IP estática en el servicio');
+
     const oldQueueName = ctx.service.queueName;
-    if (oldQueueName && oldQueueName !== queueName) {
+    const existingOnRouter = await findSimpleQueueByTarget(router, target);
+
+    if (oldQueueName && oldQueueName !== queueName && oldQueueName !== existingOnRouter?.name) {
       try { await removeSimpleQueue(router, oldQueueName); } catch { /* cola anterior ya no existe */ }
     }
-    await createSimpleQueue(router, {
+
+    actions.queue = await upsertSimpleQueue(router, {
       name: queueName,
       target,
       maxLimit,
@@ -136,6 +142,7 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
     queueName: doQueue ? queueName : null,
     maxLimit: doQueue ? maxLimit : null,
     provisionMode: mode,
+    actions,
   };
 }
 

@@ -109,6 +109,68 @@ export async function createPppoeSecret(router, { username, password, profile = 
   });
 }
 
+export async function findPppoeSecret(router, username) {
+  const secrets = await listPppoeSecrets(router);
+  const list = Array.isArray(secrets) ? secrets : [secrets];
+  return list.find((s) => s.name === username) || null;
+}
+
+/** Crea o actualiza secret PPPoE — no duplica si ya existe el usuario */
+export async function upsertPppoeSecret(router, { username, password, profile = 'default', comment = '' }) {
+  const found = await findPppoeSecret(router, username);
+  if (found?.['.id']) {
+    await mikrotikRequest(router, 'PATCH', `/ppp/secret/${found['.id']}`, {
+      password,
+      profile,
+      comment,
+      disabled: 'false',
+    });
+    return { action: 'updated', secret: found };
+  }
+  await createPppoeSecret(router, { username, password, profile, comment });
+  return { action: 'created' };
+}
+
+export async function findSimpleQueueByName(router, name) {
+  if (!name) return null;
+  const queues = await listSimpleQueues(router);
+  const list = Array.isArray(queues) ? queues : [queues];
+  return list.find((q) => q.name === name) || null;
+}
+
+function normalizeQueueTarget(value) {
+  return String(value || '').split('/')[0].trim();
+}
+
+export async function findSimpleQueueByTarget(router, target) {
+  const ip = normalizeQueueTarget(target);
+  if (!ip) return null;
+  const queues = await listSimpleQueues(router);
+  const list = Array.isArray(queues) ? queues : [queues];
+  return list.find((q) => normalizeQueueTarget(q.target) === ip) || null;
+}
+
+/** Crea o actualiza cola — busca por nombre o IP destino para evitar duplicados */
+export async function upsertSimpleQueue(router, { name, target, maxLimit, comment = '' }) {
+  const byName = await findSimpleQueueByName(router, name);
+  const byTarget = await findSimpleQueueByTarget(router, target);
+  const existing = byName || byTarget;
+
+  if (existing?.['.id']) {
+    await mikrotikRequest(router, 'PATCH', `/queue/simple/${existing['.id']}`, {
+      name,
+      target,
+      'max-limit': maxLimit,
+      comment,
+      disabled: 'false',
+    });
+    return { action: 'updated', queue: existing };
+  }
+
+  await createSimpleQueue(router, { name, target, maxLimit, comment });
+  return { action: 'created' };
+}
+
 export async function setPppoeSecretDisabled(router, username, disabled) {
   const secrets = await listPppoeSecrets(router);
   const list = Array.isArray(secrets) ? secrets : [secrets];
