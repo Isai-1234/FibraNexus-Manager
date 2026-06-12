@@ -7,6 +7,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "build": "cd ../client && npm install && npm run build",
     "db:push": "drizzle-kit push",
     "db:seed": "node src/seed.js"
   },
@@ -30,9 +31,3 @@
     "drizzle-kit": "^0.20.6"
   }
 }
-"scripts": {
-  "start": "node src/index.js",
-  "build": "cd ../client && npm install && npm run build",
-  "db:push": "drizzle-kit push",
-  "db:seed": "node src/seed.js"
-},
