@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2 } from 'lucide-react'
 import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
+import { formatQueueSpeedLabel } from '../../lib/bandwidth'
+import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 
 interface Props {
   clientId: number
@@ -632,22 +634,35 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <div className="flex justify-between items-start mb-4">
                         <div>
                           <h3 className="font-bold text-lg text-gray-900">{s.plan?.name}</h3>
-                          <p className="text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · ${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
+                          <p className="text-gray-500">${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                         </div>
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
                           {statusLabel[s.status] || s.status}
                         </span>
                       </div>
+
+                      {(s.queueName || s.networkMeta?.maxLimit || s.plan) && (
+                        <div className="mb-4 max-w-md">
+                          <SubscriberQueueCard
+                            name={s.queueName || client?.user?.fullName || client?.fullName || 'Abonado'}
+                            target={s.ipAddress}
+                            maxLimit={s.networkMeta?.maxLimit || (s.plan ? `${s.plan.uploadSpeed}M/${s.plan.downloadSpeed}M` : undefined)}
+                            comment={s.plan?.name}
+                            disabled={s.status === 'suspended' || s.status === 'cut'}
+                          />
+                        </div>
+                      )}
+
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm bg-gray-50 rounded-lg p-4">
                       <div><p className="text-gray-400 text-xs mb-1">Instalación</p><p className="font-medium">{formatDateCL(s.installationDate)}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">Próximo cobro</p><p className="font-medium">{formatDateCL(s.nextBillingDate)}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">Ciclo facturación</p><p className="font-medium text-xs">{billingCycleLabel(s.billingCycleType, s.billingDay)}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">Vencimiento pago</p><p className="font-medium">Día {s.billingDueDay ?? s.billingDay ?? '—'}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoeUsername || '—'}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">Clave PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoePassword || '—'}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">IP / Router</p><p className="font-medium">{s.ipAddress || '—'} {s.routerId ? `(R#${s.routerId})` : ''}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">Cola</p><p className="font-mono font-medium text-xs">{s.queueName ? `${s.queueName}${s.networkMeta?.maxLimit ? ` · ${s.networkMeta.maxLimit}` : ''}` : '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">IP</p><p className="font-mono font-medium text-xs">{s.ipAddress || '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Router</p><p className="font-medium text-xs">{s.routerId ? `#${s.routerId}` : '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Velocidad en router</p><p className="font-medium text-xs">{formatQueueSpeedLabel(s.networkMeta?.maxLimit || (s.plan ? `${s.plan.uploadSpeed}M/${s.plan.downloadSpeed}M` : undefined))}</p></div>
                     </div>
                       {(!s.pppoeUsername || !s.queueName) && (
                         <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">

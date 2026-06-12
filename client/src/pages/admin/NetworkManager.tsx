@@ -5,6 +5,7 @@ import {
   Layers, Antenna, Network
 } from 'lucide-react'
 import axios from 'axios'
+import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 
 interface Props { API: string; onBack: () => void }
 
@@ -30,19 +31,6 @@ function statusDot(item: any) {
     return online ? 'bg-green-500' : item.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'
   }
   return online ? 'bg-green-500' : 'bg-gray-400'
-}
-
-function formatMikrotikLimit(value: string | undefined): string {
-  if (!value) return '—'
-  if (/[kmgt]/i.test(value)) return value
-  return value.split('/').map((part) => {
-    const n = parseInt(part.replace(/\D/g, ''), 10)
-    if (!n || Number.isNaN(n)) return part.trim()
-    if (n >= 1_000_000_000) return `${n / 1_000_000_000}G`
-    if (n >= 1_000_000) return `${n / 1_000_000}M`
-    if (n >= 1_000) return `${n / 1_000}k`
-    return String(n)
-  }).join('/')
 }
 
 function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any) {
@@ -353,8 +341,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                         </div>
                         {eq.type === 'router' && (
                           <button onClick={() => loadRouterNetwork(eq)}
-                            className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 flex items-center gap-1">
-                            <Eye className="h-3 w-3" /> PPPoE
+                            className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                            <Eye className="h-3 w-3" /> Ver abonados
                           </button>
                         )}
                         {eq.type === 'cpe' && (
@@ -367,25 +355,31 @@ export default function NetworkManager({ API, onBack }: Props) {
                   </div>
                 </div>
 
-                {/* Vista router PPPoE / queues */}
                 <div className="bg-white rounded-xl border flex flex-col overflow-hidden">
-                  <div className="p-4 border-b font-semibold text-gray-800 flex items-center gap-2">
-                    <Wifi className="h-4 w-4 text-green-600" />
-                    {selectedRouter ? `Red — ${selectedRouter.name}` : 'PPPoE y Simple Queues'}
+                  <div className="p-4 border-b flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                        <Wifi className="h-4 w-4 text-green-600" />
+                        {selectedRouter ? `Abonados — ${selectedRouter.name}` : 'Abonados en router'}
+                      </h3>
+                      {selectedRouter && (
+                        <p className="text-xs text-gray-500 mt-0.5">Colas, PPPoE y estado de conexión</p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4">
                     {!selectedRouter ? (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         {siteRouters.length === 0
-                          ? 'Agrega un router MikroTik a este nodo (o usa Gestión Routers para el wizard completo)'
-                          : 'Haz clic en "PPPoE" en un router para ver usuarios y colas'}
+                          ? 'Agrega un router MikroTik a este nodo'
+                          : 'Selecciona un router para ver abonados'}
                         {siteRouters.length > 0 && (
                           <div className="mt-4 space-y-2">
                             {siteRouters.map((r: any) => (
                               <button key={r.id} onClick={() => loadRouterNetwork(r)}
-                                className="block w-full p-3 border rounded-lg hover:bg-gray-50 text-left">
+                                className="block w-full p-3 border rounded-xl hover:bg-gray-50 text-left transition">
                                 <span className={`inline-block w-2 h-2 rounded-full mr-2 ${statusDot(r)}`} />
-                                {r.name}
+                                <span className="font-medium">{r.name}</span>
                               </button>
                             ))}
                           </div>
@@ -399,46 +393,63 @@ export default function NetworkManager({ API, onBack }: Props) {
                     ) : !routerNetwork ? (
                       <div className="text-center py-8"><RefreshCw className="h-6 w-6 animate-spin mx-auto text-blue-500" /></div>
                     ) : (
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">PPPoE activos ({routerNetwork.pppoeActive?.filter((a: any) => a.name)?.length || 0})</h3>
-                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                      <div className="space-y-5">
+                        {(routerNetwork.simpleQueues || []).length > 0 ? (
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-3 tracking-wide">
+                              Simple Queues ({routerNetwork.simpleQueues.length})
+                            </p>
+                            <div className="space-y-3">
+                              {(routerNetwork.simpleQueues || []).map((q: any) => (
+                                <SubscriberQueueCard
+                                  key={q['.id'] || q.name}
+                                  name={q.name}
+                                  target={q.target}
+                                  maxLimit={q['max-limit']}
+                                  comment={q.comment}
+                                  disabled={q.disabled === 'true'}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-400 text-center py-4">Sin colas configuradas</p>
+                        )}
+
+                        <div className="border-t pt-4">
+                          <p className="text-xs font-semibold text-gray-500 uppercase mb-2 tracking-wide">
+                            PPPoE conectados ({routerNetwork.pppoeActive?.filter((a: any) => a.name)?.length || 0})
+                          </p>
+                          <div className="space-y-1">
                             {(routerNetwork.pppoeActive || []).filter((a: any) => a.name).map((a: any) => (
-                              <div key={a['.id'] || a.name} className="flex items-center gap-2 text-sm bg-green-50 rounded px-2 py-1">
-                                <CheckCircle className="h-3 w-3 text-green-600" />
-                                <span className="font-mono">{a.name}</span>
-                                <span className="text-xs text-gray-400 ml-auto">{a.address}</span>
+                              <div key={a['.id'] || a.name} className="flex items-center gap-2 text-sm bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                                <CheckCircle className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+                                <span className="font-medium truncate">{a.name}</span>
+                                <span className="text-xs text-gray-500 font-mono ml-auto">{a.address}</span>
                               </div>
                             ))}
                             {!(routerNetwork.pppoeActive || []).some((a: any) => a.name) && (
-                              <p className="text-xs text-gray-400">Ningún cliente conectado por PPPoE</p>
+                              <p className="text-xs text-gray-400 py-2">Nadie conectado por PPPoE ahora</p>
                             )}
                           </div>
                         </div>
-                        <div>
-                          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Secrets PPPoE ({routerNetwork.pppoeSecrets?.length || 0})</h3>
-                          <div className="space-y-1 max-h-40 overflow-y-auto">
-                            {(routerNetwork.pppoeSecrets || []).slice(0, 20).map((s: any) => (
-                              <div key={s['.id']} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
-                                <span className={`w-2 h-2 rounded-full ${s.disabled === 'true' ? 'bg-red-400' : 'bg-green-400'}`} />
-                                <span className="font-mono">{s.name}</span>
-                                <span className="text-gray-400 ml-auto">{s.profile}</span>
-                              </div>
-                            ))}
+
+                        {(routerNetwork.pppoeSecrets || []).length > 0 && (
+                          <div className="border-t pt-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-2 tracking-wide">
+                              Usuarios PPPoE ({routerNetwork.pppoeSecrets.length})
+                            </p>
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {(routerNetwork.pppoeSecrets || []).slice(0, 15).map((s: any) => (
+                                <div key={s['.id']} className="flex items-center gap-2 text-xs border rounded-lg px-3 py-2 bg-gray-50">
+                                  <span className={`w-2 h-2 rounded-full ${s.disabled === 'true' ? 'bg-red-400' : 'bg-green-400'}`} />
+                                  <span className="font-medium">{s.name}</span>
+                                  <span className="text-gray-400 ml-auto">{s.profile}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Simple Queues ({routerNetwork.simpleQueues?.length || 0})</h3>
-                          <div className="space-y-1 max-h-40 overflow-y-auto">
-                            {(routerNetwork.simpleQueues || []).slice(0, 20).map((q: any) => (
-                              <div key={q['.id']} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
-                                <span className="font-medium truncate">{q.name}</span>
-                                {q.target && <span className="text-gray-400 font-mono truncate">{String(q.target).split('/')[0]}</span>}
-                                <span className="text-gray-600 ml-auto font-mono">{formatMikrotikLimit(q['max-limit'])}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
