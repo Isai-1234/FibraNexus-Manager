@@ -37,6 +37,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [provisionRouterId, setProvisionRouterId] = useState<number | null>(null)
   const [provisionMode, setProvisionMode] = useState('both')
   const [provisioning, setProvisioning] = useState(false)
+  const [routerCredForm, setRouterCredForm] = useState<any>({})
+  const [savingRouterCred, setSavingRouterCred] = useState(false)
   const [savingService, setSavingService] = useState(false)
   const [generatingInvoice, setGeneratingInvoice] = useState<number | null>(null)
 
@@ -80,6 +82,29 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     if (!provisionRouterId) {
       alert('Selecciona un router MikroTik')
       return
+    }
+    const router = routers.find((r) => r.id === provisionRouterId)
+    if (router && !router.hasApiCredentials) {
+      if (!routerCredForm.routerUser || !routerCredForm.routerPass) {
+        alert('Configura usuario y contraseña API del router antes de provisionar')
+        return
+      }
+      setSavingRouterCred(true)
+      try {
+        await api().patch(`/routers/${provisionRouterId}`, {
+          routerUser: routerCredForm.routerUser,
+          routerPass: routerCredForm.routerPass,
+          tunnelHostname: routerCredForm.tunnelHostname || router.credentials?.tunnelHostname || router.ipAddress,
+          connectionMethod: router.credentials?.connectionMethod || 'cloudflare_tunnel',
+        })
+        const rRes = await api().get('/routers')
+        setRouters(Array.isArray(rRes.data) ? rRes.data : [])
+      } catch (e: any) {
+        alert('Error al guardar credenciales: ' + (e.response?.data?.error || e.message))
+        setSavingRouterCred(false)
+        return
+      }
+      setSavingRouterCred(false)
     }
     setProvisioning(true)
     try {
@@ -620,10 +645,23 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                           </p>
                           <div className="flex gap-2 flex-wrap items-center">
                             <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[160px]"
-                              value={provisionRouterId || s.routerId || ''} onChange={e => setProvisionRouterId(parseInt(e.target.value) || null)}>
+                              value={provisionRouterId || s.routerId || ''} onChange={e => {
+                                const id = parseInt(e.target.value) || null
+                                setProvisionRouterId(id)
+                                const r = routers.find((x) => x.id === id)
+                                if (r) {
+                                  setRouterCredForm({
+                                    routerUser: r.credentials?.routerUser || 'admin',
+                                    routerPass: r.credentials?.routerPass || '',
+                                    tunnelHostname: r.credentials?.tunnelHostname || r.ipAddress || '',
+                                  })
+                                }
+                              }}>
                               <option value="">Router...</option>
                               {routers.map(r => (
-                                <option key={r.id} value={r.id}>{r.name} {r.agentConnected ? '●' : '○'}</option>
+                                <option key={r.id} value={r.id}>
+                                  {r.name} {r.agentConnected ? '●' : '○'}{!r.hasApiCredentials ? ' ⚠ sin API' : ''}
+                                </option>
                               ))}
                             </select>
                             <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[200px]" value={provisionMode}
@@ -632,11 +670,27 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                               <option value="pppoe">Solo PPPoE</option>
                               <option value="queue">Solo Simple Queue</option>
                             </select>
-                            <button disabled={provisioning} onClick={() => provisionNetwork(s.id)}
+                            <button disabled={provisioning || savingRouterCred} onClick={() => provisionNetwork(s.id)}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-                              <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : 'Aplicar en router'}
+                              <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : savingRouterCred ? 'Guardando API...' : 'Aplicar en router'}
                             </button>
                           </div>
+                          {provisionRouterId && !routers.find(r => r.id === provisionRouterId)?.hasApiCredentials && (
+                            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-2">
+                              <p className="md:col-span-3 text-xs text-amber-800">
+                                Este router no tiene credenciales API. Ingresa el usuario/contraseña de Winbox (REST habilitado en puerto 443).
+                              </p>
+                              <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Host túnel"
+                                value={routerCredForm.tunnelHostname || ''}
+                                onChange={e => setRouterCredForm({ ...routerCredForm, tunnelHostname: e.target.value })} />
+                              <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Usuario API"
+                                value={routerCredForm.routerUser || ''}
+                                onChange={e => setRouterCredForm({ ...routerCredForm, routerUser: e.target.value })} />
+                              <input type="password" className="border rounded-lg px-3 py-2 text-sm" placeholder="Contraseña API"
+                                value={routerCredForm.routerPass || ''}
+                                onChange={e => setRouterCredForm({ ...routerCredForm, routerPass: e.target.value })} />
+                            </div>
+                          )}
                         </div>
                       )}
                     <div className="flex gap-2 mt-4 flex-wrap">

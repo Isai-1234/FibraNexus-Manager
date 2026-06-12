@@ -121,6 +121,7 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
       return {
         ...r,
         connectionMethod,
+        hasApiCredentials: !!(r.credentials?.routerUser && r.credentials?.routerPass),
         credentials: { ...r.credentials, connectionMethod },
         agentConnected: connectedAgents.has(r.id.toString()) || r.status === 'online',
         agentLastSeen: agent?.lastSeen || r.lastSeen || null,
@@ -212,10 +213,10 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     const creds = { ...router.credentials };
     if (connectionMethod) creds.connectionMethod = connectionMethod;
     if (tunnelHostname) creds.tunnelHostname = tunnelHostname;
-    if (routerUser) creds.routerUser = routerUser;
-    if (routerPass) creds.routerPass = routerPass;
+    if (routerUser !== undefined) creds.routerUser = routerUser || null;
+    if (routerPass !== undefined) creds.routerPass = routerPass || null;
     if (routerPort) creds.routerPort = routerPort;
-    const updates = { credentials: creds };
+    const updates = { credentials: creds, updatedAt: new Date() };
     if (location !== undefined) updates.location = location;
     if (name !== undefined) updates.name = name;
     if (tunnelHostname !== undefined) updates.ipAddress = tunnelHostname || router.ipAddress;
@@ -223,6 +224,24 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar router: ' + error.message });
+  }
+});
+
+routersRouter.post('/:id/test-connection', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routerId = parseInt(req.params.id);
+    const [router] = await db.select().from(equipment).where(
+      and(eq(equipment.id, routerId), eq(equipment.type, 'router'), orgFilter(equipment, orgId)),
+    ).limit(1);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+
+    const { testRouterConnection } = await import('../lib/mikrotikClient.js');
+    const info = await testRouterConnection(router);
+    res.json({ success: true, routerInfo: info });
+  } catch (error) {
+    res.status(503).json({ error: error.message });
   }
 });
 

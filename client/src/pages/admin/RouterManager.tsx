@@ -124,6 +124,11 @@ export default function RouterManager({ API, onBack }: Props) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
   const [mikrotikScript, setMikrotikScript] = useState<any>(null)
+  const [editingRouter, setEditingRouter] = useState<any>(null)
+  const [credForm, setCredForm] = useState<any>({})
+  const [credSaving, setCredSaving] = useState(false)
+  const [credTesting, setCredTesting] = useState(false)
+  const [credTestResult, setCredTestResult] = useState<any>(null)
 
   function api() {
     return axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } })
@@ -172,6 +177,7 @@ export default function RouterManager({ API, onBack }: Props) {
         routerPort: form.routerPort,
         routerUser: form.routerUser,
         routerPass: form.routerPass,
+        tunnelHostname: form.tunnelHostname,
       })
       setTestResult({ success: true, data: res.data })
     } catch (e: any) {
@@ -187,6 +193,62 @@ export default function RouterManager({ API, onBack }: Props) {
       await api().patch(`/routers/${id}`, { tunnelHostname: host.trim(), connectionMethod: 'cloudflare_tunnel' })
       loadRouters()
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
+  }
+
+  function openCredentials(router: any) {
+    setEditingRouter(router)
+    setCredForm({
+      routerUser: router.credentials?.routerUser || 'admin',
+      routerPass: router.credentials?.routerPass || '',
+      tunnelHostname: router.credentials?.tunnelHostname || router.ipAddress || '',
+      routerPort: router.credentials?.routerPort || '443',
+      connectionMethod: resolveConnectionMethod(router),
+    })
+    setCredTestResult(null)
+  }
+
+  async function saveCredentials() {
+    if (!editingRouter) return
+    if (!credForm.routerUser || !credForm.routerPass) {
+      alert('Usuario y contraseña API son obligatorios')
+      return
+    }
+    setCredSaving(true)
+    try {
+      await api().patch(`/routers/${editingRouter.id}`, {
+        routerUser: credForm.routerUser,
+        routerPass: credForm.routerPass,
+        tunnelHostname: credForm.tunnelHostname,
+        routerPort: credForm.routerPort,
+        connectionMethod: credForm.connectionMethod,
+      })
+      setEditingRouter(null)
+      loadRouters()
+      alert('Credenciales API guardadas')
+    } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
+    setCredSaving(false)
+  }
+
+  async function testStoredCredentials() {
+    if (!editingRouter) return
+    setCredTesting(true)
+    setCredTestResult(null)
+    try {
+      if (credForm.routerUser && credForm.routerPass) {
+        await api().patch(`/routers/${editingRouter.id}`, {
+          routerUser: credForm.routerUser,
+          routerPass: credForm.routerPass,
+          tunnelHostname: credForm.tunnelHostname,
+          routerPort: credForm.routerPort,
+          connectionMethod: credForm.connectionMethod,
+        })
+      }
+      const res = await api().post(`/routers/${editingRouter.id}/test-connection`)
+      setCredTestResult({ success: true, data: res.data })
+    } catch (e: any) {
+      setCredTestResult({ success: false, error: e.response?.data?.error || e.message })
+    }
+    setCredTesting(false)
   }
 
   async function handleDelete(id: number) {
@@ -622,6 +684,20 @@ export default function RouterManager({ API, onBack }: Props) {
                         <MethodIcon className="h-3 w-3" /> {methodInfo?.label || 'IP directa'}
                       </span>
                     </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500">API REST</span>
+                      {router.hasApiCredentials ? (
+                        <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Configurada</span>
+                      ) : (
+                        <span className="text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-full">Sin credenciales</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <button onClick={() => openCredentials(router)}
+                      className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
+                      {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
+                    </button>
                   </div>
                   <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.status === 'online' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
                     {router.status === 'online' ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
@@ -633,6 +709,63 @@ export default function RouterManager({ API, onBack }: Props) {
           </div>
         )}
       </main>
+
+      {editingRouter && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-lg">Credenciales API — {editingRouter.name}</h3>
+                <p className="text-sm text-gray-500">Usuario/contraseña REST MikroTik para provisionar PPPoE y colas</p>
+              </div>
+              <button onClick={() => setEditingRouter(null)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Host túnel / IP</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm"
+                  placeholder="l009-test.fibranexus.cl"
+                  value={credForm.tunnelHostname || ''}
+                  onChange={e => setCredForm({ ...credForm, tunnelHostname: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Usuario API *</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerUser || ''}
+                  onChange={e => setCredForm({ ...credForm, routerUser: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Contraseña API *</label>
+                <input type="password" className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerPass || ''}
+                  onChange={e => setCredForm({ ...credForm, routerPass: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Puerto HTTPS</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerPort || '443'}
+                  onChange={e => setCredForm({ ...credForm, routerPort: e.target.value })} />
+              </div>
+              {credTestResult && (
+                <div className={`text-sm p-3 rounded-lg ${credTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                  {credTestResult.success ? 'Conexión OK — RouterOS responde' : credTestResult.error}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => setEditingRouter(null)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button onClick={testStoredCredentials} disabled={credTesting}
+                className="flex-1 py-2 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50">
+                {credTesting ? 'Probando…' : 'Probar'}
+              </button>
+              <button onClick={saveCredentials} disabled={credSaving}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {credSaving ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

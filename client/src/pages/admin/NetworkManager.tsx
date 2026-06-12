@@ -595,8 +595,16 @@ export default function NetworkManager({ API, onBack }: Props) {
               <div>
                 <label className="text-sm font-medium">Tipo</label>
                 <select className="w-full border rounded-lg px-3 py-2 mt-1" value={equipForm.type}
-                  onChange={e => setEquipForm({ ...equipForm, type: e.target.value })}>
-                  {EQUIP_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  onChange={e => {
+                    const t = e.target.value
+                    if (t === 'router') {
+                      setShowEquipForm(false)
+                      openRouterModal()
+                      return
+                    }
+                    setEquipForm({ ...equipForm, type: t })
+                  }}>
+                  {EQUIP_TYPES.filter(t => t.value !== 'router').map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-2">
