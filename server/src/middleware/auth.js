@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { ensureOrgStaffAccess } from '../lib/tenant.js';
 
 export async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -9,10 +10,12 @@ export async function authenticateToken(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await db.query.users.findFirst({ where: eq(users.id, decoded.id) });
+    let user = await db.query.users.findFirst({ where: eq(users.id, decoded.id) });
     if (!user || !user.isActive) {
       return res.status(403).json({ error: 'Usuario inactivo o no encontrado' });
     }
+
+    user = await ensureOrgStaffAccess(user);
 
     req.user = {
       id: user.id,

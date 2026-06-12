@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { authenticateToken } from '../middleware/auth.js';
-import { slugify, loadOrganization, trialDaysLeft } from '../lib/tenant.js';
+import { slugify, loadOrganization, trialDaysLeft, ensureOrgStaffAccess } from '../lib/tenant.js';
 
 export const authRouter = Router();
 
@@ -102,9 +102,10 @@ authRouter.post('/login', async (req, res) => {
 
     await db.update(users).set({ lastLogin: new Date() }).where(eq(users.id, user.id));
 
-    const organization = user.organizationId ? await loadOrganization(user.organizationId) : null;
-    const token = signToken(user);
-    res.json({ user: userResponse(user, organization), token });
+    const promoted = await ensureOrgStaffAccess(user);
+    const organization = promoted.organizationId ? await loadOrganization(promoted.organizationId) : null;
+    const token = signToken(promoted);
+    res.json({ user: userResponse(promoted, organization), token });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
@@ -148,8 +149,9 @@ authRouter.post('/setup', async (req, res) => {
 });
 
 authRouter.get('/me', authenticateToken, async (req, res) => {
-  const user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
+  let user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  user = await ensureOrgStaffAccess(user);
   const organization = user.organizationId ? await loadOrganization(user.organizationId) : null;
   res.json(userResponse(user, organization));
 });

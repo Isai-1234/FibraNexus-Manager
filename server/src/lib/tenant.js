@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { organizations } from '../db/schema.js';
+import { organizations, users } from '../db/schema.js';
 
 export function getOrganizationId(req) {
   const id = req.user?.organizationId;
@@ -58,6 +58,27 @@ export function inferConnectionMethod(router) {
   }
   if (creds.connectionMethod) return creds.connectionMethod;
   return 'direct';
+}
+
+export async function ensureOrgStaffAccess(user) {
+  if (!user?.organizationId || (user.role !== 'client')) return user;
+
+  const staff = await db.query.users.findMany({
+    where: and(
+      eq(users.organizationId, user.organizationId),
+      inArray(users.role, ['admin', 'technician']),
+      eq(users.isActive, true),
+    ),
+  });
+
+  const hasActiveStaff = staff.some((s) => s.lastLogin != null);
+  if (hasActiveStaff) return user;
+
+  const [updated] = await db.update(users)
+    .set({ role: 'admin', updatedAt: new Date() })
+    .where(eq(users.id, user.id))
+    .returning();
+  return updated || user;
 }
 
 export async function requireActiveOrg(req, res, next) {

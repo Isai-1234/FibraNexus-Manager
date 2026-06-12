@@ -49,20 +49,11 @@ export async function runMigrations(connectionString) {
     `;
 
     await sql`
-      UPDATE users u SET role = 'admin'
-      FROM (
-        SELECT DISTINCT ON (organization_id) id
-        FROM users
-        WHERE organization_id IS NOT NULL
-        ORDER BY organization_id, id ASC
-      ) first_user
-      WHERE u.id = first_user.id
-        AND u.role = 'client'
-        AND NOT EXISTS (
-          SELECT 1 FROM users u2
-          WHERE u2.organization_id = u.organization_id
-            AND u2.role IN ('admin', 'technician')
-        )
+      UPDATE users u SET organization_id = o.id
+      FROM organizations o
+      WHERE u.organization_id IS NULL
+        AND o.slug = 'internetsur'
+        AND u.email IN ('admin@fibranexus.cl', 'tecnico@fibranexus.cl')
     `;
 
     console.log('Multi-tenant migration OK');
