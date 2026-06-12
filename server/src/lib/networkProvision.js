@@ -8,6 +8,7 @@ import {
   createSimpleQueue,
   setPppoeSecretDisabled,
   disableSimpleQueue,
+  removeSimpleQueue,
   buildQueueLimits,
   testRouterConnection,
 } from './mikrotikClient.js';
@@ -16,6 +17,20 @@ function generatePppCredentials(clientId, serviceId) {
   const username = `fn${clientId}s${serviceId}`;
   const password = crypto.randomBytes(6).toString('hex');
   return { username, password };
+}
+
+/** Nombre legible en MikroTik Simple Queue (nombre del abonado) */
+export function buildQueueName(fullName, serviceId) {
+  const cleaned = String(fullName || '')
+    .trim()
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!cleaned) return `Abonado-${serviceId}`;
+  return cleaned.length > 63 ? `${cleaned.slice(0, 60).trim()}…` : cleaned;
+}
+
+function isLegacyQueueName(name) {
+  return /^q-s\d+$/i.test(name) || /^q-fn\d+s\d+$/i.test(name);
 }
 
 export async function loadServiceContext(serviceId, orgId) {
@@ -69,8 +84,11 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
   }
 
   const profile = ctx.service.pppProfile || 'default';
-  const queueName = ctx.service.queueName || (username ? `q-${username}` : `q-s${serviceId}`);
+  const queueName = (!ctx.service.queueName || isLegacyQueueName(ctx.service.queueName))
+    ? buildQueueName(ctx.client.fullName, serviceId)
+    : ctx.service.queueName;
   const maxLimit = buildQueueLimits(ctx.plan.uploadSpeed, ctx.plan.downloadSpeed);
+  const queueComment = `${ctx.client.fullName} — ${ctx.plan.name}`;
 
   if (doPppoe) {
     if (!username || !password) throw new Error('PPPoE requiere usuario — crea primero el secret o usa modo cola con IP');
@@ -85,11 +103,15 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
   if (doQueue) {
     const target = username || ctx.service.ipAddress;
     if (!target) throw new Error('Simple Queue requiere usuario PPPoE o una IP estática en el servicio');
+    const oldQueueName = ctx.service.queueName;
+    if (oldQueueName && oldQueueName !== queueName) {
+      try { await removeSimpleQueue(router, oldQueueName); } catch { /* cola anterior ya no existe */ }
+    }
     await createSimpleQueue(router, {
       name: queueName,
       target,
       maxLimit,
-      comment: ctx.plan.name,
+      comment: queueComment,
     });
   }
 
