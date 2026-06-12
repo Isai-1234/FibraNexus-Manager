@@ -6,7 +6,12 @@ export function authenticateToken(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      organizationId: decoded.organizationId || null,
+    };
     next();
   } catch (error) {
     return res.status(403).json({ error: 'Token inválido' });

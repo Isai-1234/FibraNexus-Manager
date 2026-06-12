@@ -17,6 +17,8 @@ import { ipManagementRouter } from './routes/ipManagement.js';
 import { routersRouter, agentHeartbeatHandler } from './routes/routers.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
+import { requireActiveOrg } from './lib/tenant.js';
+import { runMigrations } from './db/migrate.js';
 
 dotenv.config();
 
@@ -27,17 +29,17 @@ app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
-app.use('/api/clients', authenticateToken, clientsRouter);
-app.use('/api/plans', authenticateToken, plansRouter);
-app.use('/api/services', authenticateToken, servicesRouter);
-app.use('/api/equipment', authenticateToken, equipmentRouter);
-app.use('/api/invoices', authenticateToken, invoicesRouter);
-app.use('/api/payments', authenticateToken, paymentsRouter);
-app.use('/api/tickets', authenticateToken, ticketsRouter);
-app.use('/api/dashboard', authenticateToken, dashboardRouter);
-app.use('/api/ip-management', authenticateToken, ipManagementRouter);
+app.use('/api/clients', authenticateToken, requireActiveOrg, clientsRouter);
+app.use('/api/plans', authenticateToken, requireActiveOrg, plansRouter);
+app.use('/api/services', authenticateToken, requireActiveOrg, servicesRouter);
+app.use('/api/equipment', authenticateToken, requireActiveOrg, equipmentRouter);
+app.use('/api/invoices', authenticateToken, requireActiveOrg, invoicesRouter);
+app.use('/api/payments', authenticateToken, requireActiveOrg, paymentsRouter);
+app.use('/api/tickets', authenticateToken, requireActiveOrg, ticketsRouter);
+app.use('/api/dashboard', authenticateToken, requireActiveOrg, dashboardRouter);
+app.use('/api/ip-management', authenticateToken, requireActiveOrg, ipManagementRouter);
 app.post('/api/routers/agent/heartbeat', agentHeartbeatHandler);
-app.use('/api/routers', authenticateToken, routersRouter);
+app.use('/api/routers', authenticateToken, requireActiveOrg, routersRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'FibraNexus Manager', version: '1.0.0' });
@@ -63,8 +65,19 @@ if (clientDist) {
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log('🚀 FibraNexus Manager running on port', PORT);
-});
+async function start() {
+  if (process.env.DATABASE_URL) {
+    try {
+      await runMigrations(process.env.DATABASE_URL);
+    } catch (err) {
+      console.error('Migration error:', err);
+    }
+  }
+  app.listen(PORT, () => {
+    console.log('🚀 FibraNexus Manager running on port', PORT);
+  });
+}
+
+start();
 
 export default app;

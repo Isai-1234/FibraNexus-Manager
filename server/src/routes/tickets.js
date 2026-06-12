@@ -1,22 +1,26 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { tickets, users, clients } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
+import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 
 export const ticketsRouter = Router();
 
 ticketsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const allTickets = await db.select({
       id: tickets.id, ticketNumber: tickets.ticketNumber, subject: tickets.subject,
       status: tickets.status, priority: tickets.priority, createdAt: tickets.createdAt,
-      client: { fullName: users.fullName, email: users.email }
+      client: { fullName: users.fullName, email: users.email },
     })
-    .from(tickets)
-    .leftJoin(clients, eq(tickets.clientId, clients.id))
-    .leftJoin(users, eq(clients.userId, users.id))
-    .limit(50);
+      .from(tickets)
+      .leftJoin(clients, eq(tickets.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(orgFilter(tickets, orgId))
+      .limit(50);
     res.json(allTickets);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar tickets' });
@@ -25,10 +29,13 @@ ticketsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
 
 ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const { clientId, subject, description, priority } = req.body;
     const ticketNumber = 'TKT-' + Date.now();
     const [ticket] = await db.insert(tickets).values({
-      ticketNumber, clientId, subject, description, priority: priority || 'medium'
+      organizationId: orgId,
+      ticketNumber, clientId, subject, description, priority: priority || 'medium',
     }).returning();
     res.status(201).json(ticket);
   } catch (error) {
@@ -36,10 +43,11 @@ ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => 
   }
 });
 
-// DELETE /:id
 ticketsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
-    await db.delete(tickets).where(eq(tickets.id, parseInt(req.params.id)));
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    await db.delete(tickets).where(and(eq(tickets.id, parseInt(req.params.id)), orgFilter(tickets, orgId)));
     res.json({ message: 'Ticket eliminado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar ticket' });

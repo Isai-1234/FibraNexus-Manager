@@ -1,28 +1,18 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { connectedAgents } from './routers.js';
+import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 
 export const equipmentRouter = Router();
 
-function inferConnectionMethod(item) {
-  const creds = item.credentials || {};
-  const info = creds.lastRouterInfo;
-  if (creds.tunnelToken || creds.tunnelHostname || (item.ipAddress && String(item.ipAddress).includes('fibranexus.cl'))) {
-    return 'cloudflare_tunnel';
-  }
-  if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && info?.version) {
-    return 'cloudflare_tunnel';
-  }
-  if (creds.connectionMethod) return creds.connectionMethod;
-  return 'direct';
-}
-
 equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
-    const allEquipment = await db.select().from(equipment).limit(50);
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const allEquipment = await db.select().from(equipment).where(orgFilter(equipment, orgId)).limit(50);
     const enriched = allEquipment.map(item => {
       if (item.type !== 'router') return item;
       const agent = connectedAgents.get(item.id.toString());
@@ -42,9 +32,12 @@ equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) =>
 
 equipmentRouter.post('/', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const { name, type, brand, model, ipAddress, location } = req.body;
     const [eq] = await db.insert(equipment).values({
-      name, type, brand, model, ipAddress, location, status: 'offline'
+      organizationId: orgId,
+      name, type, brand, model, ipAddress, location, status: 'offline',
     }).returning();
     res.status(201).json(eq);
   } catch (error) {
@@ -52,10 +45,11 @@ equipmentRouter.post('/', requireRole('admin'), async (req, res) => {
   }
 });
 
-// DELETE /:id
 equipmentRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
-    await db.delete(equipment).where(eq(equipment.id, parseInt(req.params.id)));
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    await db.delete(equipment).where(and(eq(equipment.id, parseInt(req.params.id)), orgFilter(equipment, orgId)));
     res.json({ message: 'Equipo eliminado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar equipo' });

@@ -3,12 +3,14 @@ import { db } from '../db/index.js';
 import { invoices, clients, users, clientServices, plans, payments } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
+import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 
 export const invoicesRouter = Router();
 
-// GET - Listar facturas
 invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const allInvoices = await db.select({
       id: invoices.id, invoiceNumber: invoices.invoiceNumber, amount: invoices.amount,
       tax: invoices.tax, total: invoices.total, status: invoices.status,
@@ -19,6 +21,7 @@ invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
     .from(invoices)
     .leftJoin(clients, eq(invoices.clientId, clients.id))
     .leftJoin(users, eq(clients.userId, users.id))
+    .where(orgFilter(invoices, orgId))
     .orderBy(invoices.createdAt)
     .limit(50);
     res.json(allInvoices);
@@ -30,14 +33,17 @@ invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
 // POST /generate - Generar facturas del mes
 invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const { billingPeriod, dueDate } = req.body;
     const activeServices = await db.select({
       id: clientServices.id, clientId: clientServices.clientId,
-      planId: clientServices.planId
+      planId: clientServices.planId,
     })
     .from(clientServices)
+    .leftJoin(clients, eq(clientServices.clientId, clients.id))
     .leftJoin(plans, eq(clientServices.planId, plans.id))
-    .where(eq(clientServices.status, 'active'));
+    .where(and(eq(clientServices.status, 'active'), orgFilter(clients, orgId)));
 
     const generated = [];
     for (const svc of activeServices) {
@@ -55,6 +61,7 @@ invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
       if (exists) continue;
 
       const [inv] = await db.insert(invoices).values({
+        organizationId: orgId,
         invoiceNumber: invNumber, clientId: svc.clientId, clientServiceId: svc.id,
         amount: String(amount), tax: String(tax), total: String(total),
         status: 'pending', dueDate: dueDate || new Date().toISOString().split('T')[0],

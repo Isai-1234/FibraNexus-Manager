@@ -295,6 +295,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
+        {user?.organization?.plan === 'trial' && user?.organization?.trialDaysLeft != null && (
+          <div className={`px-8 py-3 text-sm flex items-center justify-between ${user.organization.trialDaysLeft <= 3 ? 'bg-amber-50 text-amber-900 border-b border-amber-200' : 'bg-sky-50 text-sky-900 border-b border-sky-200'}`}>
+            <span>
+              Trial activo — <strong>{user.organization.trialDaysLeft} días</strong> restantes en plan gratuito
+            </span>
+            <span className="text-xs opacity-75">Próximamente: suscripción Starter / Pro</span>
+          </div>
+        )}
         <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
           <div>
             <h1 className="text-xl font-bold text-gray-900">{activeTab === 'ips' ? 'Gestión de IPs' : menuItems.find(m => m.id === activeTab)?.label || activeTab}</h1>
@@ -545,7 +553,10 @@ function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
       <div className="p-6 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center"><Wifi className="h-6 w-6" /></div>
-          <div><h2 className="text-lg font-bold">FibraNexus</h2><p className="text-gray-400 text-xs">ISP Manager Pro</p></div>
+          <div>
+            <h2 className="text-lg font-bold truncate max-w-[140px]">{user?.organization?.name || 'FibraNexus'}</h2>
+            <p className="text-gray-400 text-xs">ISP Manager Pro</p>
+          </div>
         </div>
       </div>
       <nav className="flex-1 mt-2 overflow-y-auto">

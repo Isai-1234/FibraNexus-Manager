@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
+import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import crypto from 'crypto';
 
 export const routersRouter = Router();
@@ -72,28 +73,6 @@ ${boot}
 :put "FibraNexus: scheduler y boot OK"`;
 }
 
-function inferConnectionMethod(router) {
-  const creds = router.credentials || {};
-  const saved = routerInfoFromRouter(router);
-  if (creds.tunnelToken || creds.tunnelHostname || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
-    return 'cloudflare_tunnel';
-  }
-  if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && saved?.version) {
-    return 'cloudflare_tunnel';
-  }
-  if (creds.connectionMethod) return creds.connectionMethod;
-  return 'direct';
-}
-
-function routerInfoFromRouter(router) {
-  const agent = connectedAgents.get(String(router.id));
-  return agent?.routerInfo || router.credentials?.lastRouterInfo || null;
-}
-
-function resolveHost(router) {
-  return router.ipAddress || router.credentials?.tunnelHostname || null;
-}
-
 function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connectionMethod }) {
   const heartbeat = buildHeartbeatScript(token, routerId);
   const lines = [
@@ -131,7 +110,11 @@ function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connecti
 
 routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
-    const routers = await db.select().from(equipment).where(eq(equipment.type, 'router')).limit(50);
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routers = await db.select().from(equipment).where(
+      and(eq(equipment.type, 'router'), orgFilter(equipment, orgId)),
+    ).limit(50);
     const routersWithStatus = routers.map(r => {
       const agent = connectedAgents.get(r.id.toString());
       const connectionMethod = inferConnectionMethod(r);
@@ -152,6 +135,8 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
 
 routersRouter.post('/', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const {
       name, brand, model, location, routerType, snmpCommunity,
       connectionMethod, routerIp, routerPort, routerUser, routerPass,
@@ -170,6 +155,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       encryptedAt: new Date().toISOString(),
     };
     const [router] = await db.insert(equipment).values({
+      organizationId: orgId,
       name,
       type: 'router',
       brand: brand || routerType,
@@ -213,8 +199,12 @@ export async function agentHeartbeatHandler(req, res) {
 
 routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const routerId = parseInt(req.params.id);
-    const routers = await db.select().from(equipment).where(eq(equipment.id, routerId));
+    const routers = await db.select().from(equipment).where(
+      and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
+    );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
     const { connectionMethod, tunnelHostname, location, name } = req.body;
@@ -232,7 +222,8 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
   }
 });
 
-routersRouter.get('/:id/stats', requireRole('admin', 'technician'), async (req, res) => {  try {
+routersRouter.get('/:id/stats', requireRole('admin', 'technician'), async (req, res) => {
+  try {
     const agent = connectedAgents.get(req.params.id);
     if (!agent) return res.status(503).json({ error: 'Agente no conectado' });
     res.json({ connected: true, lastSeen: agent.lastSeen, routerInfo: agent.routerInfo || {} });
@@ -243,9 +234,11 @@ routersRouter.get('/:id/stats', requireRole('admin', 'technician'), async (req, 
 
 routersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const routerId = parseInt(req.params.id);
     connectedAgents.delete(routerId.toString());
-    await db.delete(equipment).where(eq(equipment.id, routerId));
+    await db.delete(equipment).where(and(eq(equipment.id, routerId), orgFilter(equipment, orgId)));
     res.json({ message: 'Router eliminado y token revocado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar router' });
@@ -290,8 +283,12 @@ routersRouter.post('/test-connection', requireRole('admin'), async (req, res) =>
 
 routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
     const routerId = parseInt(req.params.id);
-    const routers = await db.select().from(equipment).where(eq(equipment.id, routerId));
+    const routers = await db.select().from(equipment).where(
+      and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
+    );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
     const token = router.credentials?.agentToken;
@@ -312,7 +309,8 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
     const persistenceScript = buildPersistenceScript();
 
     const isTunnel = connectionMethod === 'cloudflare_tunnel';
-    res.json({      script: heartbeatScript,
+    res.json({
+      script: heartbeatScript,
       fullSetupScript,
       persistenceScript,
       connectionMethod,

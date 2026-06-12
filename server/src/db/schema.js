@@ -11,8 +11,23 @@ export const ticketPriorityEnum = pgEnum('ticket_priority', ['low', 'medium', 'h
 export const equipmentTypeEnum = pgEnum('equipment_type', ['router', 'switch', 'olt', 'ont', 'ap', 'cpe', 'server', 'other']);
 export const equipmentStatusEnum = pgEnum('equipment_status', ['online', 'offline', 'maintenance', 'error', 'installing']);
 
+export const organizations = pgTable('organizations', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 100 }).notNull().unique(),
+  email: varchar('email', { length: 255 }),
+  plan: varchar('plan', { length: 50 }).notNull().default('trial'),
+  trialEndsAt: timestamp('trial_ends_at'),
+  isActive: boolean('is_active').default(true).notNull(),
+  maxRouters: integer('max_routers').default(5),
+  maxClients: integer('max_clients').default(100),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }).notNull(),
   fullName: varchar('full_name', { length: 255 }).notNull(),
@@ -26,6 +41,7 @@ export const users = pgTable('users', {
 
 export const clients = pgTable('clients', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
   clientType: clientTypeEnum('client_type').notNull().default('individual'),
   rut: varchar('rut', { length: 20 }),
@@ -42,6 +58,7 @@ export const clients = pgTable('clients', {
 
 export const plans = pgTable('plans', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
   type: serviceTypeEnum('type').notNull(),
@@ -71,6 +88,7 @@ export const clientServices = pgTable('client_services', {
 
 export const equipment = pgTable('equipment', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   name: varchar('name', { length: 255 }).notNull(),
   type: equipmentTypeEnum('type').notNull(),
   brand: varchar('brand', { length: 100 }).notNull(),
@@ -95,6 +113,7 @@ export const equipment = pgTable('equipment', {
 
 export const invoices = pgTable('invoices', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   invoiceNumber: varchar('invoice_number', { length: 50 }).notNull().unique(),
   clientId: integer('client_id').references(() => clients.id).notNull(),
   clientServiceId: integer('client_service_id').references(() => clientServices.id),
@@ -125,6 +144,7 @@ export const payments = pgTable('payments', {
 
 export const tickets = pgTable('tickets', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   ticketNumber: varchar('ticket_number', { length: 50 }).notNull().unique(),
   clientId: integer('client_id').references(() => clients.id).notNull(),
   assignedTo: integer('assigned_to').references(() => users.id),
@@ -150,6 +170,7 @@ export const ticketMessages = pgTable('ticket_messages', {
 
 export const ipAddresses = pgTable('ip_addresses', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   address: varchar('address', { length: 45 }).notNull().unique(),
   subnet: varchar('subnet', { length: 45 }),
   gateway: varchar('gateway', { length: 45 }),
@@ -164,6 +185,7 @@ export const ipAddresses = pgTable('ip_addresses', {
 
 export const activityLog = pgTable('activity_log', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
   userId: integer('user_id').references(() => users.id),
   action: varchar('action', { length: 255 }).notNull(),
   entity: varchar('entity', { length: 100 }).notNull(),

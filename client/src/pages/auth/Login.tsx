@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 export default function Login({ onLogin }: { onLogin: (e: string, p: string) => Promise<void> }) {
-  const [email, setEmail] = useState('admin@fibranexus.cl')
-  const [password, setPassword] = useState('123456')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -39,6 +40,9 @@ export default function Login({ onLogin }: { onLogin: (e: string, p: string) => 
             {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
           </button>
         </form>
+        <p className="text-center text-sm text-gray-500 mt-4">
+          ¿Nuevo ISP? <Link to="/register" className="text-blue-600 hover:underline font-medium">Crear cuenta gratis — 14 días trial</Link>
+        </p>
       </div>
     </div>
   )

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fibranexus-manager
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
