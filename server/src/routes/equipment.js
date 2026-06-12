@@ -37,12 +37,12 @@ equipmentRouter.post('/', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { name, type, brand, model, ipAddress, location, siteId, macAddress } = req.body;
-    const [eq] = await db.insert(equipment).values({
+    const [created] = await db.insert(equipment).values({
       organizationId: orgId,
       siteId: siteId ? parseInt(siteId) : null,
       name, type, brand, model, ipAddress, macAddress: macAddress || null, location, status: 'offline',
     }).returning();
-    res.status(201).json(eq);
+    res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: 'Error al crear equipo' });
   }

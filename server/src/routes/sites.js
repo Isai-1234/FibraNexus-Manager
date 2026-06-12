@@ -190,7 +190,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       if (!site) return res.status(404).json({ error: 'Sitio no encontrado' });
     }
 
-    const [eq] = await db.insert(equipment).values({
+    const [created] = await db.insert(equipment).values({
       organizationId: orgId,
       siteId: siteId ? parseInt(siteId) : null,
       name,
@@ -204,7 +204,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       status: 'offline',
     }).returning();
 
-    res.status(201).json(eq);
+    res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: 'Error al crear equipo: ' + error.message });
   }

@@ -235,14 +235,14 @@ networkRouter.post('/equipment/:id/snmp/poll', requireRole('admin', 'technician'
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const id = parseInt(req.params.id, 10);
-    const [eq] = await db.select().from(equipment)
+    const [equipmentRow] = await db.select().from(equipment)
       .where(and(eq(equipment.id, id), orgFilter(equipment, orgId)))
       .limit(1);
-    if (!eq) return res.status(404).json({ error: 'Equipo no encontrado' });
+    if (!equipmentRow) return res.status(404).json({ error: 'Equipo no encontrado' });
 
     const result = await dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: id, orgId });
     const status = result.online ? 'online' : 'offline';
-    const meta = { ...(eq.credentials || {}), lastSnmp: result };
+    const meta = { ...(equipmentRow.credentials || {}), lastSnmp: result };
     await db.update(equipment).set({
       status,
       lastSeen: new Date(),
@@ -250,7 +250,7 @@ networkRouter.post('/equipment/:id/snmp/poll', requireRole('admin', 'technician'
       updatedAt: new Date(),
     }).where(eq(equipment.id, id));
 
-    res.json({ equipment: eq.name, ...result });
+    res.json({ equipment: equipmentRow.name, ...result });
   } catch (error) {
     res.status(503).json({ error: error.message });
   }
