@@ -12,8 +12,15 @@ ticketsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const allTickets = await db.select({
-      id: tickets.id, ticketNumber: tickets.ticketNumber, subject: tickets.subject,
-      status: tickets.status, priority: tickets.priority, createdAt: tickets.createdAt,
+      id: tickets.id,
+      clientId: tickets.clientId,
+      ticketNumber: tickets.ticketNumber,
+      subject: tickets.subject,
+      description: tickets.description,
+      category: tickets.category,
+      status: tickets.status,
+      priority: tickets.priority,
+      createdAt: tickets.createdAt,
       client: { fullName: users.fullName, email: users.email },
     })
       .from(tickets)

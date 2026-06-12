@@ -16,10 +16,17 @@ invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
     const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
 
     const baseSelect = {
-      id: invoices.id, invoiceNumber: invoices.invoiceNumber, amount: invoices.amount,
-      tax: invoices.tax, total: invoices.total, status: invoices.status,
-      dueDate: invoices.dueDate, billingPeriod: invoices.billingPeriod,
-      paidDate: invoices.paidDate, createdAt: invoices.createdAt,
+      id: invoices.id,
+      clientId: invoices.clientId,
+      invoiceNumber: invoices.invoiceNumber,
+      amount: invoices.amount,
+      tax: invoices.tax,
+      total: invoices.total,
+      status: invoices.status,
+      dueDate: invoices.dueDate,
+      billingPeriod: invoices.billingPeriod,
+      paidDate: invoices.paidDate,
+      createdAt: invoices.createdAt,
       clientServiceId: invoices.clientServiceId,
       client: { fullName: users.fullName, email: users.email },
     };

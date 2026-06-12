@@ -11,6 +11,17 @@ interface Props {
   onBack: () => void
 }
 
+const OPEN_TICKET_STATUSES = ['open', 'in_progress', 'waiting_client']
+
+function isOpenTicket(status: string) {
+  return OPEN_TICKET_STATUSES.includes(status)
+}
+
+function filterByClientId(items: any[], id: number) {
+  return items.filter((row) =>
+    Number(row.clientId) === Number(id) || Number(row.client?.id) === Number(id))
+}
+
 function defaultServiceForm() {
   return {
     provisionMode: 'both',
@@ -122,10 +133,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         api().get('/tickets'),
       ])
       setClient(cRes.data)
-      setServices((Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) =>
-        Number(s.client?.id) === Number(clientId) || Number(s.clientId) === Number(clientId)))
-      setInvoices((Array.isArray(iRes.data) ? iRes.data : []).filter((i: any) => i.client?.id === clientId || i.clientId === clientId))
-      setTickets((Array.isArray(tRes.data) ? tRes.data : []).filter((t: any) => t.client?.id === clientId || t.clientId === clientId))
+      setServices(filterByClientId(Array.isArray(sRes.data) ? sRes.data : [], clientId))
+      setInvoices(filterByClientId(Array.isArray(iRes.data) ? iRes.data : [], clientId))
+      setTickets(filterByClientId(Array.isArray(tRes.data) ? tRes.data : [], clientId))
       await loadClientEquipment()
 
       const clientServices = (Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) =>
@@ -446,6 +456,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     new Set(services.map(s => `${s.plan?.id}-${s.ipAddress || ''}`)).size < services.length
     || services.filter(s => s.status === 'active').length > 1
   )
+  const openTickets = tickets.filter((t) => isOpenTicket(t.status))
+  const openTicketsCount = openTickets.length
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -864,6 +876,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 {nextDueInvoice.status === 'overdue' ? 'Boleta vencida' : `Vence ${formatDateCL(nextDueInvoice.dueDate)}`}
               </span>
             )}
+            {openTicketsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('tickets')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/30 text-amber-100 border border-amber-400/30 hover:bg-amber-500/40 transition"
+              >
+                {openTicketsCount} ticket{openTicketsCount > 1 ? 's' : ''} abierto{openTicketsCount > 1 ? 's' : ''}
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -875,7 +896,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
             { label: 'Servicios', value: services.length, icon: Wifi, color: 'text-blue-600', bg: 'bg-blue-50' },
             { label: 'Equipos', value: clientEquipment.length, icon: Antenna, color: 'text-orange-600', bg: 'bg-orange-50' },
             { label: 'Por cobrar', value: '$' + totalDeuda.toLocaleString('es-CL'), icon: CreditCard, color: 'text-red-600', bg: 'bg-red-50' },
-            { label: 'Tickets', value: tickets.filter(t => t.status === 'open').length + ' abiertos', icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+            { label: 'Tickets', value: openTicketsCount > 0 ? `${openTicketsCount} abierto${openTicketsCount > 1 ? 's' : ''}` : '0 abiertos', icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50' },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
               <div className="flex items-center gap-2 mb-2">
@@ -894,7 +915,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
             { id: 'equipment', label: `Equipos (${clientEquipment.length})` },
             { id: 'services', label: `Servicio (${services.length})` },
             { id: 'invoices', label: `Facturas (${invoices.length})` },
-            { id: 'tickets', label: `Tickets (${tickets.length})` },
+            { id: 'tickets', label: openTicketsCount > 0 ? `Tickets (${openTicketsCount} abiertos)` : `Tickets (${tickets.length})` },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === tab.id ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -906,6 +927,26 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {openTicketsCount > 0 && (
+              <div className="md:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-amber-900">
+                    {openTicketsCount} ticket{openTicketsCount > 1 ? 's' : ''} de soporte sin resolver
+                  </p>
+                  <p className="text-sm text-amber-800/90 mt-0.5">
+                    {openTickets.slice(0, 2).map((t) => t.subject).join(' · ')}
+                    {openTicketsCount > 2 ? ` · +${openTicketsCount - 2} más` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tickets')}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 shrink-0"
+                >
+                  Ver tickets
+                </button>
+              </div>
+            )}
             {/* Datos personales */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-4">
