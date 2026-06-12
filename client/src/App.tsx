@@ -4,6 +4,8 @@ import axios from 'axios'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import AdminDashboard from './pages/admin/Dashboard'
+import ClientPortal from './pages/portal/ClientPortal'
+import PlatformDashboard from './pages/platform/PlatformDashboard'
 
 const API = import.meta.env.VITE_API_URL || '/api'
 
@@ -16,6 +18,16 @@ function applySession(res: { data: any }, setUser: (u: any) => void) {
   } else {
     setUser(data)
   }
+}
+
+function AppShell({ user, API }: { user: any; API: string }) {
+  if (user.role === 'superadmin') {
+    return <PlatformDashboard user={user} API={API} />
+  }
+  if (user.role === 'client') {
+    return <ClientPortal user={user} API={API} />
+  }
+  return <AdminDashboard user={user} API={API} />
 }
 
 function App() {
@@ -54,7 +66,7 @@ function App() {
       <Routes>
         <Route path="/login" element={!user ? <Login onLogin={login} /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register onRegister={setUser} /> : <Navigate to="/" />} />
-        <Route path="/*" element={user ? <AdminDashboard user={user} API={API} /> : <Navigate to="/login" />} />
+        <Route path="/*" element={user ? <AppShell user={user} API={API} /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   )

@@ -56,6 +56,17 @@ export async function runMigrations(connectionString) {
         AND u.email IN ('admin@fibranexus.cl', 'tecnico@fibranexus.cl')
     `;
 
+    await sql`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'superadmin'`;
+
+    const superEmail = process.env.SUPERADMIN_EMAIL;
+    if (superEmail) {
+      await sql`
+        UPDATE users SET role = 'superadmin', organization_id = NULL
+        WHERE LOWER(email) = LOWER(${superEmail})
+      `;
+      console.log('Superadmin assigned to', superEmail);
+    }
+
     console.log('Multi-tenant migration OK');
   } finally {
     await sql.end();

@@ -1,6 +1,6 @@
 import { pgTable, serial, varchar, text, timestamp, boolean, integer, decimal, pgEnum, json, jsonb, date, index } from 'drizzle-orm/pg-core';
 
-export const userRoleEnum = pgEnum('user_role', ['admin', 'technician', 'client']);
+export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'technician', 'client']);
 export const clientTypeEnum = pgEnum('client_type', ['individual', 'business']);
 export const serviceTypeEnum = pgEnum('service_type', ['fiber', 'wisp', 'copper', 'wireless']);
 export const serviceStatusEnum = pgEnum('service_status', ['active', 'suspended', 'cancelled', 'pending', 'cut']);

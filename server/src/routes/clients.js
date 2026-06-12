@@ -5,8 +5,19 @@ import { and, eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { buildClientOverview } from '../lib/clientOverview.js';
 
 export const clientsRouter = Router();
+
+clientsRouter.get('/overview', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    res.json(await buildClientOverview(orgId));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al listar clientes' });
+  }
+});
 
 clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {

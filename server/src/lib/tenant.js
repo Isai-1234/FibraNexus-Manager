@@ -61,7 +61,7 @@ export function inferConnectionMethod(router) {
 }
 
 export async function ensureOrgStaffAccess(user) {
-  if (!user?.organizationId || user.role !== 'client') return user;
+  if (!user?.organizationId || user.role !== 'client' || user.role === 'superadmin') return user;
 
   const abonado = await db.query.clients.findFirst({ where: eq(clients.userId, user.id) });
   if (abonado) return user;

@@ -4,6 +4,7 @@ import { clients, clientServices, equipment, invoices, tickets, users, plans } f
 import { and, eq, sql, ne } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { buildClientOverview } from '../lib/clientOverview.js';
 
 export const dashboardRouter = Router();
 
@@ -25,23 +26,40 @@ dashboardRouter.get('/admin', requireRole('admin', 'technician'), async (req, re
     const openTickets = (await db.select({ count: sql`count(*)` }).from(tickets).where(and(eq(tickets.status, 'open'), orgFilter(tickets, orgId))))[0].count;
     const totalPlans = (await db.select({ count: sql`count(*)` }).from(plans).where(orgFilter(plans, orgId)))[0].count;
 
-    const recentClients = await db.select({
-      id: clients.id, fullName: users.fullName, email: users.email, city: clients.city, createdAt: clients.createdAt,
-    }).from(clients).leftJoin(users, eq(clients.userId, users.id))
-      .where(orgFilter(clients, orgId)).orderBy(clients.createdAt).limit(5);
+    const clientOverview = await buildClientOverview(orgId);
+    const clientsWithProblems = clientOverview.filter((c) => c.hasProblem);
 
     const recentTickets = await db.select({
-      id: tickets.id, subject: tickets.subject, status: tickets.status, priority: tickets.priority, createdAt: tickets.createdAt,
-    }).from(tickets).where(orgFilter(tickets, orgId)).orderBy(tickets.createdAt).limit(5);
+      id: tickets.id,
+      ticketNumber: tickets.ticketNumber,
+      subject: tickets.subject,
+      status: tickets.status,
+      priority: tickets.priority,
+      createdAt: tickets.createdAt,
+      clientName: users.fullName,
+    })
+      .from(tickets)
+      .leftJoin(clients, eq(tickets.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(orgFilter(tickets, orgId))
+      .orderBy(tickets.createdAt)
+      .limit(8);
 
     res.json({
       stats: {
-        totalClients: Number(totalClients), activeServices: Number(activeServices),
-        totalEquipment: Number(totalEquipment), totalRouters: Number(totalRouters),
-        openTickets: Number(openTickets), totalPlans: Number(totalPlans),
-        pendingAmount: Number(pendingInvoices.total || 0), pendingCount: Number(pendingInvoices.count || 0),
+        totalClients: Number(totalClients),
+        activeServices: Number(activeServices),
+        totalEquipment: Number(totalEquipment),
+        totalRouters: Number(totalRouters),
+        openTickets: Number(openTickets),
+        totalPlans: Number(totalPlans),
+        pendingAmount: Number(pendingInvoices.total || 0),
+        pendingCount: Number(pendingInvoices.count || 0),
+        clientsWithProblems: clientsWithProblems.length,
       },
-      recentClients, recentTickets,
+      clientOverview,
+      clientsWithProblems,
+      recentTickets,
     });
   } catch (error) {
     res.status(500).json({ error: 'Error: ' + error.message });
