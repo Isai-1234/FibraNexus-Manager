@@ -32,6 +32,19 @@ function statusDot(item: any) {
   return online ? 'bg-green-500' : 'bg-gray-400'
 }
 
+function formatMikrotikLimit(value: string | undefined): string {
+  if (!value) return '—'
+  if (/[kmgt]/i.test(value)) return value
+  return value.split('/').map((part) => {
+    const n = parseInt(part.replace(/\D/g, ''), 10)
+    if (!n || Number.isNaN(n)) return part.trim()
+    if (n >= 1_000_000_000) return `${n / 1_000_000_000}G`
+    if (n >= 1_000_000) return `${n / 1_000_000}M`
+    if (n >= 1_000) return `${n / 1_000}k`
+    return String(n)
+  }).join('/')
+}
+
 function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any) {
   const isOpen = expanded.has(site.id)
   const hasChildren = site.children?.length > 0
@@ -419,8 +432,9 @@ export default function NetworkManager({ API, onBack }: Props) {
                           <div className="space-y-1 max-h-40 overflow-y-auto">
                             {(routerNetwork.simpleQueues || []).slice(0, 20).map((q: any) => (
                               <div key={q['.id']} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
-                                <span className="font-mono truncate">{q.name}</span>
-                                <span className="text-gray-500 ml-auto">{q['max-limit']}</span>
+                                <span className="font-medium truncate">{q.name}</span>
+                                {q.target && <span className="text-gray-400 font-mono truncate">{String(q.target).split('/')[0]}</span>}
+                                <span className="text-gray-600 ml-auto font-mono">{formatMikrotikLimit(q['max-limit'])}</span>
                               </div>
                             ))}
                           </div>
