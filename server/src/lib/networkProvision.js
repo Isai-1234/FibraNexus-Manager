@@ -14,6 +14,7 @@ import {
   testRouterConnection,
 } from './mikrotikClient.js';
 import { upsertDhcpStaticLease, removeDhcpLease } from './mikrotikNetwork.js';
+import { sanitizeMikrotikText } from './mikrotikText.js';
 
 function generatePppCredentials(clientId, serviceId) {
   const username = `fn${clientId}s${serviceId}`;
@@ -91,14 +92,14 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
     ? buildQueueName(ctx.client.fullName, serviceId)
     : ctx.service.queueName;
   const maxLimit = buildQueueLimits(ctx.plan.uploadSpeed, ctx.plan.downloadSpeed);
-  const queueComment = `${ctx.client.fullName} — ${ctx.plan.name}`;
+  const queueComment = sanitizeMikrotikText(`${ctx.client.fullName} - ${ctx.plan.name}`);
   const actions = { pppoe: null, queue: null, dhcpLease: null };
 
   if (doStaticLease && ctx.service.ipAddress) {
     actions.dhcpLease = await upsertDhcpStaticLease(router, {
       address: ctx.service.ipAddress,
       macAddress: ctx.service.macAddress || undefined,
-      comment: ctx.client.fullName,
+      comment: sanitizeMikrotikText(ctx.client.fullName),
     });
   }
 
@@ -108,7 +109,7 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
       username,
       password,
       profile,
-      comment: `FibraNexus: ${ctx.client.fullName}`,
+      comment: sanitizeMikrotikText(`FibraNexus: ${ctx.client.fullName}`),
     });
   }
 
@@ -192,4 +193,45 @@ export async function reactivateServiceNetwork(serviceId, orgId) {
   }
 
   return { success: true };
+}
+
+/** Actualiza nombre y comentario de cola en MikroTik segun datos actuales del abonado (sin cambiar limites). */
+export async function syncServiceQueueMetadata(serviceId, orgId) {
+  const ctx = await loadServiceContext(serviceId, orgId);
+  if (!ctx) throw new Error('Servicio no encontrado');
+  if (!ctx.service.routerId) return { skipped: true, reason: 'Sin router vinculado' };
+
+  const router = await loadRouter(ctx.service.routerId, orgId);
+  if (!router) return { skipped: true, reason: 'Router no encontrado' };
+
+  const target = ctx.service.pppoeUsername || ctx.service.ipAddress;
+  if (!target) return { skipped: true, reason: 'Sin IP o usuario PPPoE en el servicio' };
+
+  const queueName = buildQueueName(ctx.client.fullName, serviceId);
+  const maxLimit = ctx.service.networkMeta?.maxLimit
+    || buildQueueLimits(ctx.plan.uploadSpeed, ctx.plan.downloadSpeed);
+  const queueComment = sanitizeMikrotikText(`${ctx.client.fullName} - ${ctx.plan.name}`);
+
+  await testRouterConnection(router);
+
+  const result = await upsertSimpleQueue(router, {
+    name: queueName,
+    target,
+    maxLimit,
+    comment: queueComment,
+  });
+
+  const patch = { updatedAt: new Date() };
+  if (queueName !== ctx.service.queueName) patch.queueName = queueName;
+
+  if (Object.keys(patch).length > 1) {
+    await db.update(clientServices).set(patch).where(eq(clientServices.id, serviceId));
+  }
+
+  return {
+    action: result.action,
+    queueName,
+    comment: queueComment,
+    fullName: ctx.client.fullName,
+  };
 }

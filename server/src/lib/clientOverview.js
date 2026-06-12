@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import {
-  clients, clientServices, invoices, tickets, users, plans,
+  clients, clientServices, invoices, tickets, users, plans, equipment,
 } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
@@ -68,6 +68,21 @@ export async function buildClientOverview(orgId) {
     .from(tickets)
     .where(and(orgFilter(tickets, orgId), inArray(tickets.clientId, clientIds)));
 
+  const equipRows = await db.select({
+    clientId: equipment.clientId,
+    status: equipment.status,
+    type: equipment.type,
+  })
+    .from(equipment)
+    .where(and(orgFilter(equipment, orgId), inArray(equipment.clientId, clientIds)));
+
+  const equipByClient = new Map();
+  for (const e of equipRows) {
+    if (!e.clientId) continue;
+    if (!equipByClient.has(e.clientId)) equipByClient.set(e.clientId, []);
+    equipByClient.get(e.clientId).push(e);
+  }
+
   const servicesByClient = new Map();
   for (const s of serviceRows) {
     if (!servicesByClient.has(s.clientId)) servicesByClient.set(s.clientId, []);
@@ -90,6 +105,8 @@ export async function buildClientOverview(orgId) {
     const svcs = servicesByClient.get(c.id) || [];
     const invs = invoicesByClient.get(c.id) || [];
     const tks = ticketsByClient.get(c.id) || [];
+    const clientEquip = equipByClient.get(c.id) || [];
+    const cpe = clientEquip.find((e) => e.type === 'cpe') || clientEquip[0];
     const activeSvc = svcs.find((s) => s.status === 'active');
     const suspendedSvc = svcs.find((s) => s.status === 'suspended' || s.status === 'cut');
     const openTickets = tks.filter((t) => ['open', 'in_progress', 'waiting_client'].includes(t.status));
@@ -99,15 +116,29 @@ export async function buildClientOverview(orgId) {
     const maxOverdueDays = overdueInvs.reduce((max, i) => Math.max(max, daysOverdue(i.dueDate)), 0);
 
     let connectionStatus = 'none';
+    let connectionDetail = '';
     if (suspendedSvc || activeSvc?.status === 'suspended') {
       connectionStatus = 'suspended';
+      connectionDetail = 'Servicio suspendido';
     } else if (activeSvc) {
       if (activeSvc.pppoeUsername && onlinePppoe.has(activeSvc.pppoeUsername)) {
         connectionStatus = 'online';
+        connectionDetail = 'PPPoE conectado';
       } else if (activeSvc.pppoeUsername) {
         connectionStatus = 'offline';
+        connectionDetail = 'PPPoE desconectado';
+      } else if (cpe?.status === 'online') {
+        connectionStatus = 'online';
+        connectionDetail = 'Antena online (SNMP)';
+      } else if (cpe?.status === 'offline') {
+        connectionStatus = 'offline';
+        connectionDetail = 'Antena offline';
+      } else if (activeSvc.ipAddress) {
+        connectionStatus = 'static';
+        connectionDetail = `Cola IP ${activeSvc.ipAddress}`;
       } else {
         connectionStatus = 'unknown';
+        connectionDetail = 'Sin datos de red';
       }
     }
 
@@ -129,6 +160,10 @@ export async function buildClientOverview(orgId) {
       alerts.push({ type: 'ticket', label: `${openTickets.length} ticket(s)`, severity: 'medium' });
     }
 
+    const statusSummary = alerts.length
+      ? alerts.map((a) => a.label).slice(0, 3).join(' · ')
+      : 'Al dia';
+
     let serviceStatus = 'none';
     if (activeSvc) serviceStatus = 'active';
     else if (suspendedSvc) serviceStatus = suspendedSvc.status;
@@ -146,15 +181,18 @@ export async function buildClientOverview(orgId) {
       lastLogin: c.lastLogin,
       serviceStatus,
       connectionStatus,
+      connectionDetail,
       planName: activeSvc?.planName || suspendedSvc?.planName || null,
       ipAddress: activeSvc?.ipAddress || null,
       pppoeUsername: activeSvc?.pppoeUsername || null,
+      antennaOnline: cpe?.status === 'online',
       openTickets: openTickets.length,
       pendingAmount,
       overdueDays: maxOverdueDays,
       isDelinquent: maxOverdueDays > 0,
       alerts,
-      hasProblem: alerts.some((a) => a.severity === 'high') || openTickets.length > 0,
+      statusSummary,
+      hasProblem: alerts.some((a) => a.severity === 'high'),
     };
   });
 }

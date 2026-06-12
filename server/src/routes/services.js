@@ -5,7 +5,7 @@ import { and, eq, ne, inArray, sql } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
-import { provisionServiceNetwork, suspendServiceNetwork, reactivateServiceNetwork } from '../lib/networkProvision.js';
+import { provisionServiceNetwork, suspendServiceNetwork, reactivateServiceNetwork, syncServiceQueueMetadata } from '../lib/networkProvision.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
 import { createInvoiceForService } from '../lib/invoiceService.js';
@@ -309,6 +309,24 @@ servicesRouter.post('/:id/provision', requireRole('admin', 'technician'), async 
     res.json({ message: 'Red provisionada', ...result });
   } catch (error) {
     res.status(503).json({ error: 'Error al provisionar: ' + error.message });
+  }
+});
+
+servicesRouter.post('/:id/sync-queue', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id, 10);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const result = await syncServiceQueueMetadata(serviceId, orgId);
+    if (result.skipped) {
+      return res.json({ message: result.reason, skipped: true });
+    }
+    res.json({ message: 'Cola actualizada en MikroTik', ...result });
+  } catch (error) {
+    res.status(503).json({ error: 'Error al sincronizar cola: ' + error.message });
   }
 });
 

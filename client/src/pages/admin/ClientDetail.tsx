@@ -127,6 +127,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setInvoices((Array.isArray(iRes.data) ? iRes.data : []).filter((i: any) => i.client?.id === clientId || i.clientId === clientId))
       setTickets((Array.isArray(tRes.data) ? tRes.data : []).filter((t: any) => t.client?.id === clientId || t.clientId === clientId))
       await loadClientEquipment()
+
+      const clientServices = (Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) =>
+        Number(s.client?.id) === Number(clientId) || Number(s.clientId) === Number(clientId))
+      const activeWithQueue = clientServices.find((s: any) => s.status === 'active' && s.queueName && s.routerId)
+      if (activeWithQueue) {
+        api().post(`/services/${activeWithQueue.id}/sync-queue`).catch(() => {})
+      }
     } catch (e) { console.error(e) }
     setLoading(false)
   }
@@ -817,44 +824,46 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         </div>
       )}
 
-      {/* Header */}
-      <header className="bg-white border-b px-8 py-4 sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition">
+      {/* Header perfil */}
+      <header className="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 text-white px-8 py-6 sticky top-0 z-10 shadow-lg">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-lg transition self-start">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="flex items-center gap-3 flex-1">
-            <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-2xl font-bold border border-white/20 shrink-0">
               {client.user?.fullName?.charAt(0) || '?'}
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{client.user?.fullName}</h1>
-              <p className="text-sm text-gray-500">{client.user?.email} · {client.city || 'Sin ciudad'}</p>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold truncate">{client.user?.fullName}</h1>
+              <p className="text-blue-100/90 text-sm truncate">{client.user?.email}</p>
+              <p className="text-blue-200/70 text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicacion'}</p>
             </div>
           </div>
-          {totalDeuda > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-center">
-              <p className="text-xs text-red-500 font-medium">Deuda pendiente</p>
-              <p className="text-lg font-bold text-red-600">${totalDeuda.toLocaleString('es-CL')}</p>
-            </div>
-          )}
-          <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${activeService ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-              {activeService ? '● Servicio activo' : '○ Sin servicio'}
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            {totalDeuda > 0 && (
+              <div className="bg-red-500/20 border border-red-300/30 rounded-xl px-4 py-2 text-center">
+                <p className="text-xs text-red-100">Deuda</p>
+                <p className="text-lg font-bold">${totalDeuda.toLocaleString('es-CL')}</p>
+              </div>
+            )}
+            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${activeService ? 'bg-green-500/25 text-green-100 border border-green-400/30' : 'bg-white/10 text-white/70'}`}>
+              {activeService ? 'Servicio activo' : 'Sin servicio'}
             </span>
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-              !primaryAntenna ? 'bg-amber-100 text-amber-800' : antennaOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+              !primaryAntenna ? 'bg-amber-500/25 text-amber-100 border border-amber-400/30'
+                : antennaOnline ? 'bg-green-500/25 text-green-100 border border-green-400/30'
+                : 'bg-red-500/25 text-red-100 border border-red-400/30'
             }`}>
-              {!primaryAntenna ? '○ Sin antena' : antennaOnline ? '● Antena online' : '● Antena offline'}
+              {!primaryAntenna ? 'Sin antena' : antennaOnline ? 'Antena online' : 'Antena offline'}
             </span>
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-              nextDueInvoice?.status === 'overdue' ? 'bg-red-100 text-red-700'
-                : nextDueInvoice ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
-            }`}>
-              {nextDueInvoice
-                ? (nextDueInvoice.status === 'overdue' ? '⚠ Boleta vencida' : `Boleta vence ${formatDateCL(nextDueInvoice.dueDate)}`)
-                : 'Sin boleta pendiente'}
-            </span>
+            {nextDueInvoice && (
+              <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                nextDueInvoice.status === 'overdue' ? 'bg-red-500/30 text-red-100' : 'bg-white/10 text-white/80'
+              }`}>
+                {nextDueInvoice.status === 'overdue' ? 'Boleta vencida' : `Vence ${formatDateCL(nextDueInvoice.dueDate)}`}
+              </span>
+            )}
           </div>
         </div>
       </header>

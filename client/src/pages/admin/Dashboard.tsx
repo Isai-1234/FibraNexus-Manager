@@ -218,7 +218,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   const tabDescriptions: Record<string, string> = {
     dashboard: 'Alertas, deudas y acceso rápido a cada cuenta de abonado',
-    clients: 'Quienes pagan internet — tienen login en el portal abonado',
+    clients: 'Lista de abonados con plan, estado de red (PPPoE o antena) y alertas claras',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
     equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
@@ -310,13 +310,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   const connectionLabel: Record<string, string> = {
-    online: 'Online', offline: 'Desconectado', suspended: 'Suspendido', none: '—', unknown: '—',
+    online: 'Online',
+    offline: 'Desconectado',
+    suspended: 'Suspendido',
+    static: 'IP fija',
+    none: 'Sin servicio',
+    unknown: 'Sin monitoreo',
   }
 
   const connectionColor: Record<string, string> = {
     online: 'bg-green-100 text-green-700',
     offline: 'bg-orange-100 text-orange-700',
     suspended: 'bg-yellow-100 text-yellow-700',
+    static: 'bg-blue-100 text-blue-700',
     none: 'bg-gray-100 text-gray-500',
     unknown: 'bg-gray-100 text-gray-500',
   }
@@ -766,6 +772,72 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   <div className="text-6xl mb-4">📭</div>
                   <p className="text-lg font-medium text-gray-500">No hay {activeTab === 'ips' ? 'IPs' : activeTab} registrados</p>
                   <p className="text-sm mt-1">Usa el botón "+ Nuevo" para agregar</p>
+                </div>
+              ) : activeTab === 'clients' ? (
+                <div className="divide-y">
+                  {data.map((item: any) => (
+                    <div key={item.id} className="p-5 hover:bg-slate-50/80 transition flex flex-col lg:flex-row lg:items-center gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                          {(item.fullName || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900 truncate">{item.fullName || 'Sin nombre'}</p>
+                          <p className="text-sm text-gray-500 truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
+                          {item.ipAddress && (
+                            <p className="text-xs font-mono text-gray-400 mt-0.5">{item.ipAddress}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 lg:max-w-md">
+                        {item.planName ? (
+                          <span className="text-sm text-gray-700 bg-gray-50 border px-2.5 py-1 rounded-lg">
+                            {item.planName}
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-gray-100'}`}>
+                              {statusLabel[item.serviceStatus] || item.serviceStatus}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-400">Sin plan</span>
+                        )}
+                        <span
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-gray-100'}`}
+                          title={item.connectionDetail || ''}
+                        >
+                          {connectionLabel[item.connectionStatus] || item.connectionStatus}
+                        </span>
+                        {item.pendingAmount > 0 && (
+                          <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded-lg">
+                            ${item.pendingAmount.toLocaleString('es-CL')}
+                          </span>
+                        )}
+                        {item.openTickets > 0 && (
+                          <span className="text-xs font-medium text-amber-800 bg-amber-50 px-2 py-1 rounded-lg">
+                            {item.openTickets} ticket{item.openTickets > 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {!item.alerts?.length ? (
+                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg font-medium">Al dia</span>
+                        ) : item.alerts.map((a: any) => (
+                          <span key={a.type + a.label} className={`text-xs px-2 py-1 rounded-lg font-medium ${
+                            a.severity === 'high' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'
+                          }`}>
+                            {a.label}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => openEdit({ ...item, user: { fullName: item.fullName, email: item.email, phone: item.phone } })}
+                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Editar datos">
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => setSelectedClientId(item.id)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">
+                          Abrir perfil
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
