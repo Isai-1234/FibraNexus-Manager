@@ -137,7 +137,7 @@ authRouter.post('/setup', async (req, res) => {
       role: 'admin',
     }).onConflictDoUpdate({
       target: users.email,
-      set: { password: hashedPassword, organizationId: organization.id },
+      set: { password: hashedPassword, organizationId: organization.id, role: 'admin' },
     }).returning();
 
     res.json({ message: 'Admin creado/actualizado', user: userResponse(user, organization) });

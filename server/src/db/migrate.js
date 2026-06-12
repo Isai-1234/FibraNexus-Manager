@@ -48,6 +48,23 @@ export async function runMigrations(connectionString) {
       WHERE u.organization_id IS NULL AND o.slug = 'internetsur'
     `;
 
+    await sql`
+      UPDATE users u SET role = 'admin'
+      FROM (
+        SELECT DISTINCT ON (organization_id) id
+        FROM users
+        WHERE organization_id IS NOT NULL
+        ORDER BY organization_id, id ASC
+      ) first_user
+      WHERE u.id = first_user.id
+        AND u.role = 'client'
+        AND NOT EXISTS (
+          SELECT 1 FROM users u2
+          WHERE u2.organization_id = u.organization_id
+            AND u2.role IN ('admin', 'technician')
+        )
+    `;
+
     console.log('Multi-tenant migration OK');
   } finally {
     await sql.end();

@@ -9,18 +9,16 @@ export async function authenticateToken(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    let organizationId = decoded.organizationId || null;
-
-    if (!organizationId) {
-      const user = await db.query.users.findFirst({ where: eq(users.id, decoded.id) });
-      organizationId = user?.organizationId || null;
+    const user = await db.query.users.findFirst({ where: eq(users.id, decoded.id) });
+    if (!user || !user.isActive) {
+      return res.status(403).json({ error: 'Usuario inactivo o no encontrado' });
     }
 
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role,
-      organizationId,
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      organizationId: user.organizationId,
     };
     next();
   } catch (error) {
