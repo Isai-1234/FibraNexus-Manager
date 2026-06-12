@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { invoices, clients, users, clientServices, plans, payments } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { invoices, clients, users, clientServices } from '../db/schema.js';
+import { eq, and, lte, or, isNull } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId, getClientInOrg, getInvoiceInOrg } from '../lib/tenant.js';
+import { orgFilter, requireOrganizationId, getInvoiceInOrg, getServiceInOrg } from '../lib/tenant.js';
+import { createInvoiceForService, previewInvoiceForService } from '../lib/invoiceService.js';
 
 export const invoicesRouter = Router();
 
@@ -16,66 +17,92 @@ invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       tax: invoices.tax, total: invoices.total, status: invoices.status,
       dueDate: invoices.dueDate, billingPeriod: invoices.billingPeriod,
       paidDate: invoices.paidDate, createdAt: invoices.createdAt,
-      client: { fullName: users.fullName, email: users.email }
+      clientServiceId: invoices.clientServiceId,
+      client: { fullName: users.fullName, email: users.email },
     })
-    .from(invoices)
-    .leftJoin(clients, eq(invoices.clientId, clients.id))
-    .leftJoin(users, eq(clients.userId, users.id))
-    .where(orgFilter(invoices, orgId))
-    .orderBy(invoices.createdAt)
-    .limit(50);
+      .from(invoices)
+      .leftJoin(clients, eq(invoices.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(orgFilter(invoices, orgId))
+      .orderBy(invoices.createdAt)
+      .limit(50);
     res.json(allInvoices);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar facturas' });
   }
 });
 
-// POST /generate - Generar facturas del mes
+invoicesRouter.post('/service/:serviceId', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.serviceId, 10);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const result = await createInvoiceForService(orgId, serviceId, req.body);
+    if (result.skipped) {
+      return res.status(409).json({ error: result.reason, invoice: result.invoice });
+    }
+    res.status(201).json({
+      message: result.window.isProrated
+        ? `Factura proporcional (${result.days}/${result.totalDays} días)`
+        : 'Factura generada',
+      ...result,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+invoicesRouter.get('/preview/:serviceId', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.serviceId, 10);
+    res.json(await previewInvoiceForService(orgId, serviceId));
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
 invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { billingPeriod, dueDate } = req.body;
-    const activeServices = await db.select({
-      id: clientServices.id, clientId: clientServices.clientId,
-      planId: clientServices.planId,
-    })
-    .from(clientServices)
-    .leftJoin(clients, eq(clientServices.clientId, clients.id))
-    .leftJoin(plans, eq(clientServices.planId, plans.id))
-    .where(and(eq(clientServices.status, 'active'), orgFilter(clients, orgId)));
+    const today = new Date().toISOString().split('T')[0];
+
+    const activeServices = await db.select({ id: clientServices.id })
+      .from(clientServices)
+      .leftJoin(clients, eq(clientServices.clientId, clients.id))
+      .where(and(
+        eq(clientServices.status, 'active'),
+        orgFilter(clients, orgId),
+        or(isNull(clientServices.nextBillingDate), lte(clientServices.nextBillingDate, today)),
+      ));
 
     const generated = [];
+    const skipped = [];
     for (const svc of activeServices) {
-      const plan = await db.query.plans.findFirst({ where: eq(plans.id, svc.planId) });
-      if (!plan) continue;
-      
-      const amount = Number(plan.price);
-      const tax = Math.round(amount * 0.19);
-      const total = amount + tax;
-      const invNumber = 'F-' + billingPeriod + '-' + svc.clientId + '-' + svc.id;
-
-      const exists = await db.query.invoices.findFirst({
-        where: and(eq(invoices.billingPeriod, billingPeriod), eq(invoices.clientServiceId, svc.id))
-      });
-      if (exists) continue;
-
-      const [inv] = await db.insert(invoices).values({
-        organizationId: orgId,
-        invoiceNumber: invNumber, clientId: svc.clientId, clientServiceId: svc.id,
-        amount: String(amount), tax: String(tax), total: String(total),
-        status: 'pending', dueDate: dueDate || new Date().toISOString().split('T')[0],
-        billingPeriod
-      }).returning();
-      generated.push(inv);
+      try {
+        const result = await createInvoiceForService(orgId, svc.id, req.body);
+        if (result.skipped) skipped.push({ serviceId: svc.id, reason: result.reason });
+        else generated.push(result.invoice);
+      } catch (err) {
+        skipped.push({ serviceId: svc.id, reason: err.message });
+      }
     }
-    res.json({ message: `${generated.length} facturas generadas`, count: generated.length, invoices: generated });
+    res.json({
+      message: `${generated.length} facturas generadas${skipped.length ? `, ${skipped.length} omitidas` : ''}`,
+      count: generated.length,
+      invoices: generated,
+      skipped,
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error: ' + error.message });
   }
 });
 
-// PUT /:id/status - Actualizar estado
 invoicesRouter.put('/:id/status', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);

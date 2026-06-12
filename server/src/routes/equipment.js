@@ -36,10 +36,11 @@ equipmentRouter.post('/', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { name, type, brand, model, ipAddress, location } = req.body;
+    const { name, type, brand, model, ipAddress, location, siteId, macAddress } = req.body;
     const [eq] = await db.insert(equipment).values({
       organizationId: orgId,
-      name, type, brand, model, ipAddress, location, status: 'offline',
+      siteId: siteId ? parseInt(siteId) : null,
+      name, type, brand, model, ipAddress, macAddress: macAddress || null, location, status: 'offline',
     }).returning();
     res.status(201).json(eq);
   } catch (error) {

@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
+import NetworkManager from './NetworkManager'
+import BillingSettings from './BillingSettings'
+import { formatDateCL } from '../../lib/formatDate'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [equipmentSubTab, setEquipmentSubTab] = useState('infrastructure')
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [showRouters, setShowRouters] = useState(false)
+  const [showNetwork, setShowNetwork] = useState(false)
+  const [showBillingSettings, setShowBillingSettings] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -17,6 +22,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [stats, setStats] = useState<any>({})
   const [clientOverview, setClientOverview] = useState<any[]>([])
   const [clientsWithProblems, setClientsWithProblems] = useState<any[]>([])
+  const [overdueInvoices, setOverdueInvoices] = useState<any[]>([])
   const [recentTickets, setRecentTickets] = useState<any[]>([])
   const [error, setError] = useState('')
   const [clients, setClients] = useState<any[]>([])
@@ -45,6 +51,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         setStats(res.data.stats || {})
         setClientOverview(res.data.clientOverview || [])
         setClientsWithProblems(res.data.clientsWithProblems || [])
+        setOverdueInvoices(res.data.overdueInvoices || [])
         setRecentTickets(res.data.recentTickets || [])
       } else if (activeTab === 'clients') {
         const res = await api().get('/clients/overview')
@@ -67,7 +74,37 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setLoading(false)
   }
 
+  async function openNewForm() {
+    setEditingItem(null)
+    const defaults: any = activeTab === 'services' ? { status: 'active' } : {}
+    try {
+      if (activeTab === 'services' || activeTab === 'invoices' || activeTab === 'tickets') {
+        const [cRes, pRes] = await Promise.all([
+          api().get('/clients'),
+          activeTab === 'services' ? api().get('/plans') : Promise.resolve({ data: plans }),
+        ])
+        const clientList = Array.isArray(cRes.data) ? cRes.data : []
+        setClients(clientList)
+        if (activeTab === 'services') {
+          const planList = Array.isArray(pRes.data) ? pRes.data : []
+          setPlans(planList)
+          if (clientList.length === 1) defaults.clientId = String(clientList[0].id)
+          if (planList.length === 1) defaults.planId = String(planList[0].id)
+        }
+      }
+    } catch { /* listas ya cargadas en mount */ }
+    setForm(defaults)
+    setShowForm(true)
+  }
+
   async function handleSave() {
+    const fields = formFields[activeTab] || []
+    for (const f of fields) {
+      if (f.required && !form[f.name]) {
+        alert(`Completa el campo obligatorio: ${f.label}`)
+        return
+      }
+    }
     try {
       const endpoints: Record<string, string> = {
         clients: '/clients', plans: '/plans', services: '/services',
@@ -91,7 +128,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   async function handleDelete(id: number) {
     const msg = activeTab === 'clients'
       ? '¿Eliminar este abonado? Se borrarán también sus servicios, facturas y tickets.'
-      : '¿Eliminar este registro?'
+      : activeTab === 'services'
+        ? '¿Eliminar esta suscripción? El abonado conserva su cuenta; solo se borra este servicio.'
+        : '¿Eliminar este registro?'
     if (!confirm(msg)) return
     try {
       const endpoints: Record<string, string> = {
@@ -126,15 +165,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   async function handleGenerateInvoices() {
-    const month = prompt('Período (YYYY-MM):', new Date().toISOString().slice(0, 7))
-    const due = prompt('Fecha vencimiento (YYYY-MM-DD):', new Date(new Date().getFullYear(), new Date().getMonth() + 2, 5).toISOString().slice(0, 10))
-    if (month && due) {
-      try {
-        const res = await api().post('/invoices/generate', { billingPeriod: month, dueDate: due })
-        alert(res.data.message || 'Facturas generadas')
-        loadData()
-      } catch (err: any) { alert('Error: ' + (err.response?.data?.error || err.message)) }
-    }
+    if (!confirm('¿Generar facturas para servicios con cobro pendiente? Se respeta el ciclo de cada abonado (aniversario o proporcional).')) return
+    try {
+      const res = await api().post('/invoices/generate', {})
+      alert(res.data.message || 'Facturas generadas')
+      loadData()
+    } catch (err: any) { alert('Error: ' + (err.response?.data?.error || err.message)) }
   }
 
   const menuSections = [
@@ -146,6 +182,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         { id: 'clients', label: 'Abonados', icon: Users },
         { id: 'services', label: 'Suscripciones', icon: Wifi },
         { id: 'invoices', label: 'Facturación', icon: DollarSign },
+        { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings },
         { id: 'tickets', label: 'Soporte', icon: Ticket },
       ],
     },
@@ -153,6 +190,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       title: 'Red e infraestructura',
       hint: 'Equipos de tu ISP',
       items: [
+        { id: 'network', label: 'Red ISP (sitios/nodos)', icon: Network },
         { id: 'equipment', label: 'Equipos / Routers', icon: Server },
         { id: 'ips', label: 'Gestión IP', icon: MapPin },
       ],
@@ -269,9 +307,30 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     router: 'Router', switch: 'Switch', olt: 'OLT', ont: 'ONT', ap: 'AP', cpe: 'CPE', server: 'Servidor', other: 'Otro',
     admin: 'Administrador', technician: 'Técnico', client: 'Cliente', superadmin: 'Super Admin',
     none: 'Sin servicio', cut: 'Cortado',
+    unknown: 'Sin PPPoE',
+  }
+
+  const connectionLabel: Record<string, string> = {
+    online: 'Online', offline: 'Desconectado', suspended: 'Suspendido', none: '—', unknown: '—',
+  }
+
+  const connectionColor: Record<string, string> = {
+    online: 'bg-green-100 text-green-700',
+    offline: 'bg-orange-100 text-orange-700',
+    suspended: 'bg-yellow-100 text-yellow-700',
+    none: 'bg-gray-100 text-gray-500',
+    unknown: 'bg-gray-100 text-gray-500',
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
+
+  const duplicateServiceIps = activeTab === 'services'
+    ? data.reduce((acc: Record<string, number>, item: any) => {
+        const ip = item.ipAddress?.trim()
+        if (ip) acc[ip] = (acc[ip] || 0) + 1
+        return acc
+      }, {})
+    : {}
 
   // Vista detalle cliente
   if (selectedClientId) {
@@ -280,6 +339,28 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
           onTabClick={(id) => { setSelectedClientId(null); setActiveTab(id) }} />
         <ClientDetail clientId={selectedClientId} API={API} onBack={() => { setSelectedClientId(null); setActiveTab('clients') }} />
+      </div>
+    )
+  }
+
+  // Vista ajustes facturación
+  if (showBillingSettings) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex">
+        <Sidebar menuSections={menuSections} activeTab="billing-settings" user={user} logout={logout}
+          onTabClick={(id) => { setShowBillingSettings(false); if (id === 'network') setShowNetwork(true); else setActiveTab(id) }} />
+        <BillingSettings API={API} onBack={() => { setShowBillingSettings(false); setActiveTab('dashboard') }} />
+      </div>
+    )
+  }
+
+  // Vista red ISP (sitios/nodos)
+  if (showNetwork) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex">
+        <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
+          onTabClick={(id) => { setShowNetwork(false); setActiveTab(id) }} />
+        <NetworkManager API={API} onBack={() => { setShowNetwork(false); setActiveTab('equipment') }} />
       </div>
     )
   }
@@ -295,7 +376,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     )
   }
 
-  const canDelete = ['clients', 'plans', 'equipment', 'ips', 'tickets']
+  const canDelete = ['clients', 'plans', 'services', 'equipment', 'ips', 'tickets']
   const canEdit = ['clients', 'plans', 'services', 'equipment', 'ips', 'tickets']
 
   return (
@@ -305,7 +386,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowForm(false)}>
           <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5 border-b pb-4">
-              <h3 className="text-lg font-bold">{editingItem ? '✏️ Editar' : '➕ Nuevo'} {activeTab === 'ips' ? 'IP' : activeTab.slice(0, -1)}</h3>
+              <h3 className="text-lg font-bold">{editingItem ? '✏️ Editar' : '➕ Nuevo'} {{
+                ips: 'registro IP', services: 'suscripción', clients: 'abonado',
+                plans: 'plan', tickets: 'ticket', equipment: 'equipo', invoices: 'factura',
+              }[activeTab] || activeTab.slice(0, -1)}</h3>
               <button onClick={() => setShowForm(false)}><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-4">
@@ -314,7 +398,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   <label className="block text-sm font-medium text-gray-700 mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
                   {f.type === 'client-select' ? (
                     <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
-                      <option value="">Seleccionar cliente...</option>
+                      <option value="">Seleccionar abonado...</option>
+                      {clients.length === 0 && <option disabled value="">— Sin abonados (créalos en Abonados) —</option>}
                       {clients.map((c: any) => <option key={c.id} value={c.id}>{c.user?.fullName || c.id} — {c.city || ''}</option>)}
                     </select>
                   ) : f.type === 'plan-select' ? (
@@ -346,7 +431,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       )}
 
       <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
-        onTabClick={(id) => { setActiveTab(id); setData([]); setError('') }} />
+        onTabClick={(id) => {
+          if (id === 'network') { setShowNetwork(true); return }
+          if (id === 'billing-settings') { setShowBillingSettings(true); return }
+          setActiveTab(id); setData([]); setError('')
+        }} />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
@@ -374,7 +463,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
             {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && (
-              <button onClick={() => { setEditingItem(null); setForm({}); setShowForm(true) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
+              <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
             )}
@@ -387,16 +476,18 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[
                   { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' },
-                  { label: 'Con problemas', value: stats?.clientsWithProblems || 0, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', tab: 'clients' },
-                  { label: 'Servicios activos', value: stats?.activeServices || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'services' },
+                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' },
+                  { label: 'Desconectados', value: stats?.offlineClients || 0, icon: WifiOff, color: 'text-orange-600', bg: 'bg-orange-50', tab: 'clients' },
+                  { label: 'Morosos', value: stats?.delinquentClients || 0, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
+                  { label: 'Servicios activos', value: stats?.activeServices || 0, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', tab: 'services' },
+                  { label: 'Suspendidos', value: stats?.suspendedServices || 0, icon: WifiOff, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'services' },
                   { label: 'Por cobrar', value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', tab: 'invoices' },
+                  { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
                   { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' },
                   { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', action: () => { setActiveTab('equipment'); setEquipmentSubTab('routers'); setShowRouters(true) } },
-                  { label: 'Equipos', value: stats?.totalEquipment || 0, icon: Server, color: 'text-indigo-600', bg: 'bg-indigo-50', tab: 'equipment' },
-                  { label: 'Planes', value: stats?.totalPlans || 0, icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50', tab: 'plans' },
                 ].map(s => (
                   <div key={s.label} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100"
                     onClick={() => s.action ? s.action() : setActiveTab(s.tab)}>
@@ -422,7 +513,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     <table className="w-full">
                       <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                         <tr>
-                          {['Abonado', 'Días', 'Servicio', 'Deuda', 'Tickets', 'Alertas', ''].map(h => (
+                          {['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Tickets', ''].map(h => (
                             <th key={h} className="text-left p-4">{h}</th>
                           ))}
                         </tr>
@@ -432,24 +523,22 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           <tr key={c.id} className="hover:bg-red-50/30">
                             <td className="p-4">
                               <p className="font-medium">{c.fullName}</p>
-                              <p className="text-xs text-gray-400">{c.email}</p>
+                              <p className="text-xs text-gray-400">{c.email}{c.ipAddress ? ` · ${c.ipAddress}` : ''}</p>
                             </td>
-                            <td className="p-4 text-sm">{c.daysAsClient} días</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[c.serviceStatus] || 'bg-gray-100'}`}>
-                                {statusLabel[c.serviceStatus] || (c.serviceStatus === 'none' ? 'Sin servicio' : c.serviceStatus)}
+                            <td className="p-4 text-sm">
+                              {c.planName || '—'}
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[c.serviceStatus] || 'bg-gray-100'}`}>
+                                {statusLabel[c.serviceStatus] || c.serviceStatus}
                               </span>
-                              {c.planName && <p className="text-xs text-gray-400 mt-1">{c.planName}</p>}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[c.connectionStatus] || 'bg-gray-100'}`}>
+                                {connectionLabel[c.connectionStatus] || c.connectionStatus}
+                              </span>
                             </td>
                             <td className="p-4 text-sm font-medium text-red-600">{c.pendingAmount > 0 ? '$' + c.pendingAmount.toLocaleString('es-CL') : '—'}</td>
+                            <td className="p-4 text-sm">{c.overdueDays > 0 ? <span className="text-red-600 font-medium">{c.overdueDays} días</span> : '—'}</td>
                             <td className="p-4 text-sm">{c.openTickets || '—'}</td>
-                            <td className="p-4">
-                              <div className="flex flex-wrap gap-1">
-                                {c.alerts?.slice(0, 2).map((a: any, i: number) => (
-                                  <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${a.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{a.label}</span>
-                                ))}
-                              </div>
-                            </td>
                             <td className="p-4">
                               <button onClick={() => setSelectedClientId(c.id)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
                                 Gestionar cuenta
@@ -463,10 +552,47 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               )}
 
+              {overdueInvoices.length > 0 && (
+                <div className="bg-white rounded-xl border border-amber-100 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex justify-between items-center">
+                    <div>
+                      <h2 className="font-semibold text-amber-900 flex items-center gap-2"><DollarSign className="h-5 w-5" /> Facturas vencidas</h2>
+                      <p className="text-sm text-amber-700/80">${(stats?.overdueAmount || 0).toLocaleString('es-CL')} en mora</p>
+                    </div>
+                    <button onClick={() => setActiveTab('invoices')} className="text-sm text-amber-800 hover:underline">Ver facturas →</button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                          {['Factura', 'Abonado', 'Total', 'Vencimiento', 'Atraso', ''].map(h => (
+                            <th key={h} className="text-left p-4">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {overdueInvoices.map((inv: any) => (
+                          <tr key={inv.id} className="hover:bg-amber-50/30">
+                            <td className="p-4 font-mono text-sm text-indigo-600">{inv.invoiceNumber}</td>
+                            <td className="p-4 font-medium">{inv.clientName}</td>
+                            <td className="p-4 font-bold text-red-600">${Number(inv.total).toLocaleString('es-CL')}</td>
+                            <td className="p-4 text-sm">{formatDateCL(inv.dueDate)}</td>
+                            <td className="p-4"><span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{inv.overdueDays} días</span></td>
+                            <td className="p-4">
+                              <button onClick={() => setSelectedClientId(inv.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b flex justify-between items-center">
-                    <h2 className="font-semibold">Todos los abonados</h2>
+                    <h2 className="font-semibold">Abonados (estilo UISP)</h2>
                     <button onClick={() => setActiveTab('clients')} className="text-sm text-blue-600 hover:underline">Ver listado completo →</button>
                   </div>
                   {clientOverview.length === 0 ? (
@@ -476,14 +602,28 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                       <button onClick={() => { setActiveTab('clients'); setShowForm(true) }} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer abonado</button>
                     </div>
                   ) : (
-                    <div className="divide-y max-h-80 overflow-y-auto">
-                      {clientOverview.slice(0, 10).map((c: any) => (
-                        <div key={c.id} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50">
-                          <div>
-                            <p className="font-medium text-sm">{c.fullName}</p>
-                            <p className="text-xs text-gray-400">{c.daysAsClient} días · {c.city || 'Sin ciudad'}</p>
+                    <div className="divide-y max-h-96 overflow-y-auto">
+                      {clientOverview.map((c: any) => (
+                        <div key={c.id} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium text-sm truncate">{c.fullName}</p>
+                              {c.connectionStatus === 'online' && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">ONLINE</span>
+                              )}
+                              {c.connectionStatus === 'offline' && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">DESCONECTADO</span>
+                              )}
+                              {c.isDelinquent && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">MORA {c.overdueDays}d</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 truncate">
+                              {c.planName || 'Sin plan'} · {c.city || 'Sin ciudad'}
+                              {c.pendingAmount > 0 && ` · Saldo $${c.pendingAmount.toLocaleString('es-CL')}`}
+                            </p>
                           </div>
-                          <button onClick={() => setSelectedClientId(c.id)} className="text-xs text-blue-600 hover:underline">Gestionar</button>
+                          <button onClick={() => setSelectedClientId(c.id)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Gestionar</button>
                         </div>
                       ))}
                     </div>
@@ -593,6 +733,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900">
                   <strong>Suscripciones</strong> — Une un <strong>abonado</strong> con un <strong>plan comercial</strong>.
                   Es la conexión real de internet (IP, MAC, activo/suspendido).
+                  {Object.values(duplicateServiceIps).some((n) => n > 1) && (
+                    <p className="mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠️ Hay IPs duplicadas en la lista. Elimina la suscripción repetida — dos abonados con la misma IP causan conflicto en la red.
+                    </p>
+                  )}
                 </div>
               )}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -609,8 +754,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        {activeTab === 'clients' && ['Abonado', 'Días', 'Servicio / Plan', 'Deuda', 'Tickets', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'services' && ['Abonado', 'Plan comercial', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'clients' && ['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'services' && ['ID', 'Abonado', 'Plan comercial', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'plans' && ['Plan comercial', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'ips' && ['Dirección IP', 'Subred', 'Gateway', 'VLAN', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'invoices' && ['Nº Factura', 'Cliente', 'Período', 'Neto', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
@@ -625,15 +770,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               <p className="font-medium text-gray-900">{item.fullName || 'N/A'}</p>
                               <p className="text-xs text-gray-400">{item.email} · {item.city || '—'}</p>
                             </td>
-                            <td className="p-4 text-sm font-medium">{item.daysAsClient ?? 0} días</td>
                             <td className="p-4 text-sm">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-gray-100'}`}>
+                              {item.planName || '—'}
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-gray-100'}`}>
                                 {statusLabel[item.serviceStatus] || item.serviceStatus}
                               </span>
-                              {item.planName && <p className="text-xs text-gray-400 mt-1">{item.planName}</p>}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-gray-100'}`}>
+                                {connectionLabel[item.connectionStatus] || item.connectionStatus}
+                              </span>
                             </td>
                             <td className="p-4 text-sm font-medium">{item.pendingAmount > 0 ? <span className="text-red-600">${item.pendingAmount.toLocaleString('es-CL')}</span> : '—'}</td>
-                            <td className="p-4 text-sm">{item.openTickets > 0 ? <span className="text-yellow-700 font-medium">{item.openTickets}</span> : '—'}</td>
+                            <td className="p-4 text-sm">{item.overdueDays > 0 ? <span className="text-red-600 font-medium">{item.overdueDays} días</span> : '—'}</td>
                             <td className="p-4">
                               {item.hasProblem ? (
                                 <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full">Requiere atención</span>
@@ -643,9 +792,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             </td>
                           </>}
                           {activeTab === 'services' && <>
+                            <td className="p-4 text-xs font-mono text-gray-400">#{item.id}</td>
                             <td className="p-4 font-medium">{item.client?.fullName || 'N/A'}</td>
                             <td className="p-4 text-sm">{item.plan?.name || 'N/A'}<br/><span className="text-xs text-gray-400">{item.plan?.downloadSpeed}/{item.plan?.uploadSpeed} Mbps</span></td>
-                            <td className="p-4 font-mono text-sm">{item.ipAddress || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4 font-mono text-sm">
+                              {item.ipAddress ? (
+                                <span className={duplicateServiceIps[item.ipAddress.trim()] > 1 ? 'text-red-600 font-semibold' : ''}>
+                                  {item.ipAddress}
+                                  {duplicateServiceIps[item.ipAddress.trim()] > 1 && ' ⚠️'}
+                                </span>
+                              ) : <span className="text-gray-400">—</span>}
+                            </td>
                             <td className="p-4 font-mono text-xs text-gray-500">{item.macAddress || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
                           </>}
@@ -669,7 +826,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm">${Number(item.amount).toLocaleString('es-CL')}</td>
                             <td className="p-4 text-sm">${Number(item.tax).toLocaleString('es-CL')}</td>
                             <td className="p-4 font-bold">${Number(item.total).toLocaleString('es-CL')}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span>
+                              {item.status === 'overdue' && item.dueDate && (
+                                <p className="text-xs text-red-600 mt-1">Atrasada {Math.max(0, Math.floor((Date.now() - new Date(String(item.dueDate).split('T')[0]).getTime()) / 86400000))} días</p>
+                              )}
+                            </td>
                           </>}
                           {activeTab === 'tickets' && <>
                             <td className="p-4"><span className="font-medium text-sm">{item.subject}</span><br/><span className="text-xs text-gray-400 font-mono">{item.ticketNumber}</span></td>
@@ -682,9 +844,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           <td className="p-4">
                             <div className="flex items-center gap-1">
                               {activeTab === 'services' && (
-                                item.status === 'active'
-                                  ? <button onClick={() => handleAction('suspend', item.id)} className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 font-medium">⏸ Suspender</button>
-                                  : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">▶ Reactivar</button>
+                                <>
+                                  {item.status === 'active'
+                                    ? <button onClick={() => handleAction('suspend', item.id)} className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 font-medium">⏸ Suspender</button>
+                                    : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">▶ Reactivar</button>}
+                                  <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="Eliminar suscripción"><Trash2 className="h-4 w-4" /></button>
+                                </>
                               )}
                               {activeTab === 'invoices' && item.status === 'pending' && (
                                 <button onClick={() => handleAction('pay', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">💰 Pagar</button>
@@ -695,7 +860,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               {activeTab === 'clients' && (
                                 <button onClick={() => setSelectedClientId(item.id)} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">Gestionar</button>
                               )}
-                              {canDelete.includes(activeTab) && (
+                              {canDelete.includes(activeTab) && activeTab !== 'services' && (
                                 <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                               )}
                             </div>

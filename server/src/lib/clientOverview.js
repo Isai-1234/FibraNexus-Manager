@@ -4,6 +4,8 @@ import {
 } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
+import { daysOverdue } from './orgSettings.js';
+import { getOnlinePppoeUsernames } from './billingScheduler.js';
 
 function daysSince(date) {
   if (!date) return 0;
@@ -32,11 +34,18 @@ export async function buildClientOverview(orgId) {
 
   const clientIds = rows.map((r) => r.id);
 
+  let onlinePppoe = new Set();
+  try {
+    onlinePppoe = await getOnlinePppoeUsernames(orgId);
+  } catch { /* routers offline */ }
+
   const serviceRows = await db.select({
     clientId: clientServices.clientId,
+    serviceId: clientServices.id,
     status: clientServices.status,
     planName: plans.name,
     ipAddress: clientServices.ipAddress,
+    pppoeUsername: clientServices.pppoeUsername,
   })
     .from(clientServices)
     .leftJoin(plans, eq(clientServices.planId, plans.id))
@@ -46,6 +55,7 @@ export async function buildClientOverview(orgId) {
     clientId: invoices.clientId,
     total: invoices.total,
     status: invoices.status,
+    dueDate: invoices.dueDate,
   })
     .from(invoices)
     .where(and(orgFilter(invoices, orgId), inArray(invoices.clientId, clientIds)));
@@ -83,12 +93,33 @@ export async function buildClientOverview(orgId) {
     const activeSvc = svcs.find((s) => s.status === 'active');
     const suspendedSvc = svcs.find((s) => s.status === 'suspended' || s.status === 'cut');
     const openTickets = tks.filter((t) => ['open', 'in_progress', 'waiting_client'].includes(t.status));
-    const pendingAmount = invs
-      .filter((i) => i.status === 'pending' || i.status === 'overdue')
-      .reduce((sum, i) => sum + Number(i.total || 0), 0);
+    const pendingInvs = invs.filter((i) => i.status === 'pending' || i.status === 'overdue');
+    const pendingAmount = pendingInvs.reduce((sum, i) => sum + Number(i.total || 0), 0);
+    const overdueInvs = invs.filter((i) => i.status === 'overdue');
+    const maxOverdueDays = overdueInvs.reduce((max, i) => Math.max(max, daysOverdue(i.dueDate)), 0);
+
+    let connectionStatus = 'none';
+    if (suspendedSvc || activeSvc?.status === 'suspended') {
+      connectionStatus = 'suspended';
+    } else if (activeSvc) {
+      if (activeSvc.pppoeUsername && onlinePppoe.has(activeSvc.pppoeUsername)) {
+        connectionStatus = 'online';
+      } else if (activeSvc.pppoeUsername) {
+        connectionStatus = 'offline';
+      } else {
+        connectionStatus = 'unknown';
+      }
+    }
 
     const alerts = [];
-    if (pendingAmount > 0) alerts.push({ type: 'debt', label: 'Deuda pendiente', severity: 'high' });
+    if (maxOverdueDays > 0) {
+      alerts.push({ type: 'overdue', label: `Mora ${maxOverdueDays} días`, severity: 'high' });
+    } else if (pendingAmount > 0) {
+      alerts.push({ type: 'debt', label: 'Deuda pendiente', severity: 'high' });
+    }
+    if (connectionStatus === 'offline') {
+      alerts.push({ type: 'offline', label: 'Desconectado', severity: 'medium' });
+    }
     if (suspendedSvc) alerts.push({ type: 'suspended', label: 'Servicio suspendido', severity: 'high' });
     if (!activeSvc && svcs.length > 0) alerts.push({ type: 'inactive', label: 'Sin servicio activo', severity: 'medium' });
     if (!svcs.length) alerts.push({ type: 'no_service', label: 'Sin servicio', severity: 'medium' });
@@ -114,10 +145,14 @@ export async function buildClientOverview(orgId) {
       isActive: c.isActive,
       lastLogin: c.lastLogin,
       serviceStatus,
+      connectionStatus,
       planName: activeSvc?.planName || suspendedSvc?.planName || null,
       ipAddress: activeSvc?.ipAddress || null,
+      pppoeUsername: activeSvc?.pppoeUsername || null,
       openTickets: openTickets.length,
       pendingAmount,
+      overdueDays: maxOverdueDays,
+      isDelinquent: maxOverdueDays > 0,
       alerts,
       hasProblem: alerts.some((a) => a.severity === 'high') || openTickets.length > 0,
     };

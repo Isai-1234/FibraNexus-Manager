@@ -1,11 +1,61 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clientServices, clients, plans, users } from '../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { clientServices, clients, plans, users, equipment } from '../db/schema.js';
+import { and, eq, ne, inArray } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
+import { provisionServiceNetwork, suspendServiceNetwork, reactivateServiceNetwork } from '../lib/networkProvision.js';
+import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
+import { createInvoiceForService } from '../lib/invoiceService.js';
 
 export const servicesRouter = Router();
+
+const BLOCKING_STATUSES = ['active', 'suspended', 'pending'];
+
+async function findServiceConflict(orgId, { clientId, planId, ipAddress, excludeId }) {
+  const baseOrg = orgFilter(clients, orgId);
+  const exclude = excludeId ? ne(clientServices.id, excludeId) : undefined;
+
+  const sameClientPlan = await db.select({ id: clientServices.id })
+    .from(clientServices)
+    .innerJoin(clients, eq(clientServices.clientId, clients.id))
+    .where(and(
+      baseOrg,
+      eq(clientServices.clientId, clientId),
+      eq(clientServices.planId, planId),
+      inArray(clientServices.status, BLOCKING_STATUSES),
+      ...(exclude ? [exclude] : []),
+    ))
+    .limit(1);
+
+  if (sameClientPlan.length) {
+    return { type: 'client_plan', serviceId: sameClientPlan[0].id };
+  }
+
+  const ip = ipAddress?.trim();
+  if (ip) {
+    const sameIp = await db.select({
+      id: clientServices.id,
+      clientName: users.fullName,
+    })
+      .from(clientServices)
+      .innerJoin(clients, eq(clientServices.clientId, clients.id))
+      .innerJoin(users, eq(clients.userId, users.id))
+      .where(and(
+        baseOrg,
+        eq(clientServices.ipAddress, ip),
+        inArray(clientServices.status, BLOCKING_STATUSES),
+        ...(exclude ? [exclude] : []),
+      ))
+      .limit(1);
+
+    if (sameIp.length) {
+      return { type: 'ip', serviceId: sameIp[0].id, clientName: sameIp[0].clientName };
+    }
+  }
+
+  return null;
+}
 
 servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
@@ -13,8 +63,17 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
     if (!orgId) return;
     const services = await db.select({
       id: clientServices.id, status: clientServices.status,
-      ipAddress: clientServices.ipAddress, installationDate: clientServices.installationDate,
-      nextBillingDate: clientServices.nextBillingDate, createdAt: clientServices.createdAt,
+      ipAddress: clientServices.ipAddress, macAddress: clientServices.macAddress,
+      routerId: clientServices.routerId, siteId: clientServices.siteId,
+      pppoeUsername: clientServices.pppoeUsername, pppoePassword: clientServices.pppoePassword,
+      pppProfile: clientServices.pppProfile,
+      queueName: clientServices.queueName, networkMeta: clientServices.networkMeta,
+      installationDate: clientServices.installationDate,
+      nextBillingDate: clientServices.nextBillingDate,
+      billingCycleType: clientServices.billingCycleType,
+      billingDay: clientServices.billingDay,
+      billingDueDay: clientServices.billingDueDay,
+      createdAt: clientServices.createdAt,
       client: { id: clients.id, fullName: users.fullName, email: users.email },
       plan: { id: plans.id, name: plans.name, downloadSpeed: plans.downloadSpeed, uploadSpeed: plans.uploadSpeed, price: plans.price },
     })
@@ -34,20 +93,98 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { clientId, planId, ipAddress, macAddress } = req.body;
-    if (!await getClientInOrg(parseInt(clientId), orgId)) {
+    const { clientId, planId, ipAddress, macAddress, routerId, siteId, provisionNetwork, provisionMode, status,
+      installationDate, billingCycleType, billingDueDay, generateFirstInvoice } = req.body;
+
+    const parsedClientId = parseInt(clientId, 10);
+    const parsedPlanId = parseInt(planId, 10);
+    if (!clientId || Number.isNaN(parsedClientId)) {
+      return res.status(400).json({ error: 'Selecciona un abonado' });
+    }
+    if (!planId || Number.isNaN(parsedPlanId)) {
+      return res.status(400).json({ error: 'Selecciona un plan comercial' });
+    }
+
+    if (!await getClientInOrg(parsedClientId, orgId)) {
       return res.status(404).json({ error: 'Cliente no encontrado en tu organización' });
     }
-    if (!await getPlanInOrg(parseInt(planId), orgId)) {
+    if (!await getPlanInOrg(parsedPlanId, orgId)) {
       return res.status(404).json({ error: 'Plan no encontrado en tu organización' });
     }
-    const installDate = new Date().toISOString().split('T')[0];
-    const nextBilling = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString().split('T')[0];
+
+    const conflict = await findServiceConflict(orgId, {
+      clientId: parsedClientId,
+      planId: parsedPlanId,
+      ipAddress,
+    });
+    if (conflict?.type === 'client_plan') {
+      return res.status(409).json({
+        error: 'Este abonado ya tiene una suscripción activa con ese plan. Edita la existente o elimínala primero.',
+        existingServiceId: conflict.serviceId,
+      });
+    }
+    if (conflict?.type === 'ip') {
+      return res.status(409).json({
+        error: `La IP ${ipAddress.trim()} ya está asignada a ${conflict.clientName || 'otro abonado'}.`,
+        existingServiceId: conflict.serviceId,
+      });
+    }
+
+    const installDate = (installationDate && String(installationDate).split('T')[0])
+      || new Date().toISOString().split('T')[0];
+    const cycle = ['anniversary', 'calendar_prorate'].includes(billingCycleType)
+      ? billingCycleType : 'anniversary';
+    const billingDay = billingDayFromInstall(installDate);
+    const dueDay = billingDueDay != null ? parseInt(billingDueDay, 10) : (cycle === 'calendar_prorate' ? 5 : billingDay);
+    const nextBilling = computeNextBillingDate(installDate, cycle, billingDay);
+    const parsedRouterId = routerId ? parseInt(routerId, 10) : null;
+    const parsedSiteId = siteId ? parseInt(siteId, 10) : null;
     const [service] = await db.insert(clientServices).values({
-      clientId: parseInt(clientId), planId: parseInt(planId),
-      ipAddress, macAddress, installationDate: installDate,
-      nextBillingDate: nextBilling, status: 'active',
+      clientId: parsedClientId, planId: parsedPlanId,
+      ipAddress: ipAddress || null, macAddress: macAddress || null,
+      routerId: parsedRouterId && !Number.isNaN(parsedRouterId) ? parsedRouterId : null,
+      siteId: parsedSiteId && !Number.isNaN(parsedSiteId) ? parsedSiteId : null,
+      installationDate: installDate,
+      nextBillingDate: nextBilling,
+      billingCycleType: cycle,
+      billingDay,
+      billingDueDay: Number.isNaN(dueDay) ? 5 : dueDay,
+      status: status && ['active', 'suspended', 'pending', 'cancelled', 'cut'].includes(status) ? status : 'active',
     }).returning();
+
+    if (provisionNetwork && parsedRouterId && !Number.isNaN(parsedRouterId)) {
+      try {
+        const result = await provisionServiceNetwork(service.id, orgId, parsedRouterId, provisionMode || 'both');
+        if (generateFirstInvoice) {
+          try {
+            const inv = await createInvoiceForService(orgId, service.id);
+            return res.status(201).json({ ...result.service, network: result, firstInvoice: inv.invoice });
+          } catch (invErr) {
+            return res.status(201).json({
+              ...result.service,
+              network: result,
+              invoiceWarning: invErr.message,
+            });
+          }
+        }
+        return res.status(201).json({ ...result.service, network: result });
+      } catch (netErr) {
+        return res.status(201).json({
+          ...service,
+          networkWarning: 'Servicio creado pero falló provisión en router: ' + netErr.message,
+        });
+      }
+    }
+
+    if (generateFirstInvoice) {
+      try {
+        const inv = await createInvoiceForService(orgId, service.id);
+        return res.status(201).json({ ...service, firstInvoice: inv.invoice, billing: inv });
+      } catch (invErr) {
+        return res.status(201).json({ ...service, invoiceWarning: invErr.message });
+      }
+    }
+
     res.status(201).json(service);
   } catch (error) {
     res.status(500).json({ error: 'Error al crear servicio: ' + error.message });
@@ -85,7 +222,15 @@ servicesRouter.put('/:id/suspend', requireRole('admin', 'technician'), async (re
       .set({ status: 'suspended', updatedAt: new Date() })
       .where(eq(clientServices.id, serviceId))
       .returning();
-    res.json({ message: 'Servicio suspendido', service: updated });
+
+    let networkResult = null;
+    try {
+      networkResult = await suspendServiceNetwork(serviceId, orgId);
+    } catch (netErr) {
+      networkResult = { error: netErr.message };
+    }
+
+    res.json({ message: 'Servicio suspendido', service: updated, network: networkResult });
   } catch (error) {
     res.status(500).json({ error: 'Error al suspender servicio' });
   }
@@ -103,8 +248,51 @@ servicesRouter.put('/:id/reactivate', requireRole('admin'), async (req, res) => 
       .set({ status: 'active', updatedAt: new Date() })
       .where(eq(clientServices.id, serviceId))
       .returning();
-    res.json({ message: 'Servicio reactivado', service: updated });
+
+    let networkResult = null;
+    try {
+      networkResult = await reactivateServiceNetwork(serviceId, orgId);
+    } catch (netErr) {
+      networkResult = { error: netErr.message };
+    }
+
+    res.json({ message: 'Servicio reactivado', service: updated, network: networkResult });
   } catch (error) {
     res.status(500).json({ error: 'Error al reactivar servicio' });
+  }
+});
+
+servicesRouter.post('/:id/provision', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id);
+    const { routerId, provisionMode } = req.body;
+    if (!routerId) return res.status(400).json({ error: 'routerId requerido' });
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const result = await provisionServiceNetwork(serviceId, orgId, parseInt(routerId, 10), provisionMode || 'both');
+    res.json({ message: 'Red provisionada', ...result });
+  } catch (error) {
+    res.status(503).json({ error: 'Error al provisionar: ' + error.message });
+  }
+});
+
+servicesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id, 10);
+    if (Number.isNaN(serviceId)) {
+      return res.status(400).json({ error: 'ID de servicio inválido' });
+    }
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    await db.delete(clientServices).where(eq(clientServices.id, serviceId));
+    res.json({ message: 'Suscripción eliminada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar servicio: ' + error.message });
   }
 });

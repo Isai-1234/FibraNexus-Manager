@@ -1,11 +1,24 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, User, Wifi, DollarSign, Ticket, Edit2, X, CheckCircle, AlertTriangle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff } from 'lucide-react'
+import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2 } from 'lucide-react'
 import axios from 'axios'
+import { formatDateCL, todayISO } from '../../lib/formatDate'
 
 interface Props {
   clientId: number
   API: string
   onBack: () => void
+}
+
+function defaultServiceForm() {
+  return {
+    provisionMode: 'both',
+    provisionOnCreate: true,
+    status: 'active',
+    installationDate: todayISO(),
+    billingCycleType: 'anniversary',
+    billingDueDay: 5,
+    generateFirstInvoice: true,
+  }
 }
 
 export default function ClientDetail({ clientId, API, onBack }: Props) {
@@ -17,6 +30,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [activeTab, setActiveTab] = useState('overview')
   const [showPayModal, setShowPayModal] = useState<any>(null)
   const [payMethod, setPayMethod] = useState('transfer')
+  const [routers, setRouters] = useState<any[]>([])
+  const [plans, setPlans] = useState<any[]>([])
+  const [showServiceForm, setShowServiceForm] = useState(false)
+  const [serviceForm, setServiceForm] = useState<any>(defaultServiceForm())
+  const [provisionRouterId, setProvisionRouterId] = useState<number | null>(null)
+  const [provisionMode, setProvisionMode] = useState('both')
+  const [provisioning, setProvisioning] = useState(false)
+  const [savingService, setSavingService] = useState(false)
+  const [generatingInvoice, setGeneratingInvoice] = useState<number | null>(null)
 
   function api() {
     return axios.create({
@@ -25,7 +47,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     })
   }
 
-  useEffect(() => { loadAll() }, [clientId])
+  useEffect(() => {
+    Promise.all([
+      api().get('/routers'),
+      api().get('/plans'),
+    ]).then(([rRes, pRes]) => {
+      setRouters(Array.isArray(rRes.data) ? rRes.data : [])
+      setPlans(Array.isArray(pRes.data) ? pRes.data : [])
+    }).catch(() => {})
+  }, [clientId])
 
   async function loadAll() {
     setLoading(true)
@@ -44,12 +74,118 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     setLoading(false)
   }
 
+  useEffect(() => { loadAll() }, [clientId])
+
+  async function provisionNetwork(serviceId: number) {
+    if (!provisionRouterId) {
+      alert('Selecciona un router MikroTik')
+      return
+    }
+    setProvisioning(true)
+    try {
+      const res = await api().post(`/services/${serviceId}/provision`, {
+        routerId: provisionRouterId,
+        provisionMode,
+      })
+      const parts = []
+      if (res.data.username) parts.push(`PPPoE: ${res.data.username}\nClave: ${res.data.password}`)
+      if (res.data.queueName) parts.push(`Cola: ${res.data.queueName} (${res.data.maxLimit})`)
+      alert('Provisionado en router:\n' + parts.join('\n'))
+      loadAll()
+    } catch (e: any) {
+      alert('Error: ' + (e.response?.data?.error || e.message))
+    }
+    setProvisioning(false)
+  }
+
+  async function createService() {
+    if (!serviceForm.planId) {
+      alert('Selecciona un plan comercial')
+      return
+    }
+    if (serviceForm.provisionOnCreate && !serviceForm.routerId) {
+      alert('Selecciona el router donde provisionar, o desmarca "Provisionar en router"')
+      return
+    }
+    setSavingService(true)
+    try {
+      const res = await api().post('/services', {
+        clientId,
+        planId: serviceForm.planId,
+        ipAddress: serviceForm.ipAddress || null,
+        macAddress: serviceForm.macAddress || null,
+        routerId: serviceForm.routerId || null,
+        status: serviceForm.status || 'active',
+        provisionNetwork: serviceForm.provisionOnCreate && !!serviceForm.routerId,
+        provisionMode: serviceForm.provisionMode || 'both',
+        installationDate: serviceForm.installationDate,
+        billingCycleType: serviceForm.billingCycleType || 'anniversary',
+        billingDueDay: serviceForm.billingDueDay ?? 5,
+        generateFirstInvoice: serviceForm.generateFirstInvoice !== false,
+      })
+      if (res.data.invoiceWarning) alert('Servicio creado. Factura: ' + res.data.invoiceWarning)
+      else if (res.data.firstInvoice) {
+        alert(`Servicio creado.\nFactura ${res.data.firstInvoice.invoiceNumber} por $${Number(res.data.firstInvoice.total).toLocaleString('es-CL')}`)
+      } else if (res.data.networkWarning) {
+        alert('Servicio creado con advertencia: ' + res.data.networkWarning)
+      } else if (res.data.network) {
+        const n = res.data.network
+        const parts = ['Servicio creado.']
+        if (n.username) parts.push(`PPPoE: ${n.username} / ${n.password}`)
+        if (n.queueName) parts.push(`Cola: ${n.queueName}`)
+        alert(parts.join('\n'))
+      }
+      setShowServiceForm(false)
+      setServiceForm(defaultServiceForm())
+      loadAll()
+    } catch (e: any) {
+      alert('Error: ' + (e.response?.data?.error || e.message))
+    }
+    setSavingService(false)
+  }
+
+  async function generateInvoice(serviceId: number) {
+    setGeneratingInvoice(serviceId)
+    try {
+      const preview = await api().get(`/invoices/preview/${serviceId}`)
+      const p = preview.data
+      const msg = p.window.isProrated
+        ? `Factura proporcional: ${p.days}/${p.totalDays} días\nNeto: $${p.amount.toLocaleString('es-CL')} · Total: $${p.total.toLocaleString('es-CL')}\nVence: ${formatDateCL(p.dueDate)}\n\n¿Generar?`
+        : `Factura ciclo completo\nTotal: $${p.total.toLocaleString('es-CL')}\nVence: ${formatDateCL(p.dueDate)}\n\n¿Generar?`
+      if (!confirm(msg)) { setGeneratingInvoice(null); return }
+      const res = await api().post(`/invoices/service/${serviceId}`)
+      alert(res.data.message + `\nTotal: $${Number(res.data.total).toLocaleString('es-CL')}`)
+      loadAll()
+    } catch (e: any) {
+      alert('Error: ' + (e.response?.data?.error || e.message))
+    }
+    setGeneratingInvoice(null)
+  }
+
+  function billingCycleLabel(type: string, billingDay?: number) {
+    if (type === 'calendar_prorate') return 'Proporcional (instalación → fin de mes)'
+    return billingDay ? `Aniversario (día ${billingDay} al ${billingDay})` : 'Aniversario (día a día)'
+  }
+
+  async function deleteService(serviceId: number, planName: string) {
+    if (!confirm(`¿Eliminar el servicio "${planName}"? El abonado conserva su cuenta.`)) return
+    try {
+      await api().delete(`/services/${serviceId}`)
+      loadAll()
+    } catch (e: any) {
+      alert('Error: ' + (e.response?.data?.error || e.message))
+    }
+  }
+
   async function toggleService(serviceId: number, currentStatus: string) {
     try {
       const action = currentStatus === 'active' ? 'suspend' : 'reactivate'
-      await api().put(`/services/${serviceId}/${action}`)
+      const res = await api().put(`/services/${serviceId}/${action}`)
+      const net = res.data.network
+      if (net?.error) alert('Servicio actualizado pero red: ' + net.error)
+      else if (net?.skipped) alert('Servicio actualizado (sin provisión en router)')
       loadAll()
-    } catch (e: any) { alert('Error: ' + e.message) }
+    } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
   async function payInvoice() {
@@ -80,6 +216,10 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
 
   const pendingInvoices = invoices.filter(i => i.status === 'pending' || i.status === 'overdue')
   const totalDeuda = pendingInvoices.reduce((sum, i) => sum + Number(i.total || 0), 0)
+  const hasDuplicateServices = services.length > 1 && (
+    new Set(services.map(s => `${s.plan?.id}-${s.ipAddress || ''}`)).size < services.length
+    || services.filter(s => s.status === 'active').length > 1
+  )
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -129,6 +269,137 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
             <div className="flex gap-3 mt-6 pt-4 border-t">
               <button onClick={() => setShowPayModal(null)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Cancelar</button>
               <button onClick={payInvoice} className="flex-1 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Confirmar pago</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal nuevo servicio */}
+      {showServiceForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-bold text-lg">Nuevo servicio de internet</h3>
+              <button onClick={() => setShowServiceForm(false)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Plan comercial *</label>
+                <select className="w-full border rounded-lg px-3 py-2 bg-white" value={serviceForm.planId || ''}
+                  onChange={e => setServiceForm({ ...serviceForm, planId: e.target.value })}>
+                  <option value="">Seleccionar plan...</option>
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} — {p.downloadSpeed}/{p.uploadSpeed} Mbps — ${Number(p.price).toLocaleString('es-CL')}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha instalación *</label>
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={(serviceForm.installationDate || todayISO()).split('T')[0]}
+                    onChange={e => {
+                      const d = e.target.value
+                      const day = d ? parseInt(d.split('-')[2], 10) : 5
+                      setServiceForm({
+                        ...serviceForm,
+                        installationDate: d,
+                        ...(serviceForm.billingCycleType === 'anniversary' ? { billingDueDay: day } : {}),
+                      })
+                    }} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ciclo de cobro</label>
+                  <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                    value={serviceForm.billingCycleType || 'anniversary'}
+                    onChange={e => setServiceForm({ ...serviceForm, billingCycleType: e.target.value })}>
+                    <option value="anniversary">Aniversario (12 al 12, 16 al 16…)</option>
+                    <option value="calendar_prorate">Proporcional (instalación → fin de mes)</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Día de vencimiento del pago
+                </label>
+                <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  value={String(serviceForm.billingDueDay ?? 5)}
+                  onChange={e => setServiceForm({ ...serviceForm, billingDueDay: parseInt(e.target.value, 10) })}>
+                  {serviceForm.billingCycleType === 'calendar_prorate' ? (
+                    <>
+                      <option value="5">Día 5 del mes siguiente</option>
+                      <option value="10">Día 10 del mes siguiente</option>
+                      <option value="0">Último día del mes de instalación</option>
+                    </>
+                  ) : (
+                    Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>Día {d} de cada ciclo</option>
+                    ))
+                  )}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {serviceForm.billingCycleType === 'calendar_prorate'
+                    ? 'Ej: instala 12 ene → cobra proporcional 12–31 ene, paga el día que elijas del mes siguiente.'
+                    : 'Ej: instala 12 ene → cada factura cubre del 12 al 12 del mes siguiente.'}
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={serviceForm.generateFirstInvoice !== false}
+                  onChange={e => setServiceForm({ ...serviceForm, generateFirstInvoice: e.target.checked })} />
+                Generar primera factura al crear
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">IP (opcional)</label>
+                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="172.16.140.2"
+                    value={serviceForm.ipAddress || ''} onChange={e => setServiceForm({ ...serviceForm, ipAddress: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">MAC antena (opcional)</label>
+                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="AA:BB:CC:DD:EE:FF"
+                    value={serviceForm.macAddress || ''} onChange={e => setServiceForm({ ...serviceForm, macAddress: e.target.value })} />
+                </div>
+              </div>
+              <div className="bg-sky-50 border border-sky-100 rounded-lg p-4 space-y-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-sky-900">
+                  <input type="checkbox" checked={serviceForm.provisionOnCreate !== false}
+                    onChange={e => setServiceForm({ ...serviceForm, provisionOnCreate: e.target.checked })} />
+                  Provisionar en router MikroTik al crear
+                </label>
+                {serviceForm.provisionOnCreate !== false && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Router *</label>
+                      <select className="w-full border rounded-lg px-3 py-2 bg-white" value={serviceForm.routerId || ''}
+                        onChange={e => setServiceForm({ ...serviceForm, routerId: e.target.value })}>
+                        <option value="">Seleccionar router...</option>
+                        {routers.map(r => (
+                          <option key={r.id} value={r.id}>{r.name} {r.agentConnected ? '● online' : '○ offline'}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Modo de provisión</label>
+                      <select className="w-full border rounded-lg px-3 py-2 bg-white" value={serviceForm.provisionMode || 'both'}
+                        onChange={e => setServiceForm({ ...serviceForm, provisionMode: e.target.value })}>
+                        <option value="both">PPPoE + Simple Queue (recomendado WISP)</option>
+                        <option value="pppoe">Solo PPPoE (autenticación)</option>
+                        <option value="queue">Solo Simple Queue (IP estática)</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Para antenas Ubiquiti en modo Station: usa <strong>PPPoE + Cola</strong>. La antena se configura con usuario/clave PPPoE.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6 pt-4 border-t">
+              <button onClick={() => setShowServiceForm(false)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Cancelar</button>
+              <button onClick={createService} disabled={savingService}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
+                {savingService ? 'Creando...' : 'Crear servicio'}
+              </button>
             </div>
           </div>
         </div>
@@ -228,33 +499,48 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
             {/* Servicio activo */}
             <div className="space-y-4">
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4"><Wifi className="h-4 w-4 text-green-600" /> Servicio actual</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Wifi className="h-4 w-4 text-green-600" /> Servicio actual</h2>
+                  <button onClick={() => setActiveTab('services')} className="text-xs text-blue-600 hover:underline">Ver todos →</button>
+                </div>
+                {hasDuplicateServices && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                    ⚠️ Hay {services.length} suscripciones — probable duplicado. Elimina una (deja solo una activa por plan).
+                  </div>
+                )}
                 {services.length === 0 ? (
                   <div className="text-center py-6 text-gray-400">
                     <Wifi className="h-8 w-8 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">Sin servicios asignados</p>
+                    <button onClick={() => setShowServiceForm(true)} className="mt-2 text-blue-600 text-sm hover:underline">+ Crear servicio</button>
                   </div>
-                ) : services.slice(0, 2).map(s => (
+                ) : services.map(s => (
                   <div key={s.id} className="border rounded-lg p-4 mb-3 last:mb-0">
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-semibold text-gray-900">{s.plan?.name || 'Plan desconocido'}</p>
-                        <p className="text-sm text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps</p>
+                        <p className="text-sm text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · #{s.id}</p>
                       </div>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
                         {statusLabel[s.status] || s.status}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mt-3">
-                      <div><span className="font-medium">IP:</span> {s.ipAddress || '—'}</div>
-                      <div><span className="font-medium">MAC:</span> {s.macAddress || '—'}</div>
-                      <div><span className="font-medium">Instalación:</span> {s.installationDate || '—'}</div>
+                      <div><span className="font-medium">Instalación:</span> {formatDateCL(s.installationDate)}</div>
+                      <div><span className="font-medium">Próx. cobro:</span> {formatDateCL(s.nextBillingDate)}</div>
+                      <div><span className="font-medium">Ciclo:</span> {billingCycleLabel(s.billingCycleType, s.billingDay)}</div>
                       <div><span className="font-medium">Precio:</span> ${Number(s.plan?.price || 0).toLocaleString('es-CL')}</div>
                     </div>
-                    <button onClick={() => toggleService(s.id, s.status)}
-                      className={`mt-3 w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 ${s.status === 'active' ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
-                      {s.status === 'active' ? <><PowerOff className="h-3.5 w-3.5" /> Suspender servicio</> : <><Power className="h-3.5 w-3.5" /> Reactivar servicio</>}
-                    </button>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => toggleService(s.id, s.status)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 ${s.status === 'active' ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                        {s.status === 'active' ? <><PowerOff className="h-3.5 w-3.5" /> Suspender</> : <><Power className="h-3.5 w-3.5" /> Reactivar</>}
+                      </button>
+                      <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
+                        className="px-3 py-2 rounded-lg text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1">
+                        <Trash2 className="h-3.5 w-3.5" /> Eliminar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -268,7 +554,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                   <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0">
                     <div>
                       <p className="text-sm font-medium text-gray-900">{inv.invoiceNumber}</p>
-                      <p className="text-xs text-gray-400">{inv.billingPeriod || inv.dueDate}</p>
+                      <p className="text-xs text-gray-400">{inv.billingPeriod || formatDateCL(inv.dueDate)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold">${Number(inv.total).toLocaleString('es-CL')}</p>
@@ -288,41 +574,90 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
 
         {/* SERVICIOS */}
         {activeTab === 'services' && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            {services.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <Wifi className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p className="font-medium">Sin servicios asignados</p>
-              </div>
-            ) : (
-              <div className="divide-y">
-                {services.map(s => (
-                  <div key={s.id} className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-bold text-lg text-gray-900">{s.plan?.name}</h3>
-                        <p className="text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · ${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-gray-500">Gestiona planes, provisión MikroTik y conectividad del abonado</p>
+              <button onClick={() => setShowServiceForm(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
+                <Plus className="h-4 w-4" /> Nuevo servicio
+              </button>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              {services.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <Wifi className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p className="font-medium">Sin servicios asignados</p>
+                  <button onClick={() => setShowServiceForm(true)} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer servicio</button>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {services.map(s => (
+                    <div key={s.id} className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-900">{s.plan?.name}</h3>
+                          <p className="text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · ${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
+                          <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
+                          {statusLabel[s.status] || s.status}
+                        </span>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
-                        {statusLabel[s.status] || s.status}
-                      </span>
-                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm bg-gray-50 rounded-lg p-4">
-                      <div><p className="text-gray-400 text-xs mb-1">Dirección IP</p><p className="font-mono font-medium">{s.ipAddress || '—'}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">MAC Address</p><p className="font-mono font-medium">{s.macAddress || '—'}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">Instalación</p><p className="font-medium">{s.installationDate || '—'}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">Próx. factura</p><p className="font-medium">{s.nextBillingDate || '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Instalación</p><p className="font-medium">{formatDateCL(s.installationDate)}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Próximo cobro</p><p className="font-medium">{formatDateCL(s.nextBillingDate)}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Ciclo facturación</p><p className="font-medium text-xs">{billingCycleLabel(s.billingCycleType, s.billingDay)}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Vencimiento pago</p><p className="font-medium">Día {s.billingDueDay ?? s.billingDay ?? '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoeUsername || '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Clave PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoePassword || '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">IP / Router</p><p className="font-medium">{s.ipAddress || '—'} {s.routerId ? `(R#${s.routerId})` : ''}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Cola</p><p className="font-mono font-medium text-xs">{s.queueName || '—'}</p></div>
                     </div>
-                    <div className="flex gap-2 mt-4">
-                      <button onClick={() => toggleService(s.id, s.status)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${s.status === 'active' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                        {s.status === 'active' ? <><PowerOff className="h-4 w-4" /> Suspender</> : <><Power className="h-4 w-4" /> Reactivar</>}
+                      {(!s.pppoeUsername || !s.queueName) && (
+                        <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                          <p className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-2">
+                            <Zap className="h-4 w-4" /> Provisionar en MikroTik
+                          </p>
+                          <div className="flex gap-2 flex-wrap items-center">
+                            <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[160px]"
+                              value={provisionRouterId || s.routerId || ''} onChange={e => setProvisionRouterId(parseInt(e.target.value) || null)}>
+                              <option value="">Router...</option>
+                              {routers.map(r => (
+                                <option key={r.id} value={r.id}>{r.name} {r.agentConnected ? '●' : '○'}</option>
+                              ))}
+                            </select>
+                            <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[200px]" value={provisionMode}
+                              onChange={e => setProvisionMode(e.target.value)}>
+                              <option value="both">PPPoE + Simple Queue</option>
+                              <option value="pppoe">Solo PPPoE</option>
+                              <option value="queue">Solo Simple Queue</option>
+                            </select>
+                            <button disabled={provisioning} onClick={() => provisionNetwork(s.id)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                              <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : 'Aplicar en router'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    <div className="flex gap-2 mt-4 flex-wrap">
+                      <button onClick={() => generateInvoice(s.id)} disabled={generatingInvoice === s.id || s.status !== 'active'}
+                        className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50">
+                        <DollarSign className="h-4 w-4" /> {generatingInvoice === s.id ? 'Generando...' : 'Generar factura'}
                       </button>
+                      <button onClick={() => toggleService(s.id, s.status)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${s.status === 'active' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                          {s.status === 'active' ? <><PowerOff className="h-4 w-4" /> Suspender</> : <><Power className="h-4 w-4" /> Reactivar</>}
+                        </button>
+                        <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
+                          className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-red-50 text-red-700 hover:bg-red-100">
+                          <Trash2 className="h-4 w-4" /> Eliminar
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -351,7 +686,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <td className="p-4 text-sm">${Number(inv.amount).toLocaleString('es-CL')}</td>
                       <td className="p-4 text-sm">${Number(inv.tax).toLocaleString('es-CL')}</td>
                       <td className="p-4 font-bold">${Number(inv.total).toLocaleString('es-CL')}</td>
-                      <td className="p-4 text-sm text-gray-500">{inv.dueDate}</td>
+                      <td className="p-4 text-sm text-gray-500">{formatDateCL(inv.dueDate)}</td>
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-gray-100'}`}>
                           {statusLabel[inv.status] || inv.status}

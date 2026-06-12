@@ -152,6 +152,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       tunnelHostname: tunnelHostname || null,
       tunnelToken: tunnelToken || null,
       routerUser: routerUser || null,
+      routerPass: routerPass || null,
       encryptedAt: new Date().toISOString(),
     };
     const [router] = await db.insert(equipment).values({
@@ -207,10 +208,13 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
-    const { connectionMethod, tunnelHostname, location, name } = req.body;
+    const { connectionMethod, tunnelHostname, location, name, routerUser, routerPass, routerPort } = req.body;
     const creds = { ...router.credentials };
     if (connectionMethod) creds.connectionMethod = connectionMethod;
     if (tunnelHostname) creds.tunnelHostname = tunnelHostname;
+    if (routerUser) creds.routerUser = routerUser;
+    if (routerPass) creds.routerPass = routerPass;
+    if (routerPort) creds.routerPort = routerPort;
     const updates = { credentials: creds };
     if (location !== undefined) updates.location = location;
     if (name !== undefined) updates.name = name;

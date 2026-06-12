@@ -76,6 +76,36 @@ export async function runMigrations(connectionString) {
         )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS sites (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+        parent_id INTEGER,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'node',
+        address TEXT,
+        city VARCHAR(100),
+        latitude DECIMAL(10,8),
+        longitude DECIMAL(11,8),
+        notes TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS site_id INTEGER`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS router_id INTEGER`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS site_id INTEGER`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS pppoe_username VARCHAR(64)`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS pppoe_password VARCHAR(64)`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS ppp_profile VARCHAR(64) DEFAULT 'default'`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS queue_name VARCHAR(64)`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS network_meta JSONB`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS billing_cycle_type VARCHAR(32) DEFAULT 'anniversary'`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS billing_day INTEGER`;
+    await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS billing_due_day INTEGER DEFAULT 5`;
+    await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`;
+
     console.log('Multi-tenant migration OK');
   } finally {
     await sql.end();
