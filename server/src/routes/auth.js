@@ -151,7 +151,10 @@ authRouter.post('/setup', async (req, res) => {
 authRouter.get('/me', authenticateToken, async (req, res) => {
   let user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const roleBefore = user.role;
   user = await ensureOrgStaffAccess(user);
   const organization = user.organizationId ? await loadOrganization(user.organizationId) : null;
-  res.json(userResponse(user, organization));
+  const payload = userResponse(user, organization);
+  if (user.role !== roleBefore) payload.token = signToken(user);
+  res.json(payload);
 });

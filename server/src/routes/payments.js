@@ -1,29 +1,61 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { payments, invoices } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { payments, invoices, clients, users } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
+import { orgFilter, requireOrganizationId, getInvoiceInOrg } from '../lib/tenant.js';
 
 export const paymentsRouter = Router();
 
 paymentsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
-  const all = await db.select().from(payments).limit(50);
-  res.json(all);
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const all = await db.select({
+      id: payments.id,
+      invoiceId: payments.invoiceId,
+      clientId: payments.clientId,
+      amount: payments.amount,
+      method: payments.method,
+      reference: payments.reference,
+      paymentDate: payments.paymentDate,
+      notes: payments.notes,
+      createdAt: payments.createdAt,
+      client: { fullName: users.fullName, email: users.email },
+    })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .leftJoin(clients, eq(payments.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(orgFilter(invoices, orgId))
+      .limit(50);
+    res.json(all);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al listar pagos' });
+  }
 });
 
 paymentsRouter.post('/', requireRole('admin'), async (req, res) => {
   try {
-    const { invoiceId, clientId, amount, method, reference } = req.body;
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const { invoiceId, method, reference, amount } = req.body;
+    const inv = await getInvoiceInOrg(parseInt(invoiceId), orgId);
+    if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+    if (inv.status === 'paid') return res.status(400).json({ error: 'La factura ya está pagada' });
+
+    const payAmount = amount != null ? String(amount) : String(inv.total);
     const [payment] = await db.insert(payments).values({
-      invoiceId: parseInt(invoiceId), clientId: parseInt(clientId),
-      amount: String(amount), method: method || 'transfer', reference
+      invoiceId: inv.id,
+      clientId: inv.clientId,
+      amount: payAmount,
+      method: method || 'transfer',
+      reference,
     }).returning();
 
-    // Verificar si la factura queda pagada
-    const inv = await db.query.invoices.findFirst({ where: eq(invoices.id, parseInt(invoiceId)) });
-    if (inv && Number(inv.total) <= Number(amount)) {
-      await db.update(invoices).set({ status: 'paid', paidDate: new Date() }).where(eq(invoices.id, parseInt(invoiceId)));
-    }
+    await db.update(invoices)
+      .set({ status: 'paid', paidDate: new Date(), updatedAt: new Date() })
+      .where(and(eq(invoices.id, inv.id), orgFilter(invoices, orgId)));
 
     res.status(201).json(payment);
   } catch (error) {

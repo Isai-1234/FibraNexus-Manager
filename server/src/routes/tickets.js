@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { tickets, users, clients } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { orgFilter, requireOrganizationId, getClientInOrg } from '../lib/tenant.js';
 
 export const ticketsRouter = Router();
 
@@ -32,6 +32,9 @@ ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => 
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { clientId, subject, description, priority } = req.body;
+    if (!await getClientInOrg(parseInt(clientId), orgId)) {
+      return res.status(404).json({ error: 'Cliente no encontrado en tu organización' });
+    }
     const ticketNumber = 'TKT-' + Date.now();
     const [ticket] = await db.insert(tickets).values({
       organizationId: orgId,

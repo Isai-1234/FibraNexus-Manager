@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { organizations, users } from '../db/schema.js';
+import { organizations, users, clients, clientServices, plans, invoices } from '../db/schema.js';
 
 export function getOrganizationId(req) {
   const id = req.user?.organizationId;
@@ -61,7 +61,10 @@ export function inferConnectionMethod(router) {
 }
 
 export async function ensureOrgStaffAccess(user) {
-  if (!user?.organizationId || (user.role !== 'client')) return user;
+  if (!user?.organizationId || user.role !== 'client') return user;
+
+  const abonado = await db.query.clients.findFirst({ where: eq(clients.userId, user.id) });
+  if (abonado) return user;
 
   const staff = await db.query.users.findMany({
     where: and(
@@ -79,6 +82,44 @@ export async function ensureOrgStaffAccess(user) {
     .where(eq(users.id, user.id))
     .returning();
   return updated || user;
+}
+
+export async function getClientInOrg(clientId, orgId) {
+  const rows = await db.select({ id: clients.id })
+    .from(clients)
+    .where(and(eq(clients.id, clientId), orgFilter(clients, orgId)))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function getPlanInOrg(planId, orgId) {
+  const rows = await db.select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.id, planId), orgFilter(plans, orgId)))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function getServiceInOrg(serviceId, orgId) {
+  const rows = await db.select({ id: clientServices.id })
+    .from(clientServices)
+    .innerJoin(clients, eq(clientServices.clientId, clients.id))
+    .where(and(eq(clientServices.id, serviceId), orgFilter(clients, orgId)))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function getInvoiceInOrg(invoiceId, orgId) {
+  const rows = await db.select({
+    id: invoices.id,
+    clientId: invoices.clientId,
+    total: invoices.total,
+    status: invoices.status,
+  })
+    .from(invoices)
+    .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
+    .limit(1);
+  return rows[0] || null;
 }
 
 export async function requireActiveOrg(req, res, next) {

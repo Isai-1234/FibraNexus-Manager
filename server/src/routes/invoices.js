@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { invoices, clients, users, clientServices, plans, payments } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { orgFilter, requireOrganizationId, getClientInOrg, getInvoiceInOrg } from '../lib/tenant.js';
 
 export const invoicesRouter = Router();
 
@@ -77,10 +77,20 @@ invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
 
 // PUT /:id/status - Actualizar estado
 invoicesRouter.put('/:id/status', requireRole('admin'), async (req, res) => {
-  const { status } = req.body;
-  const [updated] = await db.update(invoices)
-    .set({ status, paidDate: status === 'paid' ? new Date() : null, updatedAt: new Date() })
-    .where(eq(invoices.id, parseInt(req.params.id)))
-    .returning();
-  res.json(updated);
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const invoiceId = parseInt(req.params.id);
+    if (!await getInvoiceInOrg(invoiceId, orgId)) {
+      return res.status(404).json({ error: 'Factura no encontrada' });
+    }
+    const { status } = req.body;
+    const [updated] = await db.update(invoices)
+      .set({ status, paidDate: status === 'paid' ? new Date() : null, updatedAt: new Date() })
+      .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
+      .returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar factura' });
+  }
 });

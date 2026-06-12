@@ -214,6 +214,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     individual: 'Individual', business: 'Empresa',
     fiber: 'Fibra', wisp: 'WISP', copper: 'Cobre', wireless: 'Inalámbrico',
     router: 'Router', switch: 'Switch', olt: 'OLT', ont: 'ONT', ap: 'AP', cpe: 'CPE', server: 'Servidor', other: 'Otro',
+    admin: 'Administrador', technician: 'Técnico', client: 'Cliente',
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
@@ -327,16 +328,18 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
                 {[
                   { label: 'Clientes', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' },
                   { label: 'Servicios Activos', value: stats?.activeServices || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'services' },
                   { label: 'Planes', value: stats?.totalPlans || 0, icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50', tab: 'plans' },
                   { label: 'Equipos', value: stats?.totalEquipment || 0, icon: Server, color: 'text-indigo-600', bg: 'bg-indigo-50', tab: 'equipment' },
+                  { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', tab: 'equipment', action: () => { setActiveTab('equipment'); setEquipmentSubTab('routers'); setShowRouters(true) } },
                   { label: 'Tickets Abiertos', value: stats?.openTickets || 0, icon: AlertTriangle, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' },
                   { label: 'Por Cobrar', value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
                 ].map(s => (
-                  <div key={s.label} className="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100" onClick={() => setActiveTab(s.tab)}>
+                  <div key={s.label} className="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100"
+                    onClick={() => s.action ? s.action() : setActiveTab(s.tab)}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className={`p-2 rounded-lg ${s.bg}`}><s.icon className={`h-5 w-5 ${s.color}`} /></div>
                       <p className="text-xs text-gray-500 font-medium">{s.label}</p>
@@ -547,6 +550,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 }
 
 // Sidebar como componente separado para reutilizar
+const roleLabels: Record<string, string> = {
+  admin: 'Administrador',
+  technician: 'Técnico',
+  client: 'Cliente',
+}
+
 function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
   return (
     <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col flex-shrink-0">
@@ -571,7 +580,7 @@ function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-sm font-bold">{user?.fullName?.charAt(0) || 'A'}</div>
-            <div><p className="text-xs font-medium truncate max-w-[100px]">{user?.fullName}</p><p className="text-xs text-gray-400 capitalize">{user?.role}</p></div>
+            <div><p className="text-xs font-medium truncate max-w-[100px]">{user?.fullName}</p><p className="text-xs text-gray-400">{roleLabels[user?.role] || user?.role}</p></div>
           </div>
           <button onClick={logout} className="text-gray-400 hover:text-red-400 transition p-1"><LogOut className="h-4 w-4" /></button>
         </div>

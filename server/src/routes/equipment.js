@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { connectedAgents } from './routers.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
@@ -12,7 +12,9 @@ equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) =>
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const allEquipment = await db.select().from(equipment).where(orgFilter(equipment, orgId)).limit(50);
+    const allEquipment = await db.select().from(equipment)
+      .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')))
+      .limit(50);
     const enriched = allEquipment.map(item => {
       if (item.type !== 'router') return item;
       const agent = connectedAgents.get(item.id.toString());

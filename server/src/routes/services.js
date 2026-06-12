@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { clientServices, clients, plans, users } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
 
 export const servicesRouter = Router();
 
@@ -35,6 +35,12 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { clientId, planId, ipAddress, macAddress } = req.body;
+    if (!await getClientInOrg(parseInt(clientId), orgId)) {
+      return res.status(404).json({ error: 'Cliente no encontrado en tu organización' });
+    }
+    if (!await getPlanInOrg(parseInt(planId), orgId)) {
+      return res.status(404).json({ error: 'Plan no encontrado en tu organización' });
+    }
     const installDate = new Date().toISOString().split('T')[0];
     const nextBilling = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString().split('T')[0];
     const [service] = await db.insert(clientServices).values({
@@ -50,10 +56,16 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
 
 servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
   try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
     const { status } = req.body;
     const [updated] = await db.update(clientServices)
       .set({ status, updatedAt: new Date() })
-      .where(eq(clientServices.id, parseInt(req.params.id)))
+      .where(eq(clientServices.id, serviceId))
       .returning();
     res.json(updated);
   } catch (error) {
@@ -62,17 +74,37 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
 });
 
 servicesRouter.put('/:id/suspend', requireRole('admin', 'technician'), async (req, res) => {
-  const [updated] = await db.update(clientServices)
-    .set({ status: 'suspended', updatedAt: new Date() })
-    .where(eq(clientServices.id, parseInt(req.params.id)))
-    .returning();
-  res.json({ message: 'Servicio suspendido', service: updated });
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const [updated] = await db.update(clientServices)
+      .set({ status: 'suspended', updatedAt: new Date() })
+      .where(eq(clientServices.id, serviceId))
+      .returning();
+    res.json({ message: 'Servicio suspendido', service: updated });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al suspender servicio' });
+  }
 });
 
 servicesRouter.put('/:id/reactivate', requireRole('admin'), async (req, res) => {
-  const [updated] = await db.update(clientServices)
-    .set({ status: 'active', updatedAt: new Date() })
-    .where(eq(clientServices.id, parseInt(req.params.id)))
-    .returning();
-  res.json({ message: 'Servicio reactivado', service: updated });
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const [updated] = await db.update(clientServices)
+      .set({ status: 'active', updatedAt: new Date() })
+      .where(eq(clientServices.id, serviceId))
+      .returning();
+    res.json({ message: 'Servicio reactivado', service: updated });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al reactivar servicio' });
+  }
 });
