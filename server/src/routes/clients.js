@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
+import { listClientEquipment } from '../lib/equipmentClientLink.js';
 
 export const clientsRouter = Router();
 
@@ -54,6 +55,19 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     res.json(allClients);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar clientes' });
+  }
+});
+
+clientsRouter.get('/:id/equipment', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const clientId = parseInt(req.params.id, 10);
+    const items = await listClientEquipment(clientId, orgId);
+    res.json(items);
+  } catch (error) {
+    const status = error.message === 'Abonado no encontrado' ? 404 : 500;
+    res.status(status).json({ error: error.message || 'Error al listar equipos' });
   }
 });
 

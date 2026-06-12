@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search
+  Layers, Antenna, Network, Search, Pencil, User
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
@@ -81,6 +81,9 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [routers, setRouters] = useState<any[]>([])
   const [suggestingIp, setSuggestingIp] = useState(false)
   const [ipSuggestHint, setIpSuggestHint] = useState('')
+  const [clients, setClients] = useState<any[]>([])
+  const [editingEquip, setEditingEquip] = useState<any>(null)
+  const [editEquipForm, setEditEquipForm] = useState<any>({})
 
   function api() {
     return axios.create({
@@ -92,14 +95,17 @@ export default function NetworkManager({ API, onBack }: Props) {
   async function loadAll() {
     setLoading(true)
     try {
-      const [sitesRes, routersRes] = await Promise.all([
+      const [sitesRes, routersRes, clientsRes] = await Promise.all([
         api().get('/sites'),
         api().get('/routers'),
+        api().get('/clients', { params: { page: 1, limit: 200 } }),
       ])
       setTree(sitesRes.data.tree || [])
       setUnassigned(sitesRes.data.unassigned || [])
       setStats(sitesRes.data.stats || {})
       setRouters(routersRes.data || [])
+      const clientData = clientsRes.data
+      setClients(Array.isArray(clientData) ? clientData : clientData?.items || [])
     } catch (e: any) {
       alert('Error: ' + (e.response?.data?.error || e.message))
     }
@@ -160,6 +166,7 @@ export default function NetworkManager({ API, onBack }: Props) {
       await api().post('/sites/equipment', {
         ...equipForm,
         siteId: equipForm.siteId || selectedSite?.id,
+        clientId: equipForm.clientId || null,
       })
       setShowEquipForm(false)
       setEquipForm({ type: 'cpe', brand: 'Ubiquiti' })
@@ -167,6 +174,61 @@ export default function NetworkManager({ API, onBack }: Props) {
       await refreshSelectedSite()
       loadAll()
     } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  function openEditCpe(eq: any) {
+    setEditingEquip(eq)
+    setEditEquipForm({
+      name: eq.name || '',
+      brand: eq.brand || 'Ubiquiti',
+      model: eq.model || '',
+      ipAddress: eq.ipAddress || '',
+      macAddress: eq.macAddress || '',
+      snmpCommunity: eq.snmpCommunity || '',
+      clientId: eq.clientId || '',
+    })
+    setIpSuggestHint('')
+  }
+
+  async function saveEditEquipment() {
+    if (!editingEquip) return
+    try {
+      await api().patch(`/sites/equipment/${editingEquip.id}`, {
+        ...editEquipForm,
+        clientId: editEquipForm.clientId || null,
+      })
+      setEditingEquip(null)
+      setEditEquipForm({})
+      setIpSuggestHint('')
+      await refreshSelectedSite()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function suggestFreeIpForEdit() {
+    const siteId = selectedSite?.id
+    if (!siteId) {
+      alert('Selecciona un nodo en el árbol primero')
+      return
+    }
+    setSuggestingIp(true)
+    setIpSuggestHint('')
+    try {
+      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const q = routerId ? `?routerId=${routerId}` : ''
+      const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
+      setEditEquipForm((f: any) => ({ ...f, ipAddress: res.data.ip }))
+      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}`)
+    } catch (e: any) {
+      alert(e.response?.data?.error || e.message)
+    }
+    setSuggestingIp(false)
+  }
+
+  function clientLabel(c: any) {
+    const name = c.user?.fullName || c.fullName || `Abonado #${c.id}`
+    const extra = c.user?.email || c.rut || ''
+    return extra ? `${name} (${extra})` : name
   }
 
   async function suggestFreeIp() {
@@ -366,6 +428,14 @@ export default function NetworkManager({ API, onBack }: Props) {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{eq.name}</p>
                           <p className="text-xs text-gray-500">{eq.type} · {eq.brand} {eq.model} · {eq.ipAddress || 'sin IP'}</p>
+                          {eq.type === 'cpe' && eq.clientName && (
+                            <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                              <User className="h-3 w-3" /> Abonado: {eq.clientName}
+                            </p>
+                          )}
+                          {eq.type === 'cpe' && !eq.clientName && (
+                            <p className="text-xs text-amber-600 mt-0.5">Sin abonado asignado</p>
+                          )}
                         </div>
                         {eq.type === 'router' && (
                           <div className="flex gap-1">
@@ -380,9 +450,16 @@ export default function NetworkManager({ API, onBack }: Props) {
                           </div>
                         )}
                         {eq.type === 'cpe' && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {eq.status === 'online' ? 'Online' : 'Offline'}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => openEditCpe(eq)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="Editar antena / abonado">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {eq.status === 'online' ? 'Online' : 'Offline'}
+                            </span>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -718,6 +795,18 @@ export default function NetworkManager({ API, onBack }: Props) {
               {equipForm.type === 'cpe' && (
                 <>
                   <div>
+                    <label className="text-sm font-medium">Abonado</label>
+                    <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                      value={equipForm.clientId || ''}
+                      onChange={e => setEquipForm({ ...equipForm, clientId: e.target.value ? Number(e.target.value) : '' })}>
+                      <option value="">Sin asignar (elegir después)</option>
+                      {clients.map((c: any) => (
+                        <option key={c.id} value={c.id}>{clientLabel(c)}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Vincula la antena al abonado. La IP y MAC se copian al servicio activo del cliente.</p>
+                  </div>
+                  <div>
                     <label className="text-sm font-medium">MAC antena</label>
                     <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono" placeholder="AA:BB:CC:DD:EE:FF"
                       value={equipForm.macAddress || ''} onChange={e => setEquipForm({ ...equipForm, macAddress: e.target.value })} />
@@ -741,6 +830,78 @@ export default function NetworkManager({ API, onBack }: Props) {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowEquipForm(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
               <button onClick={createEquipment} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Agregar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar CPE */}
+      {editingEquip && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between mb-4">
+              <h3 className="font-bold text-lg">Editar antena CPE</h3>
+              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Nombre *</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1" value={editEquipForm.name || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, name: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-sm font-medium">Marca</label>
+                  <input className="w-full border rounded-lg px-3 py-2 mt-1" value={editEquipForm.brand || ''}
+                    onChange={e => setEditEquipForm({ ...editEquipForm, brand: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Modelo</label>
+                  <input className="w-full border rounded-lg px-3 py-2 mt-1" value={editEquipForm.model || ''}
+                    onChange={e => setEditEquipForm({ ...editEquipForm, model: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Abonado</label>
+                <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                  value={editEquipForm.clientId || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, clientId: e.target.value ? Number(e.target.value) : '' })}>
+                  <option value="">Sin abonado</option>
+                  {clients.map((c: any) => (
+                    <option key={c.id} value={c.id}>{clientLabel(c)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">IP / hostname</label>
+                <div className="flex gap-2 mt-1">
+                  <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
+                    value={editEquipForm.ipAddress || ''}
+                    onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })} />
+                  <button type="button" onClick={suggestFreeIpForEdit} disabled={suggestingIp || !selectedSite}
+                    className="shrink-0 px-3 py-2 border rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-40 flex items-center gap-1.5">
+                    <Search className={`h-4 w-4 ${suggestingIp ? 'animate-pulse' : ''}`} />
+                    IP libre
+                  </button>
+                </div>
+                {ipSuggestHint && <p className="text-xs text-emerald-700 mt-1">{ipSuggestHint}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-medium">MAC antena</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono"
+                  value={editEquipForm.macAddress || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, macAddress: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">SNMP Community</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono"
+                  value={editEquipForm.snmpCommunity || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, snmpCommunity: e.target.value })} />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button onClick={saveEditEquipment} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
             </div>
           </div>
         </div>

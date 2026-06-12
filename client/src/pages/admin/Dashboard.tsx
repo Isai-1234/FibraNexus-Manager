@@ -180,7 +180,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       items: [
         { id: 'dashboard', label: 'Centro de operaciones', icon: LayoutDashboard },
         { id: 'clients', label: 'Abonados', icon: Users },
-        { id: 'services', label: 'Suscripciones', icon: Wifi },
+        { id: 'services', label: 'Auditoría técnica', icon: Wifi },
         { id: 'invoices', label: 'Facturación', icon: DollarSign },
         { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings },
         { id: 'tickets', label: 'Soporte', icon: Ticket },
@@ -208,7 +208,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const tabLabels: Record<string, string> = {
     dashboard: 'Centro de operaciones ISP',
     clients: 'Abonados',
-    services: 'Suscripciones activas',
+    services: 'Auditoría técnica (IPs y estados)',
     plans: 'Planes comerciales',
     equipment: 'Equipos y routers',
     ips: 'Gestión de IPs',
@@ -219,7 +219,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const tabDescriptions: Record<string, string> = {
     dashboard: 'Alertas, deudas y acceso rápido a cada cuenta de abonado',
     clients: 'Quienes pagan internet — tienen login en el portal abonado',
-    services: 'Qué abonado tiene qué plan instalado (IP, MAC, estado)',
+    services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
     equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
     ips: 'Pools y asignación de direcciones IP',
@@ -462,7 +462,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
@@ -730,12 +730,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               )}
               {activeTab === 'services' && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900">
-                  <strong>Suscripciones</strong> — Une un <strong>abonado</strong> con un <strong>plan comercial</strong>.
-                  Es la conexión real de internet (IP, MAC, activo/suspendido).
+                <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 text-sm text-blue-900 space-y-2">
+                  <p><strong>Auditoría técnica</strong> — Lista global para detectar IPs duplicadas o servicios suspendidos.</p>
+                  <p>Para crear servicios, asignar antenas, configurar DHCP/estática y ver facturas, entra al <strong>perfil del abonado</strong>:</p>
+                  <button onClick={() => setActiveTab('clients')} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                    Ir a Abonados → Gestionar
+                  </button>
                   {Object.values(duplicateServiceIps).some((n) => n > 1) && (
                     <p className="mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      ⚠️ Hay IPs duplicadas en la lista. Elimina la suscripción repetida — dos abonados con la misma IP causan conflicto en la red.
+                      ⚠️ Hay IPs duplicadas. Corrígelo desde el perfil del abonado afectado.
                     </p>
                   )}
                 </div>
@@ -845,10 +848,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <div className="flex items-center gap-1">
                               {activeTab === 'services' && (
                                 <>
+                                  <button onClick={() => setSelectedClientId(item.client?.id || item.clientId)}
+                                    className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium flex items-center gap-1">
+                                    <Eye className="h-3 w-3" /> Perfil
+                                  </button>
                                   {item.status === 'active'
-                                    ? <button onClick={() => handleAction('suspend', item.id)} className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 font-medium">⏸ Suspender</button>
-                                    : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">▶ Reactivar</button>}
-                                  <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="Eliminar suscripción"><Trash2 className="h-4 w-4" /></button>
+                                    ? <button onClick={() => handleAction('suspend', item.id)} className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 font-medium">Suspender</button>
+                                    : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">Reactivar</button>}
                                 </>
                               )}
                               {activeTab === 'invoices' && item.status === 'pending' && (

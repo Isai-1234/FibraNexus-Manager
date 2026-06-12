@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { sites, equipment } from '../db/schema.js';
+import { sites, equipment, clients } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
@@ -8,6 +8,7 @@ import { connectedAgents } from './routers.js';
 import { inferConnectionMethod } from '../lib/tenant.js';
 import { listPppoeActive, listPppoeSecrets, listSimpleQueues } from '../lib/mikrotikClient.js';
 import { loadRouter } from '../lib/networkProvision.js';
+import { assignEquipmentToClient, enrichEquipmentWithClients, syncEquipmentToClientService } from '../lib/equipmentClientLink.js';
 
 export const sitesRouter = Router();
 
@@ -42,15 +43,18 @@ sitesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const flatSites = await db.select().from(sites).where(orgFilter(sites, orgId));
     const allEquipment = await db.select().from(equipment).where(orgFilter(equipment, orgId));
 
-    const enrichedEquipment = allEquipment.map((item) => {
-      const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
-      return {
-        ...item,
-        connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
-        agentConnected: item.type === 'router' && (connectedAgents.has(item.id.toString()) || item.status === 'online'),
-        agentLastSeen: agent?.lastSeen || item.lastSeen || null,
-      };
-    });
+    const enrichedEquipment = await enrichEquipmentWithClients(
+      allEquipment.map((item) => {
+        const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
+        return {
+          ...item,
+          connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
+          agentConnected: item.type === 'router' && (connectedAgents.has(item.id.toString()) || item.status === 'online'),
+          agentLastSeen: agent?.lastSeen || item.lastSeen || null,
+        };
+      }),
+      orgId,
+    );
 
     const unassigned = enrichedEquipment.filter((e) => !e.siteId);
     res.json({
@@ -180,7 +184,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity } = req.body;
+    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
 
     if (siteId) {
@@ -188,6 +192,14 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
         .where(and(eq(sites.id, parseInt(siteId)), orgFilter(sites, orgId)))
         .limit(1);
       if (!site) return res.status(404).json({ error: 'Sitio no encontrado' });
+    }
+
+    if (clientId) {
+      const parsedClientId = parseInt(clientId, 10);
+      const [clientRow] = await db.select({ id: clients.id }).from(clients)
+        .where(and(eq(clients.id, parsedClientId), orgFilter(clients, orgId)))
+        .limit(1);
+      if (!clientRow) return res.status(404).json({ error: 'Abonado no encontrado' });
     }
 
     const [created] = await db.insert(equipment).values({
@@ -204,9 +216,62 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       status: 'offline',
     }).returning();
 
+    if (clientId) {
+      const linked = await assignEquipmentToClient(created.id, parseInt(clientId, 10), orgId);
+      const [enriched] = await enrichEquipmentWithClients([linked], orgId);
+      return res.status(201).json(enriched[0]);
+    }
+
     res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: 'Error al crear equipo: ' + error.message });
+  }
+});
+
+sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const equipmentId = parseInt(req.params.id, 10);
+    const [existing] = await db.select().from(equipment)
+      .where(and(eq(equipment.id, equipmentId), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!existing) return res.status(404).json({ error: 'Equipo no encontrado' });
+
+    const {
+      name, brand, model, ipAddress, macAddress, snmpCommunity, notes, clientId, siteId,
+    } = req.body;
+
+    const patch = { updatedAt: new Date() };
+    if (name !== undefined) patch.name = name;
+    if (brand !== undefined) patch.brand = brand;
+    if (model !== undefined) patch.model = model;
+    if (ipAddress !== undefined) patch.ipAddress = ipAddress || null;
+    if (macAddress !== undefined) patch.macAddress = macAddress || null;
+    if (snmpCommunity !== undefined) patch.snmpCommunity = snmpCommunity || null;
+    if (notes !== undefined) patch.notes = notes || null;
+    if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
+
+    const [updated] = await db.update(equipment).set(patch)
+      .where(eq(equipment.id, equipmentId)).returning();
+
+    let result = updated;
+    if (clientId !== undefined) {
+      result = await assignEquipmentToClient(
+        equipmentId,
+        clientId ? parseInt(clientId, 10) : null,
+        orgId,
+      );
+    }
+
+    if (result.clientId) {
+      await syncEquipmentToClientService(result, result.clientId, orgId);
+    }
+
+    const [enriched] = await enrichEquipmentWithClients([result], orgId);
+    res.json(enriched[0]);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });
   }
 });
 

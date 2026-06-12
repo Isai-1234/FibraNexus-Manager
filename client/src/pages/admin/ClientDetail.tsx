@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2 } from 'lucide-react'
+import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2, Antenna, Pencil, Search } from 'lucide-react'
 import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
@@ -20,7 +20,28 @@ function defaultServiceForm() {
     billingCycleType: 'anniversary',
     billingDueDay: 5,
     generateFirstInvoice: true,
+    siteId: '',
+    equipmentId: '',
   }
+}
+
+const CLIENT_EQUIP_TYPES = [
+  { value: 'cpe', label: 'Antena CPE (Ubiquiti, etc.)' },
+  { value: 'ap', label: 'Cámara / Access Point' },
+  { value: 'other', label: 'Router u otro dispositivo' },
+]
+
+const EQUIP_TYPE_LABEL: Record<string, string> = {
+  cpe: 'Antena CPE', ap: 'Cámara / AP', other: 'Dispositivo', router: 'Router',
+}
+
+function flattenSites(tree: any[]): any[] {
+  const acc: any[] = []
+  for (const s of tree) {
+    acc.push({ id: s.id, name: s.name, city: s.city })
+    if (s.children?.length) acc.push(...flattenSites(s.children))
+  }
+  return acc
 }
 
 export default function ClientDetail({ clientId, API, onBack }: Props) {
@@ -44,6 +65,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [savingRouterCred, setSavingRouterCred] = useState(false)
   const [savingService, setSavingService] = useState(false)
   const [pppProfiles, setPppProfiles] = useState<any[]>([])
+  const [generatingInvoice, setGeneratingInvoice] = useState<number | null>(null)
+  const [clientEquipment, setClientEquipment] = useState<any[]>([])
+  const [sites, setSites] = useState<any[]>([])
+  const [showEquipForm, setShowEquipForm] = useState(false)
+  const [equipForm, setEquipForm] = useState<any>({ type: 'cpe', brand: 'Ubiquiti' })
+  const [editingEquip, setEditingEquip] = useState<any>(null)
+  const [editEquipForm, setEditEquipForm] = useState<any>({})
+  const [suggestingIp, setSuggestingIp] = useState(false)
+  const [ipSuggestHint, setIpSuggestHint] = useState('')
 
   function api() {
     return axios.create({
@@ -56,11 +86,22 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     Promise.all([
       api().get('/routers'),
       api().get('/plans'),
-    ]).then(([rRes, pRes]) => {
+      api().get('/sites'),
+    ]).then(([rRes, pRes, sRes]) => {
       setRouters(Array.isArray(rRes.data) ? rRes.data : [])
       setPlans(Array.isArray(pRes.data) ? pRes.data : [])
+      setSites(flattenSites(sRes.data?.tree || []))
     }).catch(() => {})
   }, [clientId])
+
+  async function loadClientEquipment() {
+    try {
+      const res = await api().get(`/clients/${clientId}/equipment`)
+      setClientEquipment(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setClientEquipment([])
+    }
+  }
 
   async function loadPppProfiles(routerId: number) {
     try {
@@ -85,6 +126,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         Number(s.client?.id) === Number(clientId) || Number(s.clientId) === Number(clientId)))
       setInvoices((Array.isArray(iRes.data) ? iRes.data : []).filter((i: any) => i.client?.id === clientId || i.clientId === clientId))
       setTickets((Array.isArray(tRes.data) ? tRes.data : []).filter((t: any) => t.client?.id === clientId || t.clientId === clientId))
+      await loadClientEquipment()
     } catch (e) { console.error(e) }
     setLoading(false)
   }
@@ -189,6 +231,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       }
       setShowServiceForm(false)
       setServiceForm(defaultServiceForm())
+      if (serviceForm.equipmentId) {
+        await api().patch(`/sites/equipment/${serviceForm.equipmentId}`, { clientId }).catch(() => {})
+      }
       loadAll()
     } catch (e: any) {
       alert('Error: ' + (e.response?.data?.error || e.message))
@@ -249,6 +294,102 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
+  async function suggestFreeIp(target: 'create' | 'edit' | 'service', siteId?: number) {
+    const sid = siteId || (target === 'edit' ? editingEquip?.siteId : equipForm.siteId || serviceForm.siteId)
+    if (!sid) {
+      alert('Selecciona un nodo primero')
+      return
+    }
+    setSuggestingIp(true)
+    setIpSuggestHint('')
+    try {
+      const siteRouters = routers.filter((r) => r.siteId === sid)
+      const routerId = siteRouters[0]?.id
+      const q = routerId ? `?routerId=${routerId}` : ''
+      const res = await api().get(`/network/sites/${sid}/next-free-ip${q}`)
+      const ip = res.data.ip
+      if (target === 'edit') setEditEquipForm((f: any) => ({ ...f, ipAddress: ip }))
+      else if (target === 'service') setServiceForm((f: any) => ({ ...f, ipAddress: ip }))
+      else setEquipForm((f: any) => ({ ...f, ipAddress: ip, siteId: sid }))
+      setIpSuggestHint(`Desde pool ${res.data.pool} · ${res.data.ranges}`)
+    } catch (e: any) {
+      alert(e.response?.data?.error || e.message)
+    }
+    setSuggestingIp(false)
+  }
+
+  async function createClientEquipment() {
+    try {
+      await api().post('/sites/equipment', {
+        ...equipForm,
+        clientId,
+        siteId: equipForm.siteId || null,
+      })
+      setShowEquipForm(false)
+      setEquipForm({ type: 'cpe', brand: 'Ubiquiti' })
+      setIpSuggestHint('')
+      await loadClientEquipment()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  function openEditEquip(eq: any) {
+    setEditingEquip(eq)
+    setEditEquipForm({
+      name: eq.name || '',
+      brand: eq.brand || '',
+      model: eq.model || '',
+      type: eq.type || 'cpe',
+      ipAddress: eq.ipAddress || '',
+      macAddress: eq.macAddress || '',
+      snmpCommunity: eq.snmpCommunity || '',
+      siteId: eq.siteId || '',
+    })
+    setIpSuggestHint('')
+  }
+
+  async function saveEditEquip() {
+    if (!editingEquip) return
+    try {
+      await api().patch(`/sites/equipment/${editingEquip.id}`, {
+        ...editEquipForm,
+        clientId,
+        siteId: editEquipForm.siteId || null,
+      })
+      setEditingEquip(null)
+      setEditEquipForm({})
+      setIpSuggestHint('')
+      await loadClientEquipment()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function unlinkEquipment(equipmentId: number, name: string) {
+    if (!confirm(`¿Desvincular "${name}" de este abonado? El equipo sigue en el nodo.`)) return
+    try {
+      await api().patch(`/sites/equipment/${equipmentId}`, { clientId: null })
+      await loadClientEquipment()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  function applyEquipmentToService(equipmentId: string) {
+    const eq = clientEquipment.find((e) => String(e.id) === String(equipmentId))
+    if (!eq) return
+    setServiceForm((f: any) => ({
+      ...f,
+      equipmentId: eq.id,
+      ipAddress: eq.ipAddress || f.ipAddress,
+      macAddress: eq.macAddress || f.macAddress,
+      siteId: eq.siteId || f.siteId,
+      routerId: eq.siteId
+        ? String(routers.find((r) => r.siteId === eq.siteId)?.id || f.routerId || '')
+        : f.routerId,
+    }))
+  }
+
+  const siteRoutersFor = (siteId: number | string) =>
+    routers.filter((r) => r.siteId === Number(siteId))
+
   const statusColor: Record<string, string> = {
     active: 'bg-green-100 text-green-700', suspended: 'bg-yellow-100 text-yellow-700',
     cancelled: 'bg-red-100 text-red-700', pending: 'bg-blue-100 text-blue-700',
@@ -268,6 +409,11 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
 
   const pendingInvoices = invoices.filter(i => i.status === 'pending' || i.status === 'overdue')
   const totalDeuda = pendingInvoices.reduce((sum, i) => sum + Number(i.total || 0), 0)
+  const primaryAntenna = clientEquipment.find((e) => e.type === 'cpe') || clientEquipment[0]
+  const antennaOnline = primaryAntenna?.status === 'online'
+  const activeService = services.find((s) => s.status === 'active')
+  const nextDueInvoice = [...pendingInvoices].sort((a, b) =>
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
   const hasDuplicateServices = services.length > 1 && (
     new Set(services.map(s => `${s.plan?.id}-${s.ipAddress || ''}`)).size < services.length
     || services.filter(s => s.status === 'active').length > 1
@@ -400,18 +546,69 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                   onChange={e => setServiceForm({ ...serviceForm, generateFirstInvoice: e.target.checked })} />
                 Generar primera factura al crear
               </label>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium text-orange-900 flex items-center gap-2"><Antenna className="h-4 w-4" /> Conexión y equipos</p>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IP (opcional)</label>
-                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="172.16.140.2"
-                    value={serviceForm.ipAddress || ''} onChange={e => setServiceForm({ ...serviceForm, ipAddress: e.target.value })} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nodo / torre</label>
+                  <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm" value={serviceForm.siteId || ''}
+                    onChange={e => {
+                      const siteId = e.target.value
+                      const firstRouter = siteRoutersFor(siteId)[0]
+                      setServiceForm({
+                        ...serviceForm,
+                        siteId,
+                        routerId: firstRouter ? String(firstRouter.id) : '',
+                        equipmentId: '',
+                      })
+                    }}>
+                    <option value="">Seleccionar nodo...</option>
+                    {sites.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}{s.city ? ` · ${s.city}` : ''}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">MAC antena (opcional)</label>
-                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="AA:BB:CC:DD:EE:FF"
-                    value={serviceForm.macAddress || ''} onChange={e => setServiceForm({ ...serviceForm, macAddress: e.target.value })} />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Antena / equipo del abonado</label>
+                  <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm" value={serviceForm.equipmentId || ''}
+                    onChange={e => {
+                      const val = e.target.value
+                      if (val === '__new__') {
+                        setShowEquipForm(true)
+                        setEquipForm({ type: 'cpe', brand: 'Ubiquiti', siteId: serviceForm.siteId || '' })
+                        return
+                      }
+                      applyEquipmentToService(val)
+                    }}>
+                    <option value="">Sin vincular (IP manual)</option>
+                    {clientEquipment.map(eq => (
+                      <option key={eq.id} value={eq.id}>{eq.name} — {eq.ipAddress || 'sin IP'}</option>
+                    ))}
+                    <option value="__new__">+ Registrar nueva antena...</option>
+                  </select>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">IP</label>
+                    <div className="flex gap-1">
+                      <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm min-w-0" placeholder="172.16.140.2"
+                        value={serviceForm.ipAddress || ''} onChange={e => setServiceForm({ ...serviceForm, ipAddress: e.target.value })} />
+                      <button type="button" disabled={suggestingIp || !serviceForm.siteId}
+                        onClick={() => suggestFreeIp('service', Number(serviceForm.siteId))}
+                        className="shrink-0 px-2 py-2 border rounded-lg text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-40" title="IP libre">
+                        <Search className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">MAC antena</label>
+                    <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="AA:BB:CC:DD:EE:FF"
+                      value={serviceForm.macAddress || ''} onChange={e => setServiceForm({ ...serviceForm, macAddress: e.target.value })} />
+                  </div>
+                </div>
+                {ipSuggestHint && <p className="text-xs text-emerald-700">{ipSuggestHint}</p>}
               </div>
+
               <div className="bg-sky-50 border border-sky-100 rounded-lg p-4 space-y-3">
                 <label className="flex items-center gap-2 text-sm font-medium text-sky-900">
                   <input type="checkbox" checked={serviceForm.provisionOnCreate !== false}
@@ -421,26 +618,29 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 {serviceForm.provisionOnCreate !== false && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Router *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Router del nodo *</label>
                       <select className="w-full border rounded-lg px-3 py-2 bg-white" value={serviceForm.routerId || ''}
                         onChange={e => setServiceForm({ ...serviceForm, routerId: e.target.value })}>
                         <option value="">Seleccionar router...</option>
-                        {routers.map(r => (
+                        {(serviceForm.siteId ? siteRoutersFor(serviceForm.siteId) : routers).map(r => (
                           <option key={r.id} value={r.id}>{r.name} {r.agentConnected ? '● online' : '○ offline'}</option>
                         ))}
                       </select>
+                      {serviceForm.siteId && siteRoutersFor(serviceForm.siteId).length === 0 && (
+                        <p className="text-xs text-amber-700 mt-1">Este nodo no tiene router. Configúralo en Red ISP.</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Modo de provisión</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Modo de conexión</label>
                       <select className="w-full border rounded-lg px-3 py-2 bg-white" value={serviceForm.provisionMode || 'both'}
                         onChange={e => setServiceForm({ ...serviceForm, provisionMode: e.target.value })}>
-                        <option value="both">PPPoE + Simple Queue (recomendado WISP)</option>
-                        <option value="pppoe">Solo PPPoE (autenticación)</option>
-                        <option value="queue">Solo Simple Queue (IP estática)</option>
-                        <option value="static">IP estática + cola + lease DHCP</option>
+                        <option value="both">PPPoE + Simple Queue (WISP con autenticación)</option>
+                        <option value="pppoe">Solo PPPoE</option>
+                        <option value="queue">Solo Simple Queue (IP fija, sin PPPoE)</option>
+                        <option value="static">IP estática + cola + lease DHCP en MikroTik</option>
                       </select>
                       <p className="text-xs text-gray-500 mt-1">
-                        Para antenas Ubiquiti en modo Station: usa <strong>PPPoE + Cola</strong>. La antena se configura con usuario/clave PPPoE.
+                        <strong>DHCP dinámico:</strong> usa PPPoE o IP estática + lease. <strong>IP fija WISP:</strong> modo cola o estática + lease con MAC de la antena.
                       </p>
                     </div>
                   </>
@@ -453,6 +653,138 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
                 {savingService ? 'Creando...' : 'Crear servicio'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal agregar equipo al abonado */}
+      {showEquipForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-bold text-lg">Agregar equipo al abonado</h3>
+              <button onClick={() => { setShowEquipForm(false); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Tipo</label>
+                <select className="w-full border rounded-lg px-3 py-2 bg-white" value={equipForm.type || 'cpe'}
+                  onChange={e => setEquipForm({ ...equipForm, type: e.target.value })}>
+                  {CLIENT_EQUIP_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nombre *</label>
+                <input className="w-full border rounded-lg px-3 py-2" placeholder="LiteBeam Carlos"
+                  value={equipForm.name || ''} onChange={e => setEquipForm({ ...equipForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nodo / torre *</label>
+                <select className="w-full border rounded-lg px-3 py-2 bg-white" value={equipForm.siteId || ''}
+                  onChange={e => setEquipForm({ ...equipForm, siteId: e.target.value })}>
+                  <option value="">Seleccionar...</option>
+                  {sites.map(s => <option key={s.id} value={s.id}>{s.name}{s.city ? ` · ${s.city}` : ''}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Marca</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={equipForm.brand || ''}
+                    onChange={e => setEquipForm({ ...equipForm, brand: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Modelo</label>
+                  <input className="w-full border rounded-lg px-3 py-2" value={equipForm.model || ''}
+                    onChange={e => setEquipForm({ ...equipForm, model: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">IP</label>
+                <div className="flex gap-2">
+                  <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
+                    value={equipForm.ipAddress || ''} onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
+                  <button type="button" disabled={suggestingIp || !equipForm.siteId}
+                    onClick={() => suggestFreeIp('create')}
+                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                    <Search className="h-4 w-4" />
+                  </button>
+                </div>
+                {ipSuggestHint && <p className="text-xs text-emerald-700 mt-1">{ipSuggestHint}</p>}
+              </div>
+              {equipForm.type === 'cpe' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">MAC</label>
+                    <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                      value={equipForm.macAddress || ''} onChange={e => setEquipForm({ ...equipForm, macAddress: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SNMP Community</label>
+                    <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                      value={equipForm.snmpCommunity || ''} onChange={e => setEquipForm({ ...equipForm, snmpCommunity: e.target.value })} />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6 pt-4 border-t">
+              <button onClick={() => { setShowEquipForm(false); setIpSuggestHint('') }} className="flex-1 py-2.5 border rounded-lg">Cancelar</button>
+              <button onClick={createClientEquipment} className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700">Agregar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar equipo */}
+      {editingEquip && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-bold text-lg">Editar equipo</h3>
+              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Nombre</label>
+                <input className="w-full border rounded-lg px-3 py-2" value={editEquipForm.name || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nodo</label>
+                <select className="w-full border rounded-lg px-3 py-2 bg-white" value={editEquipForm.siteId || ''}
+                  onChange={e => setEditEquipForm({ ...editEquipForm, siteId: e.target.value })}>
+                  <option value="">Sin nodo</option>
+                  {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">IP</label>
+                <div className="flex gap-2">
+                  <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm"
+                    value={editEquipForm.ipAddress || ''} onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })} />
+                  <button type="button" disabled={suggestingIp} onClick={() => suggestFreeIp('edit')}
+                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                    <Search className="h-4 w-4" />
+                  </button>
+                </div>
+                {ipSuggestHint && <p className="text-xs text-emerald-700 mt-1">{ipSuggestHint}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">MAC</label>
+                <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                  value={editEquipForm.macAddress || ''} onChange={e => setEditEquipForm({ ...editEquipForm, macAddress: e.target.value })} />
+              </div>
+              {editEquipForm.type === 'cpe' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">SNMP</label>
+                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                    value={editEquipForm.snmpCommunity || ''} onChange={e => setEditEquipForm({ ...editEquipForm, snmpCommunity: e.target.value })} />
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6 pt-4 border-t">
+              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }} className="flex-1 py-2.5 border rounded-lg">Cancelar</button>
+              <button onClick={saveEditEquip} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
             </div>
           </div>
         </div>
@@ -479,9 +811,24 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               <p className="text-lg font-bold text-red-600">${totalDeuda.toLocaleString('es-CL')}</p>
             </div>
           )}
-          <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${services.some(s => s.status === 'active') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-            {services.some(s => s.status === 'active') ? 'Servicio activo' : 'Sin servicio activo'}
-          </span>
+          <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${activeService ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+              {activeService ? '● Servicio activo' : '○ Sin servicio'}
+            </span>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+              !primaryAntenna ? 'bg-amber-100 text-amber-800' : antennaOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            }`}>
+              {!primaryAntenna ? '○ Sin antena' : antennaOnline ? '● Antena online' : '● Antena offline'}
+            </span>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+              nextDueInvoice?.status === 'overdue' ? 'bg-red-100 text-red-700'
+                : nextDueInvoice ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
+            }`}>
+              {nextDueInvoice
+                ? (nextDueInvoice.status === 'overdue' ? '⚠ Boleta vencida' : `Boleta vence ${formatDateCL(nextDueInvoice.dueDate)}`)
+                : 'Sin boleta pendiente'}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -490,7 +837,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
             { label: 'Servicios', value: services.length, icon: Wifi, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Facturas', value: invoices.length, icon: DollarSign, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { label: 'Equipos', value: clientEquipment.length, icon: Antenna, color: 'text-orange-600', bg: 'bg-orange-50' },
             { label: 'Por cobrar', value: '$' + totalDeuda.toLocaleString('es-CL'), icon: CreditCard, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'Tickets', value: tickets.filter(t => t.status === 'open').length + ' abiertos', icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50' },
           ].map(s => (
@@ -508,7 +855,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
           {[
             { id: 'overview', label: 'Resumen' },
-            { id: 'services', label: `Servicios (${services.length})` },
+            { id: 'equipment', label: `Equipos (${clientEquipment.length})` },
+            { id: 'services', label: `Servicio (${services.length})` },
             { id: 'invoices', label: `Facturas (${invoices.length})` },
             { id: 'tickets', label: `Tickets (${tickets.length})` },
           ].map(tab => (
@@ -598,6 +946,32 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 ))}
               </div>
 
+              {/* Equipos del abonado */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Antenna className="h-4 w-4 text-orange-600" /> Equipos</h2>
+                  <button onClick={() => setActiveTab('equipment')} className="text-xs text-blue-600 hover:underline">Gestionar →</button>
+                </div>
+                {clientEquipment.length === 0 ? (
+                  <div className="text-center py-4 text-gray-400 text-sm">
+                    <p>Sin antenas ni dispositivos vinculados</p>
+                    <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
+                      className="mt-2 text-blue-600 hover:underline">+ Agregar antena</button>
+                  </div>
+                ) : clientEquipment.slice(0, 3).map((eq) => (
+                  <div key={eq.id} className="flex items-center gap-3 py-2 border-b last:border-0">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-green-500' : 'bg-red-400'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{eq.name}</p>
+                      <p className="text-xs text-gray-400">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.ipAddress || 'sin IP'}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {eq.status === 'online' ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
               {/* Última factura */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4"><DollarSign className="h-4 w-4 text-purple-600" /> Facturas recientes</h2>
@@ -621,6 +995,69 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* EQUIPOS */}
+        {activeTab === 'equipment' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center flex-wrap gap-3">
+              <p className="text-sm text-gray-500">Antenas, cámaras y dispositivos del abonado vinculados a nodos de red</p>
+              <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2">
+                <Plus className="h-4 w-4" /> Agregar equipo
+              </button>
+            </div>
+            {clientEquipment.length === 0 ? (
+              <div className="bg-white rounded-xl border p-12 text-center text-gray-400">
+                <Antenna className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <p className="font-medium text-gray-600">Sin equipos asignados</p>
+                <p className="text-sm mt-1 max-w-md mx-auto">Registra la antena Ubiquiti, cámara o router del cliente y asígnala a un nodo (ej. Torre Pangui).</p>
+                <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
+                  className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium">+ Agregar antena CPE</button>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {clientEquipment.map((eq) => (
+                  <div key={eq.id} className="bg-white rounded-xl border p-5 hover:shadow-sm transition">
+                    <div className="flex items-start gap-3">
+                      <span className={`w-3 h-3 rounded-full mt-1.5 flex-shrink-0 ${eq.status === 'online' ? 'bg-green-500' : eq.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="font-semibold text-gray-900">{eq.name}</p>
+                            <p className="text-xs text-gray-500">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.brand} {eq.model}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                            {eq.status === 'online' ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                          <div><span className="text-gray-400">IP:</span> <span className="font-mono">{eq.ipAddress || '—'}</span></div>
+                          <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>
+                          <div className="col-span-2"><span className="text-gray-400">Nodo:</span> {eq.siteName || 'Sin nodo'} {eq.siteCity ? `· ${eq.siteCity}` : ''}</div>
+                          {eq.snmpCommunity && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> {eq.snmpCommunity}</div>}
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <button onClick={() => openEditEquip(eq)}
+                            className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                            <Pencil className="h-3 w-3" /> Editar
+                          </button>
+                          <button onClick={() => unlinkEquipment(eq.id, eq.name)}
+                            className="px-3 py-1.5 text-xs bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100">
+                            Desvincular
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 text-sm text-sky-900">
+              <strong>Tip:</strong> La configuración del router del nodo (pools DHCP, PPPoE) se hace en <strong>Red ISP → Infra</strong>.
+              Aquí defines qué equipo usa este abonado y cómo se conecta (IP, MAC, antena).
             </div>
           </div>
         )}
@@ -679,6 +1116,21 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <div><p className="text-gray-400 text-xs mb-1">Router</p><p className="font-medium text-xs">{s.routerId ? `#${s.routerId}` : '—'}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">Velocidad en router</p><p className="font-medium text-xs">{formatQueueSpeedLabel(s.networkMeta?.maxLimit || (s.plan ? `${s.plan.uploadSpeed}M/${s.plan.downloadSpeed}M` : undefined))}</p></div>
                     </div>
+                      {clientEquipment.length > 0 && (
+                        <div className="mt-3 p-3 bg-orange-50 border border-orange-100 rounded-lg">
+                          <p className="text-xs font-semibold text-orange-800 mb-2">Equipos vinculados</p>
+                          <div className="space-y-1">
+                            {clientEquipment.map((eq) => (
+                              <div key={eq.id} className="flex items-center gap-2 text-xs text-gray-700">
+                                <span className={`w-2 h-2 rounded-full ${eq.status === 'online' ? 'bg-green-500' : 'bg-red-400'}`} />
+                                <span className="font-medium">{eq.name}</span>
+                                <span className="text-gray-400">· {eq.ipAddress || 'sin IP'}</span>
+                                <button onClick={() => setActiveTab('equipment')} className="ml-auto text-blue-600 hover:underline">Ver</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {(!s.pppoeUsername || !s.queueName) && (
                         <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
                           <p className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-2">

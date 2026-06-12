@@ -115,6 +115,8 @@ export async function runMigrations(connectionString) {
     await sql`CREATE INDEX IF NOT EXISTS idx_sites_organization_id ON sites(organization_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_client_services_client_id ON client_services(client_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id)`;
+    await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_equipment_client_id ON equipment(client_id)`;
 
     console.log('Multi-tenant migration OK (indexes applied)');
   } finally {
