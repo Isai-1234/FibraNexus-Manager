@@ -1,12 +1,14 @@
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
-import cpeLitebeamImg from '../assets/link/cpe-litebeam.png'
-import towerSectorImg from '../assets/link/tower-sector.png'
 
-/** PNG empaquetados por Vite (evita 404 en Vercel SPA) */
+/**
+ * SVG personalizados — colocar en client/src/assets/link/:
+ *   cpe-litebeam.svg  ·  tower-sector.svg
+ * Dejar vacío = dibujo integrado de respaldo.
+ */
 export const LINK_VISUAL_ASSETS = {
-  cpe: cpeLitebeamImg,
-  tower: towerSectorImg,
+  cpe: '' as string,
+  tower: '' as string,
 } as const
 
 type WirelessWarning = { type: string; label: string; severity: string }
@@ -152,21 +154,16 @@ function LinkHardware({
   cpeSrc: string
   towerSrc: string
 }) {
-  const [cpeOk, setCpeOk] = useState(true)
-  const [towerOk, setTowerOk] = useState(true)
+  const cpeClass = 'block w-auto h-auto max-w-[min(34vw,165px)] max-h-[min(22vw,105px)] object-contain drop-shadow-[0_8px_24px_rgba(255,255,255,0.08)]'
+  const towerClass = 'block w-auto h-auto max-w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)] object-contain drop-shadow-[0_8px_24px_rgba(255,255,255,0.08)]'
 
   return (
     <>
-      {/* CPE — izquierda (LiteBeam, proporción natural) */}
+      {/* CPE — izquierda */}
       <div className="absolute left-[2%] sm:left-[4%] bottom-[12%] z-10 flex flex-col items-center max-w-[34%] sm:max-w-[28%]">
         <div className="relative inline-flex justify-center">
-          {cpeOk ? (
-            <img
-              src={cpeSrc}
-              alt="Antena CPE LiteBeam"
-              className="block w-auto h-auto max-w-[min(34vw,165px)] max-h-[min(22vw,105px)] object-contain brightness-0 invert drop-shadow-[0_8px_28px_rgba(255,255,255,0.12)]"
-              onError={() => setCpeOk(false)}
-            />
+          {cpeSrc ? (
+            <img src={cpeSrc} alt="Antena CPE LiteBeam" className={cpeClass} />
           ) : (
             <svg viewBox="0 0 140 120" className="w-[min(34vw,165px)] h-auto" aria-hidden>
               <LiteBeamSvg uid={uid} />
@@ -179,16 +176,11 @@ function LinkHardware({
         <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center">CPE · Cliente</p>
       </div>
 
-      {/* Torre / sectoriales — derecha (mástil alto) */}
+      {/* Torre / sectoriales — derecha */}
       <div className="absolute right-[1%] sm:right-[2%] bottom-[6%] z-10 flex flex-col items-center max-w-[32%] sm:max-w-[26%]">
         <div className="relative inline-flex justify-center">
-          {towerOk ? (
-            <img
-              src={towerSrc}
-              alt="Torre con antenas sectoriales"
-              className="block w-auto h-auto max-w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)] object-contain brightness-0 invert drop-shadow-[0_8px_28px_rgba(255,255,255,0.12)]"
-              onError={() => setTowerOk(false)}
-            />
+          {towerSrc ? (
+            <img src={towerSrc} alt="Torre con antenas sectoriales" className={towerClass} />
           ) : (
             <svg viewBox="0 0 140 120" className="w-[min(30vw,150px)] h-auto" aria-hidden>
               <SectorHornSvg uid={uid} />
