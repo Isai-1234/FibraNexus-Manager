@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, users } from '../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { clients, users, invoices, tickets, clientServices, payments } from '../db/schema.js';
+import { and, eq, inArray } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
@@ -120,10 +120,22 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     const clientId = parseInt(req.params.id);
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
-    if (!existing.length) return res.status(404).json({ error: 'Cliente no encontrado' });
+    if (!existing.length) return res.status(404).json({ error: 'Abonado no encontrado' });
+
+    const clientInvoices = await db.select({ id: invoices.id })
+      .from(invoices).where(eq(invoices.clientId, clientId));
+    const invoiceIds = clientInvoices.map((i) => i.id);
+
+    if (invoiceIds.length) {
+      await db.delete(payments).where(inArray(payments.invoiceId, invoiceIds));
+      await db.delete(invoices).where(eq(invoices.clientId, clientId));
+    }
+    await db.delete(tickets).where(eq(tickets.clientId, clientId));
+    await db.delete(clientServices).where(eq(clientServices.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
     await db.delete(users).where(eq(users.id, existing[0].userId));
-    res.json({ message: 'Cliente eliminado' });
+
+    res.json({ message: 'Abonado eliminado junto con servicios, facturas y tickets' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar: ' + error.message });
   }

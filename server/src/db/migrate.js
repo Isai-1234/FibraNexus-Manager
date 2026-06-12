@@ -67,6 +67,15 @@ export async function runMigrations(connectionString) {
       console.log('Superadmin assigned to', superEmail);
     }
 
+    const seedPlanNames = ['Fibra 100 Megas', 'Fibra 300 Megas', 'Fibra 600 Megas', 'WISP 50 Megas', 'Fibra 1 Giga'];
+    await sql`
+      UPDATE plans SET is_active = false
+      WHERE name = ANY(${seedPlanNames})
+        AND id NOT IN (
+          SELECT DISTINCT plan_id FROM client_services WHERE plan_id IS NOT NULL
+        )
+    `;
+
     console.log('Multi-tenant migration OK');
   } finally {
     await sql.end();

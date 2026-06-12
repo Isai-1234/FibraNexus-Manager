@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { plans } from '../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne, or, isNull } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 
@@ -11,7 +11,12 @@ plansRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const allPlans = await db.select().from(plans).where(orgFilter(plans, orgId));
+    const includeDemo = req.query.includeDemo === '1';
+    const conditions = [orgFilter(plans, orgId)];
+    if (!includeDemo) {
+      conditions.push(or(eq(plans.isActive, true), isNull(plans.isActive)));
+    }
+    const allPlans = await db.select().from(plans).where(and(...conditions));
     res.json(allPlans);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar planes' });

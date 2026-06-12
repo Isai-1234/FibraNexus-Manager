@@ -89,7 +89,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('¿Eliminar este registro?')) return
+    const msg = activeTab === 'clients'
+      ? '¿Eliminar este abonado? Se borrarán también sus servicios, facturas y tickets.'
+      : '¿Eliminar este registro?'
+    if (!confirm(msg)) return
     try {
       const endpoints: Record<string, string> = {
         clients: '/clients', plans: '/plans', services: '/services',
@@ -134,16 +137,57 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     }
   }
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'clients', label: 'Abonados', icon: Users },
-    { id: 'services', label: 'Servicios', icon: Wifi },
-    { id: 'plans', label: 'Planes', icon: TrendingUp },
-    { id: 'equipment', label: 'Equipos', icon: Server },
-    { id: 'ips', label: 'Gestión IP', icon: MapPin },
-    { id: 'invoices', label: 'Facturación', icon: DollarSign },
-    { id: 'tickets', label: 'Tickets', icon: Ticket },
+  const menuSections = [
+    {
+      title: 'Tus abonados',
+      hint: 'Personas que contratan internet',
+      items: [
+        { id: 'dashboard', label: 'Centro de operaciones', icon: LayoutDashboard },
+        { id: 'clients', label: 'Abonados', icon: Users },
+        { id: 'services', label: 'Suscripciones', icon: Wifi },
+        { id: 'invoices', label: 'Facturación', icon: DollarSign },
+        { id: 'tickets', label: 'Soporte', icon: Ticket },
+      ],
+    },
+    {
+      title: 'Red e infraestructura',
+      hint: 'Equipos de tu ISP',
+      items: [
+        { id: 'equipment', label: 'Equipos / Routers', icon: Server },
+        { id: 'ips', label: 'Gestión IP', icon: MapPin },
+      ],
+    },
+    {
+      title: 'Catálogo comercial',
+      hint: 'Planes que vendes (productos)',
+      items: [
+        { id: 'plans', label: 'Planes de internet', icon: TrendingUp },
+      ],
+    },
   ]
+  const menuItems = menuSections.flatMap((s) => s.items)
+
+  const tabLabels: Record<string, string> = {
+    dashboard: 'Centro de operaciones ISP',
+    clients: 'Abonados',
+    services: 'Suscripciones activas',
+    plans: 'Planes comerciales',
+    equipment: 'Equipos y routers',
+    ips: 'Gestión de IPs',
+    invoices: 'Facturación',
+    tickets: 'Tickets de soporte',
+  }
+
+  const tabDescriptions: Record<string, string> = {
+    dashboard: 'Alertas, deudas y acceso rápido a cada cuenta de abonado',
+    clients: 'Quienes pagan internet — tienen login en el portal abonado',
+    services: 'Qué abonado tiene qué plan instalado (IP, MAC, estado)',
+    plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
+    equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
+    ips: 'Pools y asignación de direcciones IP',
+    invoices: 'Facturas mensuales de tus abonados',
+    tickets: 'Incidencias reportadas por abonados',
+  }
 
   const formFields: Record<string, any[]> = {
     clients: [
@@ -158,8 +202,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       { name: 'address', label: 'Dirección', type: 'text' },
     ],
     services: [
-      { name: 'clientId', label: 'Cliente', type: 'client-select', required: true },
-      { name: 'planId', label: 'Plan', type: 'plan-select', required: true },
+      { name: 'clientId', label: 'Abonado', type: 'client-select', required: true },
+      { name: 'planId', label: 'Plan comercial', type: 'plan-select', required: true },
       { name: 'ipAddress', label: 'Dirección IP', type: 'text' },
       { name: 'macAddress', label: 'MAC Address', type: 'text' },
       { name: 'status', label: 'Estado', type: 'select', options: ['active', 'suspended', 'pending', 'cancelled', 'cut'] },
@@ -233,7 +277,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   if (selectedClientId) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuItems={menuItems} activeTab={activeTab} user={user} logout={logout}
+        <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
           onTabClick={(id) => { setSelectedClientId(null); setActiveTab(id) }} />
         <ClientDetail clientId={selectedClientId} API={API} onBack={() => { setSelectedClientId(null); setActiveTab('clients') }} />
       </div>
@@ -244,7 +288,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   if (showRouters) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuItems={menuItems} activeTab="equipment" user={user} logout={logout}
+        <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
           onTabClick={(id) => { setShowRouters(false); setActiveTab(id) }} />
         <RouterManager API={API} onBack={() => { setShowRouters(false); setActiveTab('equipment') }} />
       </div>
@@ -301,7 +345,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         </div>
       )}
 
-      <Sidebar menuItems={menuItems} activeTab={activeTab} user={user} logout={logout}
+      <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
         onTabClick={(id) => { setActiveTab(id); setData([]); setError('') }} />
 
       {/* Main Content */}
@@ -309,21 +353,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         {user?.organization?.plan === 'trial' && user?.organization?.trialDaysLeft != null && (
           <div className={`px-8 py-3 text-sm flex items-center justify-between ${user.organization.trialDaysLeft <= 3 ? 'bg-amber-50 text-amber-900 border-b border-amber-200' : 'bg-sky-50 text-sky-900 border-b border-sky-200'}`}>
             <span>
-              Trial activo — <strong>{user.organization.trialDaysLeft} días</strong> restantes en plan gratuito
+              FibraNexus · trial de plataforma — <strong>{user.organization.trialDaysLeft} días</strong> restantes
             </span>
-            <span className="text-xs opacity-75">Próximamente: suscripción Starter / Pro</span>
+            <span className="text-xs opacity-75">Tú operas <strong>{user.organization.name}</strong> · tus abonados son otra cosa</span>
           </div>
         )}
         <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">
-              {activeTab === 'dashboard' ? 'Centro de operaciones ISP' : activeTab === 'ips' ? 'Gestión de IPs' : menuItems.find(m => m.id === activeTab)?.label || activeTab}
-            </h1>
-            {activeTab === 'dashboard' && (
-              <p className="text-sm text-gray-500">Gestiona abonados, detecta problemas y entra a cada cuenta</p>
+            <h1 className="text-xl font-bold text-gray-900">{tabLabels[activeTab] || activeTab}</h1>
+            {tabDescriptions[activeTab] && (
+              <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab]}</p>
             )}
             {activeTab !== 'dashboard' && activeTab !== 'equipment' && (
-              <p className="text-sm text-gray-500">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
           <div className="flex gap-2">
@@ -540,6 +582,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
           {/* TABLAS GENERALES */}
           {activeTab !== 'dashboard' && activeTab !== 'equipment' && (
+            <div className="space-y-4">
+              {activeTab === 'plans' && (
+                <div className="bg-purple-50 border border-purple-100 rounded-xl px-5 py-3 text-sm text-purple-900">
+                  <strong>Catálogo comercial</strong> — Aquí defines los planes que vendes (ej. 20 Mbps, 100 Mbps).
+                  Los <strong>abonados</strong> están en otra pestaña; aquí solo creas productos.
+                </div>
+              )}
+              {activeTab === 'services' && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900">
+                  <strong>Suscripciones</strong> — Une un <strong>abonado</strong> con un <strong>plan comercial</strong>.
+                  Es la conexión real de internet (IP, MAC, activo/suspendido).
+                </div>
+              )}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100">
               {loading ? (
                 <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div></div>
@@ -555,8 +610,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     <thead className="bg-gray-50 border-b">
                       <tr>
                         {activeTab === 'clients' && ['Abonado', 'Días', 'Servicio / Plan', 'Deuda', 'Tickets', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'services' && ['Cliente', 'Plan', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'plans' && ['Plan', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'services' && ['Abonado', 'Plan comercial', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'plans' && ['Plan comercial', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'ips' && ['Dirección IP', 'Subred', 'Gateway', 'VLAN', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'invoices' && ['Nº Factura', 'Cliente', 'Período', 'Neto', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
                         {activeTab === 'tickets' && ['Ticket', 'Cliente', 'Categoría', 'Prioridad', 'Estado', 'Fecha', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
@@ -652,6 +707,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               )}
             </div>
+            </div>
           )}
         </main>
       </div>
@@ -667,7 +723,7 @@ const roleLabels: Record<string, string> = {
   superadmin: 'Super Admin',
 }
 
-function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
+function Sidebar({ menuSections, activeTab, user, logout, onTabClick }: any) {
   return (
     <div className="w-64 bg-gray-900 text-white min-h-screen flex flex-col flex-shrink-0">
       <div className="p-6 border-b border-gray-800">
@@ -675,16 +731,24 @@ function Sidebar({ menuItems, activeTab, user, logout, onTabClick }: any) {
           <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center"><Wifi className="h-6 w-6" /></div>
           <div>
             <h2 className="text-lg font-bold truncate max-w-[140px]">{user?.organization?.name || 'FibraNexus'}</h2>
-            <p className="text-gray-400 text-xs">Panel Admin ISP</p>
+            <p className="text-gray-400 text-xs">Operador ISP · panel admin</p>
           </div>
         </div>
       </div>
-      <nav className="flex-1 mt-2 overflow-y-auto">
-        {menuItems.map((item: any) => (
-          <button key={item.id} onClick={() => onTabClick(item.id)}
-            className={`w-full flex items-center gap-3 px-6 py-3 text-left text-sm transition ${activeTab === item.id ? 'bg-blue-600 border-r-4 border-blue-300 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
-            <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
-          </button>
+      <nav className="flex-1 mt-2 overflow-y-auto pb-4">
+        {menuSections.map((section: any) => (
+          <div key={section.title} className="mb-4">
+            <div className="px-6 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">{section.title}</p>
+              <p className="text-[10px] text-gray-600">{section.hint}</p>
+            </div>
+            {section.items.map((item: any) => (
+              <button key={item.id} onClick={() => onTabClick(item.id)}
+                className={`w-full flex items-center gap-3 px-6 py-2.5 text-left text-sm transition ${activeTab === item.id ? 'bg-blue-600 border-r-4 border-blue-300 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
+                <item.icon className="h-4 w-4 flex-shrink-0" /> {item.label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="p-4 border-t border-gray-800 bg-gray-950">
