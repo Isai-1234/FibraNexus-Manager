@@ -1,5 +1,5 @@
 import { useId, useMemo } from 'react'
-import { AlertTriangle, Radio, Wifi } from 'lucide-react'
+import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
 
 type WirelessWarning = { type: string; label: string; severity: string }
 
@@ -23,6 +23,11 @@ interface Props {
     snmpUptime?: string | null
   } | null
   siteName?: string
+  immersive?: boolean
+  onExpand?: () => void
+  onRefresh?: () => void
+  refreshing?: boolean
+  className?: string
 }
 
 function signalStrengthPercent(dbm: number | null | undefined) {
@@ -30,7 +35,7 @@ function signalStrengthPercent(dbm: number | null | undefined) {
   return Math.min(100, Math.max(8, 100 + dbm))
 }
 
-function computeLinkScore(
+export function computeLinkScore(
   online: boolean,
   signal: number | null,
   ccq: number | null | undefined,
@@ -44,7 +49,7 @@ function computeLinkScore(
   return Math.min(100, Math.round(score))
 }
 
-function linkTheme(score: number, online: boolean, hasWarning: boolean) {
+export function linkTheme(score: number, online: boolean, hasWarning: boolean) {
   if (!online) {
     return {
       primary: '#64748b', secondary: '#475569', rx: '#64748b',
@@ -249,7 +254,9 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
   )
 }
 
-export default function CpeLinkVisualizer({ equipment, siteName }: Props) {
+export default function CpeLinkVisualizer({
+  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false, className = '',
+}: Props) {
   const uid = useId().replace(/:/g, '')
 
   if (!equipment) {
@@ -277,7 +284,7 @@ export default function CpeLinkVisualizer({ equipment, siteName }: Props) {
   const rxSpeed = equipment.wirelessRxRate || beamStrength * 1.5
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] cpe-viz">
+    <div className={`relative overflow-hidden rounded-3xl border border-white/[0.08] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] cpe-viz ${immersive ? 'min-h-[70vh] flex flex-col' : ''} ${className}`}>
       <style>{`
         .cpe-viz {
           background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #060a12 45%, #030508 100%);
@@ -331,6 +338,29 @@ export default function CpeLinkVisualizer({ equipment, siteName }: Props) {
         </div>
 
         <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-1.5">
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Actualizar SNMP"
+                className="p-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition disabled:opacity-40"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            {onExpand && (
+              <button
+                type="button"
+                onClick={onExpand}
+                title="Pantalla completa"
+                className="p-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm ${
             online
               ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 shadow-[0_0_20px_-5px_rgba(52,211,153,0.4)]'
@@ -346,8 +376,8 @@ export default function CpeLinkVisualizer({ equipment, siteName }: Props) {
       </div>
 
       {/* escena SVG */}
-      <div className="relative px-1 sm:px-3 pb-1">
-        <svg viewBox="0 0 580 230" className="w-full h-auto" aria-label="Enlace LiteBeam a sectorial horn">
+      <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center' : ''}`}>
+        <svg viewBox="0 0 580 230" className={`w-full h-auto ${immersive ? 'max-h-[min(52vh,520px)]' : ''}`} aria-label="Enlace LiteBeam a sectorial horn">
           <defs>
             <radialGradient id={`${uid}-shadow`} cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="rgba(0,0,0,0.5)" />

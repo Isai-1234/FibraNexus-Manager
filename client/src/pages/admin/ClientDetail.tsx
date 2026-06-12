@@ -4,7 +4,7 @@ import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
-import CpeLinkVisualizer from '../../components/CpeLinkVisualizer'
+import CpeLinkVisualizer, { computeLinkScore, linkTheme } from '../../components/CpeLinkVisualizer'
 
 interface Props {
   clientId: number
@@ -91,6 +91,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [replyText, setReplyText] = useState('')
   const [ticketLoading, setTicketLoading] = useState(false)
   const [sendingReply, setSendingReply] = useState(false)
+  const [linkFullscreen, setLinkFullscreen] = useState(false)
+  const [snmpRefreshing, setSnmpRefreshing] = useState(false)
 
   function api() {
     return axios.create({
@@ -118,6 +120,19 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     } catch {
       setClientEquipment([])
     }
+  }
+
+  async function refreshSnmpPoll() {
+    const antenna = clientEquipment.find((e) => e.type === 'cpe') || clientEquipment[0]
+    if (!antenna?.id) return
+    setSnmpRefreshing(true)
+    try {
+      await api().post(`/network/equipment/${antenna.id}/snmp/poll`)
+      await loadClientEquipment()
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'No se pudo actualizar SNMP')
+    }
+    setSnmpRefreshing(false)
   }
 
   async function loadPppProfiles(routerId: number) {
@@ -508,6 +523,20 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   )
   const openTickets = tickets.filter((t) => isOpenTicket(t.status))
   const openTicketsCount = openTickets.length
+  const linkScore = computeLinkScore(
+    antennaOnline,
+    primaryAntenna?.wirelessSignal ?? primaryAntenna?.wirelessRssi ?? null,
+    primaryAntenna?.wirelessCcq,
+    primaryAntenna?.wirelessSnr,
+  )
+  const linkThemeColors = linkTheme(linkScore, antennaOnline, (primaryAntenna?.wirelessWarnings?.length || 0) > 0)
+
+  const statCards = [
+    { label: 'Servicios', value: services.length, icon: Wifi, tab: 'services' as const, accent: 'text-cyan-400' },
+    { label: 'Equipos', value: clientEquipment.length, icon: Antenna, tab: 'equipment' as const, accent: 'text-orange-400' },
+    { label: 'Por cobrar', value: '$' + totalDeuda.toLocaleString('es-CL'), icon: CreditCard, tab: 'invoices' as const, accent: totalDeuda > 0 ? 'text-red-400' : 'text-slate-300' },
+    { label: 'Tickets', value: openTicketsCount > 0 ? `${openTicketsCount} abierto${openTicketsCount > 1 ? 's' : ''}` : '0', icon: Ticket, tab: 'tickets' as const, accent: openTicketsCount > 0 ? 'text-amber-400' : 'text-slate-300' },
+  ]
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -528,7 +557,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   )
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-50">
+    <div className="flex-1 overflow-auto bg-[#060a12] min-h-screen">
       {/* Pay Modal */}
       {showPayModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -886,89 +915,87 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         </div>
       )}
 
-      {/* Header perfil */}
-      <header className="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 text-white px-8 py-6 sticky top-0 z-10 shadow-lg">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-lg transition self-start">
+      {/* Header perfil — mission control */}
+      <header className="relative sticky top-0 z-20 border-b border-white/[0.06] bg-[#060a12]/90 backdrop-blur-xl">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_20%_0%,rgba(34,211,238,0.08),transparent)] pointer-events-none" />
+        <div className="relative max-w-6xl mx-auto px-6 sm:px-8 py-5 flex flex-col lg:flex-row lg:items-center gap-5">
+          <button onClick={onBack} className="p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-white hover:border-white/20 transition self-start">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="w-16 h-16 bg-white/15 backdrop-blur rounded-2xl flex items-center justify-center text-2xl font-bold border border-white/20 shrink-0">
+            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-600/20 border border-white/10 flex items-center justify-center text-xl font-bold text-white shrink-0">
               {client.user?.fullName?.charAt(0) || '?'}
+              {primaryAntenna && (
+                <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#060a12] ${antennaOnline ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500'}`} />
+              )}
             </div>
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold truncate">{client.user?.fullName}</h1>
-              <p className="text-blue-100/90 text-sm truncate">{client.user?.email}</p>
-              <p className="text-blue-200/70 text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicacion'}</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-medium">Centro del abonado</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-white truncate tracking-tight">{client.user?.fullName}</h1>
+              <p className="text-slate-400 text-sm truncate">{client.user?.email}</p>
+              <p className="text-slate-600 text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicación'}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {primaryAntenna && (
+              <button type="button" onClick={() => setLinkFullscreen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition hover:scale-[1.02]"
+                style={{ color: linkThemeColors.ring, borderColor: `${linkThemeColors.ring}40`, background: `${linkThemeColors.ring}12` }}>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: linkThemeColors.ring }} />
+                Link {linkScore}
+              </button>
+            )}
             {totalDeuda > 0 && (
-              <div className="bg-red-500/20 border border-red-300/30 rounded-xl px-4 py-2 text-center">
-                <p className="text-xs text-red-100">Deuda</p>
-                <p className="text-lg font-bold">${totalDeuda.toLocaleString('es-CL')}</p>
+              <div className="px-3 py-1.5 rounded-full bg-red-500/10 border border-red-400/20">
+                <span className="text-xs text-red-300 font-bold">${totalDeuda.toLocaleString('es-CL')}</span>
               </div>
             )}
-            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${activeService ? 'bg-green-500/25 text-green-100 border border-green-400/30' : 'bg-white/10 text-white/70'}`}>
+            <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${activeService ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20' : 'bg-white/[0.04] text-slate-500 border-white/[0.08]'}`}>
               {activeService ? 'Servicio activo' : 'Sin servicio'}
             </span>
-            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-              !primaryAntenna ? 'bg-amber-500/25 text-amber-100 border border-amber-400/30'
-                : antennaOnline ? 'bg-green-500/25 text-green-100 border border-green-400/30'
-                : 'bg-red-500/25 text-red-100 border border-red-400/30'
+            <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+              !primaryAntenna ? 'bg-amber-500/10 text-amber-300 border-amber-400/20'
+                : antennaOnline ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20'
+                : 'bg-red-500/10 text-red-300 border-red-400/20'
             }`}>
               {!primaryAntenna ? 'Sin antena' : antennaOnline ? 'Antena online' : 'Antena offline'}
             </span>
-            {nextDueInvoice && (
-              <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                nextDueInvoice.status === 'overdue' ? 'bg-red-500/30 text-red-100' : 'bg-white/10 text-white/80'
-              }`}>
-                {nextDueInvoice.status === 'overdue' ? 'Boleta vencida' : `Vence ${formatDateCL(nextDueInvoice.dueDate)}`}
-              </span>
-            )}
             {openTicketsCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('tickets')}
-                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/30 text-amber-100 border border-amber-400/30 hover:bg-amber-500/40 transition"
-              >
-                {openTicketsCount} ticket{openTicketsCount > 1 ? 's' : ''} abierto{openTicketsCount > 1 ? 's' : ''}
+              <button type="button" onClick={() => setActiveTab('tickets')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-200 border border-amber-400/25 hover:bg-amber-500/25 transition">
+                {openTicketsCount} ticket{openTicketsCount > 1 ? 's' : ''}
               </button>
             )}
           </div>
         </div>
       </header>
 
-      <div className="p-8 max-w-6xl mx-auto">
-        {/* Stats rápidas */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Servicios', value: services.length, icon: Wifi, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Equipos', value: clientEquipment.length, icon: Antenna, color: 'text-orange-600', bg: 'bg-orange-50' },
-            { label: 'Por cobrar', value: '$' + totalDeuda.toLocaleString('es-CL'), icon: CreditCard, color: 'text-red-600', bg: 'bg-red-50' },
-            { label: 'Tickets', value: openTicketsCount > 0 ? `${openTicketsCount} abierto${openTicketsCount > 1 ? 's' : ''}` : '0 abiertos', icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+      <div className="p-6 sm:p-8 max-w-6xl mx-auto">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {statCards.map(s => (
+            <button key={s.label} type="button" onClick={() => setActiveTab(s.tab)}
+              className="text-left rounded-2xl p-4 bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] hover:border-white/[0.12] transition group">
               <div className="flex items-center gap-2 mb-2">
-                <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
-                <p className="text-xs text-gray-500 font-medium">{s.label}</p>
+                <s.icon className={`h-4 w-4 ${s.accent} opacity-80 group-hover:opacity-100`} />
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">{s.label}</p>
               </div>
-              <p className="text-xl font-bold text-gray-900">{s.value}</p>
-            </div>
+              <p className={`text-xl font-bold tabular-nums ${s.accent}`}>{s.value}</p>
+            </button>
           ))}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
+        <div className="flex gap-1 mb-6 bg-white/[0.04] border border-white/[0.06] rounded-2xl p-1 w-fit overflow-x-auto max-w-full">
           {[
             { id: 'overview', label: 'Resumen' },
             { id: 'equipment', label: `Equipos (${clientEquipment.length})` },
             { id: 'services', label: `Servicio (${services.length})` },
             { id: 'invoices', label: `Facturas (${invoices.length})` },
-            { id: 'tickets', label: openTicketsCount > 0 ? `Tickets (${openTicketsCount} abiertos)` : `Tickets (${tickets.length})` },
+            { id: 'tickets', label: openTicketsCount > 0 ? `Tickets (${openTicketsCount})` : `Tickets (${tickets.length})` },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === tab.id ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
+                activeTab === tab.id ? 'bg-white/[0.1] text-cyan-300 shadow-sm border border-white/[0.08]' : 'text-slate-500 hover:text-slate-300'
+              }`}>
               {tab.label}
             </button>
           ))}
@@ -978,33 +1005,36 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {openTicketsCount > 0 && (
-              <div className="md:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="md:col-span-2 p-4 bg-amber-500/10 border border-amber-400/20 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-amber-900">
+                  <p className="font-semibold text-amber-200">
                     {openTicketsCount} ticket{openTicketsCount > 1 ? 's' : ''} de soporte sin resolver
                   </p>
-                  <p className="text-sm text-amber-800/90 mt-0.5">
+                  <p className="text-sm text-amber-200/70 mt-0.5">
                     {openTickets.slice(0, 2).map((t) => t.subject).join(' · ')}
                     {openTicketsCount > 2 ? ` · +${openTicketsCount - 2} más` : ''}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('tickets')}
-                  className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 shrink-0"
-                >
+                <button type="button" onClick={() => setActiveTab('tickets')}
+                  className="px-4 py-2 bg-amber-500/80 text-white rounded-xl text-sm font-medium hover:bg-amber-500 shrink-0">
                   Ver tickets
                 </button>
               </div>
             )}
-            <div className="md:col-span-2">
-              <CpeLinkVisualizer equipment={primaryAntenna || null} siteName={primaryAntenna?.siteName} />
+            <div className="md:col-span-2 group">
+              <CpeLinkVisualizer
+                equipment={primaryAntenna || null}
+                siteName={primaryAntenna?.siteName}
+                onExpand={() => setLinkFullscreen(true)}
+                onRefresh={primaryAntenna ? refreshSnmpPoll : undefined}
+                refreshing={snmpRefreshing}
+              />
+              <p className="text-center text-[10px] text-slate-600 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                Clic en ⛶ para vista inmersiva del enlace
+              </p>
             </div>
-            {/* Datos personales */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="font-semibold text-gray-900 flex items-center gap-2"><User className="h-4 w-4 text-blue-600" /> Datos personales</h2>
-              </div>
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-6">
+              <h2 className="font-semibold text-white flex items-center gap-2 mb-4"><User className="h-4 w-4 text-cyan-400" /> Datos personales</h2>
               <div className="space-y-3">
                 {[
                   { label: 'Nombre', value: client.user?.fullName, icon: User },
@@ -1016,59 +1046,60 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                   { label: 'Región', value: client.region || '—', icon: MapPin },
                   { label: 'Tipo', value: statusLabel[client.clientType] || client.clientType, icon: User },
                 ].map(f => (
-                  <div key={f.label} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
-                    <f.icon className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div key={f.label} className="flex items-start gap-3 py-2 border-b border-white/[0.05] last:border-0">
+                    <f.icon className="h-4 w-4 text-slate-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-400 font-medium">{f.label}</p>
-                      <p className="text-sm text-gray-900 truncate">{f.value}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-600">{f.label}</p>
+                      <p className="text-sm text-slate-200 truncate">{f.value}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Servicio activo */}
             <div className="space-y-4">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Wifi className="h-4 w-4 text-green-600" /> Servicio actual</h2>
-                  <button onClick={() => setActiveTab('services')} className="text-xs text-blue-600 hover:underline">Ver todos →</button>
+                  <h2 className="font-semibold text-white flex items-center gap-2"><Wifi className="h-4 w-4 text-emerald-400" /> Servicio actual</h2>
+                  <button onClick={() => setActiveTab('services')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Ver todos →</button>
                 </div>
                 {hasDuplicateServices && (
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
-                    ⚠️ Hay {services.length} suscripciones — probable duplicado. Elimina una (deja solo una activa por plan).
+                  <div className="mb-4 p-3 bg-amber-500/10 border border-amber-400/20 rounded-xl text-sm text-amber-200">
+                    Hay {services.length} suscripciones — probable duplicado. Elimina una (deja solo una activa por plan).
                   </div>
                 )}
                 {services.length === 0 ? (
-                  <div className="text-center py-6 text-gray-400">
+                  <div className="text-center py-6 text-slate-500">
                     <Wifi className="h-8 w-8 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">Sin servicios asignados</p>
-                    <button onClick={() => setShowServiceForm(true)} className="mt-2 text-blue-600 text-sm hover:underline">+ Crear servicio</button>
+                    <button onClick={() => setShowServiceForm(true)} className="mt-2 text-cyan-400 text-sm hover:underline">+ Crear servicio</button>
                   </div>
                 ) : services.map(s => (
-                  <div key={s.id} className="border rounded-lg p-4 mb-3 last:mb-0">
+                  <div key={s.id} className="border border-white/[0.08] rounded-xl p-4 mb-3 last:mb-0 bg-white/[0.02]">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-semibold text-gray-900">{s.plan?.name || 'Plan desconocido'}</p>
-                        <p className="text-sm text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · #{s.id}</p>
+                        <p className="font-semibold text-white">{s.plan?.name || 'Plan desconocido'}</p>
+                        <p className="text-sm text-slate-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · #{s.id}</p>
                       </div>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
                         {statusLabel[s.status] || s.status}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mt-3">
-                      <div><span className="font-medium">Instalación:</span> {formatDateCL(s.installationDate)}</div>
-                      <div><span className="font-medium">Próx. cobro:</span> {formatDateCL(s.nextBillingDate)}</div>
-                      <div><span className="font-medium">Ciclo:</span> {billingCycleLabel(s.billingCycleType, s.billingDay)}</div>
-                      <div><span className="font-medium">Precio:</span> ${Number(s.plan?.price || 0).toLocaleString('es-CL')}</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 mt-3">
+                      <div><span className="text-slate-600">Instalación:</span> {formatDateCL(s.installationDate)}</div>
+                      <div><span className="text-slate-600">Próx. cobro:</span> {formatDateCL(s.nextBillingDate)}</div>
+                      <div><span className="text-slate-600">Ciclo:</span> {billingCycleLabel(s.billingCycleType, s.billingDay)}</div>
+                      <div><span className="text-slate-600">Precio:</span> ${Number(s.plan?.price || 0).toLocaleString('es-CL')}</div>
                     </div>
                     <div className="flex gap-2 mt-3">
                       <button onClick={() => toggleService(s.id, s.status)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 ${s.status === 'active' ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                        className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border ${
+                          s.status === 'active' ? 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10' : 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
+                        }`}>
                         {s.status === 'active' ? <><PowerOff className="h-3.5 w-3.5" /> Suspender</> : <><Power className="h-3.5 w-3.5" /> Reactivar</>}
                       </button>
                       <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
-                        className="px-3 py-2 rounded-lg text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 flex items-center gap-1">
+                        className="px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 text-red-300 hover:bg-red-500/10 flex items-center gap-1">
                         <Trash2 className="h-3.5 w-3.5" /> Eliminar
                       </button>
                     </div>
@@ -1076,50 +1107,48 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 ))}
               </div>
 
-              {/* Equipos del abonado */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Antenna className="h-4 w-4 text-orange-600" /> Equipos</h2>
-                  <button onClick={() => setActiveTab('equipment')} className="text-xs text-blue-600 hover:underline">Gestionar →</button>
+                  <h2 className="font-semibold text-white flex items-center gap-2"><Antenna className="h-4 w-4 text-orange-400" /> Equipos</h2>
+                  <button onClick={() => setActiveTab('equipment')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Gestionar →</button>
                 </div>
                 {clientEquipment.length === 0 ? (
-                  <div className="text-center py-4 text-gray-400 text-sm">
+                  <div className="text-center py-4 text-slate-500 text-sm">
                     <p>Sin antenas ni dispositivos vinculados</p>
                     <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
-                      className="mt-2 text-blue-600 hover:underline">+ Agregar antena</button>
+                      className="mt-2 text-cyan-400 hover:underline">+ Agregar antena</button>
                   </div>
                 ) : clientEquipment.slice(0, 3).map((eq) => (
-                  <div key={eq.id} className="flex items-center gap-3 py-2 border-b last:border-0">
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-green-500' : 'bg-red-400'}`} />
+                  <div key={eq.id} className="flex items-center gap-3 py-2 border-b border-white/[0.05] last:border-0">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-red-400'}`} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{eq.name}</p>
-                      <p className="text-xs text-gray-400">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.ipAddress || 'sin IP'}</p>
+                      <p className="text-sm font-medium text-slate-200 truncate">{eq.name}</p>
+                      <p className="text-xs text-slate-500">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.ipAddress || 'sin IP'}</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/[0.05] text-slate-500'}`}>
                       {eq.status === 'online' ? 'Online' : 'Offline'}
                     </span>
                   </div>
                 ))}
               </div>
 
-              {/* Última factura */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4"><DollarSign className="h-4 w-4 text-purple-600" /> Facturas recientes</h2>
+              <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-6">
+                <h2 className="font-semibold text-white flex items-center gap-2 mb-4"><DollarSign className="h-4 w-4 text-violet-400" /> Facturas recientes</h2>
                 {invoices.length === 0 ? (
-                  <div className="text-center py-4 text-gray-400 text-sm">Sin facturas</div>
+                  <div className="text-center py-4 text-slate-500 text-sm">Sin facturas</div>
                 ) : invoices.slice(0, 3).map(inv => (
-                  <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div key={inv.id} className="flex items-center justify-between py-2 border-b border-white/[0.05] last:border-0">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{inv.invoiceNumber}</p>
-                      <p className="text-xs text-gray-400">{inv.billingPeriod || formatDateCL(inv.dueDate)}</p>
+                      <p className="text-sm font-medium text-slate-200">{inv.invoiceNumber}</p>
+                      <p className="text-xs text-slate-500">{inv.billingPeriod || formatDateCL(inv.dueDate)}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold">${Number(inv.total).toLocaleString('es-CL')}</p>
+                      <p className="text-sm font-bold text-white">${Number(inv.total).toLocaleString('es-CL')}</p>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-gray-100'}`}>
                         {statusLabel[inv.status] || inv.status}
                       </span>
                       {(inv.status === 'pending' || inv.status === 'overdue') && (
-                        <button onClick={() => setShowPayModal(inv)} className="px-2 py-0.5 bg-green-600 text-white rounded text-xs hover:bg-green-700">Pagar</button>
+                        <button onClick={() => setShowPayModal(inv)} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-500">Pagar</button>
                       )}
                     </div>
                   </div>
@@ -1132,8 +1161,18 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         {/* EQUIPOS */}
         {activeTab === 'equipment' && (
           <div className="space-y-4">
+            {primaryAntenna && (
+              <CpeLinkVisualizer
+                equipment={primaryAntenna}
+                siteName={primaryAntenna.siteName}
+                immersive
+                onExpand={() => setLinkFullscreen(true)}
+                onRefresh={refreshSnmpPoll}
+                refreshing={snmpRefreshing}
+              />
+            )}
             <div className="flex justify-between items-center flex-wrap gap-3">
-              <p className="text-sm text-gray-500">Antenas, cámaras y dispositivos del abonado vinculados a nodos de red</p>
+              <p className="text-sm text-slate-500">Antenas, cámaras y dispositivos del abonado vinculados a nodos de red</p>
               <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Agregar equipo
@@ -1542,6 +1581,36 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
           </div>
         )}
       </div>
+
+      {/* Vista inmersiva del enlace */}
+      {linkFullscreen && (
+        <div className="fixed inset-0 z-[100] bg-[#020408]/95 backdrop-blur-md flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-500/60">Monitor de enlace</p>
+              <h2 className="text-lg font-semibold text-white">{client.user?.fullName} · {primaryAntenna?.name || 'CPE'}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLinkFullscreen(false)}
+              className="p-2.5 rounded-xl bg-white/[0.05] border border-white/[0.1] text-slate-400 hover:text-white transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-auto">
+            <div className="w-full max-w-5xl">
+              <CpeLinkVisualizer
+                equipment={primaryAntenna || null}
+                siteName={primaryAntenna?.siteName}
+                immersive
+                onRefresh={primaryAntenna ? refreshSnmpPoll : undefined}
+                refreshing={snmpRefreshing}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
