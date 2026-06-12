@@ -46,12 +46,21 @@ export async function persistPollResult(row, result) {
 
 export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
+  const wireless = lastSnmp?.wireless;
   return {
     ...item,
     snmpOnline: item.status === 'online',
     snmpUptime: lastSnmp?.uptime || null,
     snmpPolledAt: lastSnmp?.polledAt || item.lastSeen || null,
     snmpError: lastSnmp?.error || null,
+    wirelessSignal: wireless?.signalDbm ?? null,
+    wirelessRssi: wireless?.rssiDbm ?? null,
+    wirelessCcq: wireless?.ccqPercent ?? null,
+    wirelessSnr: wireless?.snrDb ?? null,
+    wirelessTxRate: wireless?.txRateMbps ?? null,
+    wirelessRxRate: wireless?.rxRateMbps ?? null,
+    wirelessWarnings: wireless?.warnings || [],
+    linkQuality: wireless?.linkQuality ?? null,
   };
 }
 

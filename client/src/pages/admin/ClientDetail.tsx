@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2, Antenna, Pencil, Search } from 'lucide-react'
+import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2, Antenna, Pencil, Search, Send, MessageSquare } from 'lucide-react'
 import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
+import CpeLinkVisualizer from '../../components/CpeLinkVisualizer'
 
 interface Props {
   clientId: number
@@ -85,6 +86,11 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [editEquipForm, setEditEquipForm] = useState<any>({})
   const [suggestingIp, setSuggestingIp] = useState(false)
   const [ipSuggestHint, setIpSuggestHint] = useState('')
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null)
+  const [ticketDetail, setTicketDetail] = useState<any>(null)
+  const [replyText, setReplyText] = useState('')
+  const [ticketLoading, setTicketLoading] = useState(false)
+  const [sendingReply, setSendingReply] = useState(false)
 
   function api() {
     return axios.create({
@@ -149,6 +155,50 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   }
 
   useEffect(() => { loadAll() }, [clientId])
+
+  async function loadTicketDetail(ticketId: number) {
+    setSelectedTicketId(ticketId)
+    setTicketLoading(true)
+    setReplyText('')
+    try {
+      const res = await api().get(`/tickets/${ticketId}`)
+      setTicketDetail(res.data)
+    } catch {
+      setTicketDetail(null)
+    }
+    setTicketLoading(false)
+  }
+
+  async function sendTicketReply(e?: React.FormEvent) {
+    e?.preventDefault()
+    if (!selectedTicketId || !replyText.trim()) return
+    setSendingReply(true)
+    try {
+      const res = await api().post(`/tickets/${selectedTicketId}/messages`, {
+        message: replyText.trim(),
+        isInternal: false,
+      })
+      setTicketDetail(res.data)
+      setReplyText('')
+      setTickets((prev) => prev.map((t) => t.id === res.data.id ? { ...t, status: res.data.status } : t))
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al enviar respuesta')
+    }
+    setSendingReply(false)
+  }
+
+  async function changeTicketStatus(status: string) {
+    if (!selectedTicketId) return
+    setTicketLoading(true)
+    try {
+      const res = await api().patch(`/tickets/${selectedTicketId}`, { status })
+      setTicketDetail(res.data)
+      setTickets((prev) => prev.map((t) => t.id === res.data.id ? { ...t, status: res.data.status } : t))
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al actualizar estado')
+    }
+    setTicketLoading(false)
+  }
 
   async function provisionNetwork(serviceId: number, serviceRouterId?: number | null) {
     const routerId = provisionRouterId || serviceRouterId || null
@@ -433,13 +483,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     cancelled: 'bg-red-100 text-red-700', pending: 'bg-blue-100 text-blue-700',
     paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700',
     open: 'bg-yellow-100 text-yellow-700', resolved: 'bg-green-100 text-green-700',
-    in_progress: 'bg-blue-100 text-blue-700', closed: 'bg-gray-100 text-gray-500',
+    in_progress: 'bg-blue-100 text-blue-700', waiting_client: 'bg-amber-100 text-amber-800', closed: 'bg-gray-100 text-gray-500',
     critical: 'bg-red-100 text-red-700', high: 'bg-orange-100 text-orange-700',
     medium: 'bg-blue-100 text-blue-700', low: 'bg-gray-100 text-gray-500',
   }
   const statusLabel: Record<string, string> = {
     active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Pendiente',
-    paid: 'Pagada', overdue: 'Vencida', open: 'Abierto', resolved: 'Resuelto',
+    paid: 'Pagada', overdue: 'Vencida',     open: 'Abierto', resolved: 'Resuelto', waiting_client: 'Esperando cliente',
     in_progress: 'En proceso', closed: 'Cerrado', cut: 'Cortado',
     critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
@@ -947,6 +997,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 </button>
               </div>
             )}
+            <div className="md:col-span-2">
+              <CpeLinkVisualizer equipment={primaryAntenna || null} siteName={primaryAntenna?.siteName} />
+            </div>
             {/* Datos personales */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex justify-between items-center mb-4">
@@ -1355,37 +1408,137 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
 
         {/* TICKETS */}
         {activeTab === 'tickets' && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            {tickets.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <Ticket className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p className="font-medium">Sin tickets registrados</p>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-[480px]">
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4 border-b bg-gray-50">
+                <h3 className="font-semibold text-gray-900">Tickets de {client.user?.fullName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{openTicketsCount} abiertos · visible en portal cliente</p>
               </div>
-            ) : (
-              <div className="divide-y">
-                {tickets.map(t => (
-                  <div key={t.id} className="p-6 hover:bg-gray-50">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-semibold text-gray-900">{t.subject}</p>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[t.priority] || 'bg-gray-100'}`}>{statusLabel[t.priority] || t.priority}</span>
-                        </div>
-                        <p className="text-sm text-gray-500 mb-2">{t.description}</p>
-                        <div className="flex items-center gap-4 text-xs text-gray-400">
-                          <span className="font-mono">{t.ticketNumber}</span>
-                          <span>{t.category || 'Sin categoría'}</span>
-                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(t.createdAt).toLocaleDateString('es-CL')}</span>
-                        </div>
+              {tickets.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <Ticket className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p className="font-medium">Sin tickets registrados</p>
+                </div>
+              ) : (
+                <div className="divide-y max-h-[520px] overflow-y-auto">
+                  {tickets.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => loadTicketDetail(t.id)}
+                      className={`w-full text-left p-4 hover:bg-blue-50/50 transition ${selectedTicketId === t.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="font-medium text-gray-900 text-sm">{t.subject}</p>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${statusColor[t.status] || 'bg-gray-100'}`}>
+                          {statusLabel[t.status] || t.status}
+                        </span>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ml-4 ${statusColor[t.status] || 'bg-gray-100'}`}>
-                        {statusLabel[t.status] || t.status}
-                      </span>
+                      <p className="text-xs text-gray-400 mt-1 font-mono">{t.ticketNumber}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
+              {!selectedTicketId ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8">
+                  <MessageSquare className="h-12 w-12 mb-3 opacity-20" />
+                  <p className="text-sm">Selecciona un ticket para responder o cerrar</p>
+                </div>
+              ) : ticketLoading && !ticketDetail ? (
+                <div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+              ) : ticketDetail ? (
+                <>
+                  <div className="p-5 border-b">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-gray-900">{ticketDetail.subject}</h3>
+                        <p className="text-xs text-gray-400 font-mono mt-1">{ticketDetail.ticketNumber}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Cliente: <span className="font-medium text-gray-700">{ticketDetail.client?.fullName}</span>
+                          {' · '}{ticketDetail.client?.email}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <select
+                          value={ticketDetail.status}
+                          onChange={(e) => changeTicketStatus(e.target.value)}
+                          className="text-xs border rounded-lg px-2 py-1.5 bg-white"
+                        >
+                          {['open', 'in_progress', 'waiting_client', 'resolved', 'closed'].map(s => (
+                            <option key={s} value={s}>{statusLabel[s] || s}</option>
+                          ))}
+                        </select>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[ticketDetail.priority] || 'bg-gray-100'}`}>
+                          {statusLabel[ticketDetail.priority] || ticketDetail.priority}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+
+                  <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[340px]">
+                    {(ticketDetail.messages?.length ? ticketDetail.messages : [{
+                      id: 0,
+                      message: ticketDetail.description,
+                      authorName: ticketDetail.client?.fullName,
+                      authorRole: 'client',
+                      createdAt: ticketDetail.createdAt,
+                      isInternal: false,
+                    }]).map((msg: any) => (
+                      <div key={msg.id} className={`flex ${msg.authorRole === 'client' ? 'justify-start' : 'justify-end'}`}>
+                        <div className={`max-w-[85%] rounded-xl px-4 py-3 ${
+                          msg.isInternal ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                            : msg.authorRole === 'client' ? 'bg-gray-100 text-gray-800'
+                            : 'bg-blue-600 text-white'
+                        }`}>
+                          <p className="text-xs font-semibold mb-1 opacity-80">
+                            {msg.authorName || 'Usuario'} {msg.isInternal ? '(interno)' : ''}
+                          </p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                          <p className="text-[10px] opacity-60 mt-2">{new Date(msg.createdAt).toLocaleString('es-CL')}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {!['closed', 'resolved'].includes(ticketDetail.status) && (
+                    <form onSubmit={sendTicketReply} className="p-4 border-t bg-gray-50">
+                      <label className="text-xs font-medium text-gray-600 mb-2 block">
+                        Respuesta al cliente (visible en su portal)
+                      </label>
+                      <div className="flex gap-2">
+                        <textarea
+                          className="flex-1 border rounded-lg px-3 py-2 text-sm min-h-[72px] resize-none"
+                          placeholder="Escribe la respuesta o instrucciones..."
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="submit"
+                          disabled={sendingReply || !replyText.trim()}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 self-end flex items-center gap-2 text-sm font-medium"
+                        >
+                          <Send className="h-4 w-4" /> Enviar
+                        </button>
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button type="button" onClick={() => changeTicketStatus('waiting_client')}
+                          className="text-xs px-3 py-1.5 border rounded-lg hover:bg-white">
+                          Marcar: esperando cliente
+                        </button>
+                        <button type="button" onClick={() => changeTicketStatus('resolved')}
+                          className="text-xs px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100">
+                          Resolver y cerrar
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

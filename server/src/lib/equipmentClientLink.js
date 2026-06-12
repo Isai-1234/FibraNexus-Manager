@@ -91,6 +91,7 @@ export async function listClientEquipment(clientId, orgId) {
     clientId: equipment.clientId,
     notes: equipment.notes,
     lastSeen: equipment.lastSeen,
+    credentials: equipment.credentials,
     createdAt: equipment.createdAt,
     siteName: sites.name,
     siteCity: sites.city,

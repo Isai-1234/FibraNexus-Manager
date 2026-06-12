@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock } from 'lucide-react'
+import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock, Send, MessageSquare, ChevronLeft } from 'lucide-react'
 import axios from 'axios'
 
 const statusColor: Record<string, string> = {
@@ -7,11 +7,13 @@ const statusColor: Record<string, string> = {
   pending: 'bg-blue-100 text-blue-700', paid: 'bg-green-100 text-green-700',
   overdue: 'bg-red-100 text-red-700', open: 'bg-yellow-100 text-yellow-700',
   in_progress: 'bg-blue-100 text-blue-700', resolved: 'bg-green-100 text-green-700',
+  waiting_client: 'bg-amber-100 text-amber-800', closed: 'bg-gray-100 text-gray-500',
 }
 
 const statusLabel: Record<string, string> = {
   active: 'Activo', suspended: 'Suspendido', pending: 'Pendiente', paid: 'Pagada',
   overdue: 'Vencida', open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto',
+  waiting_client: 'Esperando tu respuesta', closed: 'Cerrado',
 }
 
 export default function ClientPortal({ user, API }: { user: any; API: string }) {
@@ -20,6 +22,10 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
   const [tab, setTab] = useState('resumen')
   const [showTicket, setShowTicket] = useState(false)
   const [ticketForm, setTicketForm] = useState({ subject: '', description: '', priority: 'medium' })
+  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null)
+  const [ticketDetail, setTicketDetail] = useState<any>(null)
+  const [replyText, setReplyText] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
 
   function api() {
     return axios.create({
@@ -41,16 +47,42 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
     setLoading(false)
   }
 
+  async function loadTicketDetail(ticketId: number) {
+    setSelectedTicketId(ticketId)
+    setReplyText('')
+    try {
+      const res = await api().get(`/portal/tickets/${ticketId}`)
+      setTicketDetail(res.data)
+    } catch {
+      setTicketDetail(null)
+    }
+  }
+
   async function submitTicket(e: React.FormEvent) {
     e.preventDefault()
     try {
       await api().post('/portal/tickets', ticketForm)
       setShowTicket(false)
       setTicketForm({ subject: '', description: '', priority: 'medium' })
-      load()
+      await load()
     } catch (err: any) {
       alert(err.response?.data?.error || 'Error al crear ticket')
     }
+  }
+
+  async function sendReply(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedTicketId || !replyText.trim()) return
+    setSendingReply(true)
+    try {
+      const res = await api().post(`/portal/tickets/${selectedTicketId}/messages`, { message: replyText.trim() })
+      setTicketDetail(res.data)
+      setReplyText('')
+      await load()
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al enviar mensaje')
+    }
+    setSendingReply(false)
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
@@ -102,7 +134,7 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
 
         <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
           {['resumen', 'facturas', 'tickets'].map(t => (
-            <button key={t} onClick={() => setTab(t)}
+            <button key={t} onClick={() => { setTab(t); setSelectedTicketId(null); setTicketDetail(null) }}
               className={`px-4 py-2 rounded-lg text-sm font-medium capitalize ${tab === t ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>
               {t}
             </button>
@@ -152,22 +184,94 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
 
         {tab === 'tickets' && (
           <div className="space-y-4">
-            <button onClick={() => setShowTicket(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-2">
-              <Plus className="h-4 w-4" /> Reportar problema
-            </button>
-            <div className="bg-white rounded-xl border divide-y">
-              {!data?.tickets?.length ? (
-                <p className="p-6 text-gray-400 text-sm">Sin tickets.</p>
-              ) : data.tickets.map((t: any) => (
-                <div key={t.id} className="p-4">
-                  <div className="flex justify-between">
-                    <p className="font-medium">{t.subject}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[t.status]}`}>{statusLabel[t.status] || t.status}</span>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-1">{t.description}</p>
+            {!selectedTicketId ? (
+              <>
+                <button onClick={() => setShowTicket(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Reportar problema
+                </button>
+                <div className="bg-white rounded-xl border divide-y">
+                  {!data?.tickets?.length ? (
+                    <p className="p-6 text-gray-400 text-sm">Sin tickets.</p>
+                  ) : data.tickets.map((t: any) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => loadTicketDetail(t.id)}
+                      className="w-full text-left p-4 hover:bg-blue-50/50 transition"
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div>
+                          <p className="font-medium">{t.subject}</p>
+                          <p className="text-xs text-gray-400 font-mono mt-1">{t.ticketNumber}</p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusColor[t.status]}`}>
+                          {statusLabel[t.status] || t.status}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-2 line-clamp-2">{t.description}</p>
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="bg-white rounded-xl border overflow-hidden">
+                <div className="p-4 border-b flex items-center gap-3">
+                  <button type="button" onClick={() => { setSelectedTicketId(null); setTicketDetail(null) }}
+                    className="p-2 hover:bg-gray-100 rounded-lg">
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold truncate">{ticketDetail?.subject}</h3>
+                    <p className="text-xs text-gray-400 font-mono">{ticketDetail?.ticketNumber}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${statusColor[ticketDetail?.status] || 'bg-gray-100'}`}>
+                    {statusLabel[ticketDetail?.status] || ticketDetail?.status}
+                  </span>
+                </div>
+
+                <div className="p-4 space-y-3 max-h-[360px] overflow-y-auto bg-slate-50">
+                  {(ticketDetail?.messages?.length ? ticketDetail.messages : [{
+                    id: 0,
+                    message: ticketDetail?.description,
+                    authorName: user?.fullName,
+                    authorRole: 'client',
+                    createdAt: ticketDetail?.createdAt,
+                  }]).map((msg: any) => (
+                    <div key={msg.id} className={`flex ${msg.authorRole === 'client' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] rounded-xl px-4 py-3 ${
+                        msg.authorRole === 'client' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-800 shadow-sm'
+                      }`}>
+                        <p className="text-xs font-semibold mb-1 opacity-80">
+                          {msg.authorRole === 'client' ? 'Tú' : (msg.authorName || orgName)}
+                        </p>
+                        <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                        <p className="text-[10px] opacity-60 mt-2">{new Date(msg.createdAt).toLocaleString('es-CL')}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {!['closed', 'resolved'].includes(ticketDetail?.status || '') ? (
+                  <form onSubmit={sendReply} className="p-4 border-t flex gap-2">
+                    <textarea
+                      className="flex-1 border rounded-lg px-3 py-2 text-sm min-h-[64px] resize-none"
+                      placeholder="Escribe un mensaje de seguimiento..."
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      required
+                    />
+                    <button type="submit" disabled={sendingReply || !replyText.trim()}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg self-end disabled:opacity-50 flex items-center gap-2 text-sm">
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </form>
+                ) : (
+                  <p className="p-4 text-sm text-gray-500 border-t flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" /> Este ticket fue cerrado por soporte.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>

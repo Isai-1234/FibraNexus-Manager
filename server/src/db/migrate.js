@@ -118,6 +118,19 @@ export async function runMigrations(connectionString) {
     await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_equipment_client_id ON equipment(client_id)`;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS ticket_messages (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        message TEXT NOT NULL,
+        is_internal BOOLEAN DEFAULT false,
+        attachments JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket_id ON ticket_messages(ticket_id)`;
+
     console.log('Multi-tenant migration OK (indexes applied)');
   } finally {
     await sql.end();
