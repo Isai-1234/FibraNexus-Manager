@@ -50,7 +50,13 @@ app.use('/api/sites', authenticateToken, requireActiveOrg, sitesRouter);
 app.use('/api/settings', authenticateToken, requireActiveOrg, settingsRouter);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', name: 'FibraNexus Manager', version: '1.0.0' });
+  res.json({
+    status: 'ok',
+    name: 'FibraNexus Manager',
+    version: '1.1.0',
+    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local',
+    features: ['ola1-billing', 'network-manager', 'auto-suspend'],
+  });
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
