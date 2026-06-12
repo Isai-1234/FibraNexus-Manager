@@ -1,9 +1,9 @@
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { authRouter } from './routes/auth.js';
 import { clientsRouter } from './routes/clients.js';
 import { plansRouter } from './routes/plans.js';
@@ -41,16 +41,25 @@ app.use('/api/routers', authenticateToken, routersRouter);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'FibraNexus Manager', version: '1.0.0' });
 });
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const clientDist = path.join(__dirname, '../../client/dist');
 
-if (fs.existsSync(clientDist)) {
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const staticCandidates = [
+  path.join(__dirname, '../public'),
+  path.join(__dirname, '../../client/dist'),
+];
+const clientDist = staticCandidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+
+if (clientDist) {
+  console.log('Serving frontend from', clientDist);
   app.use(express.static(clientDist));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     res.sendFile(path.join(clientDist, 'index.html'));
   });
+} else {
+  console.warn('Frontend build not found — run: cd server && npm run build');
 }
+
 app.use(errorHandler);
 
 app.listen(PORT, () => {
