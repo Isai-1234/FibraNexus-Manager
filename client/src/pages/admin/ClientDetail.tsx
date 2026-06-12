@@ -69,7 +69,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         api().get('/tickets'),
       ])
       setClient(cRes.data)
-      setServices((Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) => s.client?.id === clientId || s.clientId === clientId))
+      setServices((Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) =>
+        Number(s.client?.id) === Number(clientId) || Number(s.clientId) === Number(clientId)))
       setInvoices((Array.isArray(iRes.data) ? iRes.data : []).filter((i: any) => i.client?.id === clientId || i.clientId === clientId))
       setTickets((Array.isArray(tRes.data) ? tRes.data : []).filter((t: any) => t.client?.id === clientId || t.clientId === clientId))
     } catch (e) { console.error(e) }
@@ -115,8 +116,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       const parts = []
       if (res.data.username) parts.push(`PPPoE: ${res.data.username}\nClave: ${res.data.password}`)
       if (res.data.queueName) parts.push(`Cola: ${res.data.queueName} (${res.data.maxLimit})`)
+      if (res.data.service) {
+        setServices((prev) => prev.map((s) => (s.id === serviceId
+          ? { ...s, ...res.data.service, plan: s.plan, client: s.client }
+          : s)))
+      }
+      await loadAll()
       alert('Provisionado en router:\n' + parts.join('\n'))
-      loadAll()
     } catch (e: any) {
       alert('Error: ' + (e.response?.data?.error || e.message))
     }
@@ -636,12 +642,14 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <div><p className="text-gray-400 text-xs mb-1">PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoeUsername || '—'}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">Clave PPPoE</p><p className="font-mono font-medium text-xs">{s.pppoePassword || '—'}</p></div>
                       <div><p className="text-gray-400 text-xs mb-1">IP / Router</p><p className="font-medium">{s.ipAddress || '—'} {s.routerId ? `(R#${s.routerId})` : ''}</p></div>
-                      <div><p className="text-gray-400 text-xs mb-1">Cola</p><p className="font-mono font-medium text-xs">{s.queueName || '—'}</p></div>
+                      <div><p className="text-gray-400 text-xs mb-1">Cola</p><p className="font-mono font-medium text-xs">{s.queueName ? `${s.queueName}${s.networkMeta?.maxLimit ? ` · ${s.networkMeta.maxLimit}` : ''}` : '—'}</p></div>
                     </div>
                       {(!s.pppoeUsername || !s.queueName) && (
                         <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
                           <p className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-2">
                             <Zap className="h-4 w-4" /> Provisionar en MikroTik
+                            {s.queueName && !s.pppoeUsername && <span className="text-xs font-normal text-blue-600">(falta PPPoE)</span>}
+                            {s.pppoeUsername && !s.queueName && <span className="text-xs font-normal text-blue-600">(falta cola)</span>}
                           </p>
                           <div className="flex gap-2 flex-wrap items-center">
                             <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[160px]"
