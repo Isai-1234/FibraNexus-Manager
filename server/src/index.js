@@ -23,6 +23,10 @@ import { authenticateToken } from './middleware/auth.js';
 import { requireActiveOrg } from './lib/tenant.js';
 import { runMigrations } from './db/migrate.js';
 import { settingsRouter } from './routes/settings.js';
+import { networkRouter } from './routes/network.js';
+import { config, runsApi } from './lib/config.js';
+import { getHealthPayload } from './lib/healthCheck.js';
+import { startScheduler } from './lib/scheduler.js';
 
 dotenv.config();
 
@@ -48,15 +52,11 @@ app.post('/api/routers/agent/heartbeat', agentHeartbeatHandler);
 app.use('/api/routers', authenticateToken, requireActiveOrg, routersRouter);
 app.use('/api/sites', authenticateToken, requireActiveOrg, sitesRouter);
 app.use('/api/settings', authenticateToken, requireActiveOrg, settingsRouter);
+app.use('/api/network', authenticateToken, requireActiveOrg, networkRouter);
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    name: 'FibraNexus Manager',
-    version: '1.1.0',
-    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local',
-    features: ['ola1-billing', 'network-manager', 'auto-suspend'],
-  });
+app.get('/api/health', async (req, res) => {
+  const payload = await getHealthPayload();
+  res.status(payload.status === 'ok' ? 200 : 503).json(payload);
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -87,53 +87,17 @@ async function start() {
       console.error('Migration error:', err);
     }
   }
+
+  startScheduler();
+
+  if (!runsApi()) {
+    console.log('HTTP API disabled (PROCESS_ROLE=%s). Use npm run worker or set PROCESS_ROLE=all|api', config.processRole);
+    return;
+  }
+
   app.listen(PORT, () => {
-    console.log('🚀 FibraNexus Manager running on port', PORT);
-    startBillingScheduler();
+    console.log('🚀 FibraNexus Manager API on port', PORT, `(role=${config.processRole})`);
   });
-}
-
-let lastSchedulerHour = -1;
-
-function startBillingScheduler() {
-  setInterval(async () => {
-    const hour = new Date().getHours();
-    if (hour === lastSchedulerHour) return;
-
-    try {
-      const { db } = await import('./db/index.js');
-      const { organizations } = await import('./db/schema.js');
-      const { eq } = await import('drizzle-orm');
-      const { mergeOrgSettings } = await import('./lib/orgSettings.js');
-      const { runBillingJobsForOrg } = await import('./lib/billingScheduler.js');
-      const orgs = await db.select({ id: organizations.id, settings: organizations.settings }).from(organizations).where(eq(organizations.isActive, true));
-
-      let anyRan = false;
-      for (const org of orgs) {
-        const settings = mergeOrgSettings(org.settings);
-        if (settings.billingHour === hour && (settings.billingAutoEnabled || settings.autoSuspendEnabled || settings.autoMarkOverdue)) {
-          await runBillingJobsForOrg(org.id);
-          anyRan = true;
-        }
-      }
-      if (anyRan) lastSchedulerHour = hour;
-    } catch (err) {
-      console.error('Billing scheduler error:', err.message);
-    }
-  }, 60 * 1000);
-
-  setInterval(async () => {
-    try {
-      const { markOverdueInvoices } = await import('./lib/billingScheduler.js');
-      const { db } = await import('./db/index.js');
-      const { organizations } = await import('./db/schema.js');
-      const { eq } = await import('drizzle-orm');
-      const orgs = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.isActive, true));
-      for (const org of orgs) await markOverdueInvoices(org.id);
-    } catch (err) {
-      console.error('Overdue mark error:', err.message);
-    }
-  }, 6 * 60 * 60 * 1000);
 }
 
 start();

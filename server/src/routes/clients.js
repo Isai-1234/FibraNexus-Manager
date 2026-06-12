@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { clients, users, invoices, tickets, clientServices, payments } from '../db/schema.js';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
@@ -23,13 +24,29 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const allClients = await db
-      .select({
-        id: clients.id, userId: clients.userId, clientType: clients.clientType,
-        rut: clients.rut, address: clients.address, city: clients.city,
-        region: clients.region, createdAt: clients.createdAt,
-        user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
-      })
+    const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
+
+    const baseSelect = {
+      id: clients.id, userId: clients.userId, clientType: clients.clientType,
+      rut: clients.rut, address: clients.address, city: clients.city,
+      region: clients.region, createdAt: clients.createdAt,
+      user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
+    };
+
+    if (paginated) {
+      const [{ total }] = await db.select({ total: sql`count(*)::int` })
+        .from(clients)
+        .where(orgFilter(clients, orgId));
+      const rows = await db.select(baseSelect)
+        .from(clients)
+        .leftJoin(users, eq(clients.userId, users.id))
+        .where(orgFilter(clients, orgId))
+        .limit(limit)
+        .offset(offset);
+      return res.json({ items: rows, pagination: paginationMeta(total, page, limit) });
+    }
+
+    const allClients = await db.select(baseSelect)
       .from(clients)
       .leftJoin(users, eq(clients.userId, users.id))
       .where(orgFilter(clients, orgId))

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
+import RouterNetworkConfig from '../../components/RouterNetworkConfig'
 
 interface Props { API: string; onBack: () => void }
 
@@ -76,6 +77,7 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [equipForm, setEquipForm] = useState<any>({ type: 'cpe', brand: 'Ubiquiti' })
   const [routerNetwork, setRouterNetwork] = useState<any>(null)
   const [selectedRouter, setSelectedRouter] = useState<any>(null)
+  const [routerPanelTab, setRouterPanelTab] = useState<'subscribers' | 'infra'>('subscribers')
   const [routers, setRouters] = useState<any[]>([])
 
   function api() {
@@ -117,6 +119,7 @@ export default function NetworkManager({ API, onBack }: Props) {
     setSelectedSite(site)
     setSelectedRouter(null)
     setRouterNetwork(null)
+    setRouterPanelTab('subscribers')
     setExpanded(prev => new Set(prev).add(site.id))
   }
 
@@ -186,9 +189,11 @@ export default function NetworkManager({ API, onBack }: Props) {
     setShowRouterModal(true)
   }
 
-  async function loadRouterNetwork(router: any) {
+  async function loadRouterNetwork(router: any, tab: 'subscribers' | 'infra' = 'subscribers') {
     setSelectedRouter(router)
+    setRouterPanelTab(tab)
     setRouterNetwork(null)
+    if (tab === 'infra') return
     try {
       const res = await api().get(`/sites/router/${router.id}/network`)
       setRouterNetwork(res.data)
@@ -340,10 +345,16 @@ export default function NetworkManager({ API, onBack }: Props) {
                           <p className="text-xs text-gray-500">{eq.type} · {eq.brand} {eq.model} · {eq.ipAddress || 'sin IP'}</p>
                         </div>
                         {eq.type === 'router' && (
-                          <button onClick={() => loadRouterNetwork(eq)}
-                            className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-                            <Eye className="h-3 w-3" /> Ver abonados
-                          </button>
+                          <div className="flex gap-1">
+                            <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                              className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                              <Eye className="h-3 w-3" /> Abonados
+                            </button>
+                            <button onClick={() => loadRouterNetwork(eq, 'infra')}
+                              className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
+                              <Server className="h-3 w-3" /> DHCP/SNMP
+                            </button>
+                          </div>
                         )}
                         {eq.type === 'cpe' && (
                           <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -355,19 +366,33 @@ export default function NetworkManager({ API, onBack }: Props) {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border flex flex-col overflow-hidden">
-                  <div className="p-4 border-b flex items-center justify-between">
+                <div className="bg-white rounded-xl border flex flex-col overflow-hidden min-h-[420px]">
+                  <div className="p-4 border-b flex items-center justify-between gap-2">
                     <div>
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                         <Wifi className="h-4 w-4 text-green-600" />
-                        {selectedRouter ? `Abonados — ${selectedRouter.name}` : 'Abonados en router'}
+                        {selectedRouter ? selectedRouter.name : 'Router MikroTik'}
                       </h3>
                       {selectedRouter && (
-                        <p className="text-xs text-gray-500 mt-0.5">Colas, PPPoE y estado de conexión</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {routerPanelTab === 'subscribers' ? 'Colas y PPPoE de abonados' : 'DHCP, perfiles PPPoE y SNMP'}
+                        </p>
                       )}
                     </div>
+                    {selectedRouter && (
+                      <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                        <button onClick={() => loadRouterNetwork(selectedRouter, 'subscribers')}
+                          className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'subscribers' ? 'bg-white shadow font-medium' : 'text-gray-500'}`}>
+                          Abonados
+                        </button>
+                        <button onClick={() => loadRouterNetwork(selectedRouter, 'infra')}
+                          className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'infra' ? 'bg-white shadow font-medium' : 'text-gray-500'}`}>
+                          Infra
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4">
+                  <div className="flex-1 overflow-y-auto p-4 min-h-0">
                     {!selectedRouter ? (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         {siteRouters.length === 0
@@ -385,6 +410,13 @@ export default function NetworkManager({ API, onBack }: Props) {
                           </div>
                         )}
                       </div>
+                    ) : routerPanelTab === 'infra' ? (
+                      <RouterNetworkConfig
+                        API={API}
+                        routerId={selectedRouter.id}
+                        routerName={selectedRouter.name}
+                        siteEquipment={siteEquipment}
+                      />
                     ) : routerNetwork?.error ? (
                       <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 flex gap-2">
                         <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -650,11 +682,19 @@ export default function NetworkManager({ API, onBack }: Props) {
                   onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
               </div>
               {equipForm.type === 'cpe' && (
-                <div>
-                  <label className="text-sm font-medium">MAC antena</label>
-                  <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono" placeholder="AA:BB:CC:DD:EE:FF"
-                    value={equipForm.macAddress || ''} onChange={e => setEquipForm({ ...equipForm, macAddress: e.target.value })} />
-                </div>
+                <>
+                  <div>
+                    <label className="text-sm font-medium">MAC antena</label>
+                    <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono" placeholder="AA:BB:CC:DD:EE:FF"
+                      value={equipForm.macAddress || ''} onChange={e => setEquipForm({ ...equipForm, macAddress: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">SNMP Community</label>
+                    <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono" placeholder="public"
+                      value={equipForm.snmpCommunity || ''} onChange={e => setEquipForm({ ...equipForm, snmpCommunity: e.target.value })} />
+                    <p className="text-xs text-gray-500 mt-1">Para Ubiquiti AirMax: activa SNMP en la antena y usa la misma community.</p>
+                  </div>
+                </>
               )}
               <p className="text-xs text-gray-500">
                 {equipForm.type === 'router'

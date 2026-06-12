@@ -106,7 +106,17 @@ export async function runMigrations(connectionString) {
     await sql`ALTER TABLE client_services ADD COLUMN IF NOT EXISTS billing_due_day INTEGER DEFAULT 5`;
     await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb`;
 
-    console.log('Multi-tenant migration OK');
+    await sql`CREATE INDEX IF NOT EXISTS idx_clients_organization_id ON clients(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_equipment_organization_id ON equipment(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_equipment_site_id ON equipment(site_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_invoices_org_status ON invoices(organization_id, status)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_tickets_organization_id ON tickets(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_plans_organization_id ON plans(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_sites_organization_id ON sites(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_client_services_client_id ON client_services(client_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id)`;
+
+    console.log('Multi-tenant migration OK (indexes applied)');
   } finally {
     await sql.end();
   }

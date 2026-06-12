@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { invoices, clients, users, clientServices } from '../db/schema.js';
-import { eq, and, lte, or, isNull } from 'drizzle-orm';
+import { eq, and, lte, or, isNull, sql } from 'drizzle-orm';
+import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getInvoiceInOrg, getServiceInOrg } from '../lib/tenant.js';
 import { createInvoiceForService, previewInvoiceForService } from '../lib/invoiceService.js';
@@ -12,14 +13,33 @@ invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const allInvoices = await db.select({
+    const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
+
+    const baseSelect = {
       id: invoices.id, invoiceNumber: invoices.invoiceNumber, amount: invoices.amount,
       tax: invoices.tax, total: invoices.total, status: invoices.status,
       dueDate: invoices.dueDate, billingPeriod: invoices.billingPeriod,
       paidDate: invoices.paidDate, createdAt: invoices.createdAt,
       clientServiceId: invoices.clientServiceId,
       client: { fullName: users.fullName, email: users.email },
-    })
+    };
+
+    if (paginated) {
+      const [{ total }] = await db.select({ total: sql`count(*)::int` })
+        .from(invoices)
+        .where(orgFilter(invoices, orgId));
+      const rows = await db.select(baseSelect)
+        .from(invoices)
+        .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .leftJoin(users, eq(clients.userId, users.id))
+        .where(orgFilter(invoices, orgId))
+        .orderBy(invoices.createdAt)
+        .limit(limit)
+        .offset(offset);
+      return res.json({ items: rows, pagination: paginationMeta(total, page, limit) });
+    }
+
+    const allInvoices = await db.select(baseSelect)
       .from(invoices)
       .leftJoin(clients, eq(invoices.clientId, clients.id))
       .leftJoin(users, eq(clients.userId, users.id))

@@ -13,6 +13,7 @@ import {
   buildQueueLimits,
   testRouterConnection,
 } from './mikrotikClient.js';
+import { upsertDhcpStaticLease, removeDhcpLease } from './mikrotikNetwork.js';
 
 function generatePppCredentials(clientId, serviceId) {
   const username = `fn${clientId}s${serviceId}`;
@@ -65,7 +66,7 @@ export async function loadRouter(routerId, orgId) {
   return router || null;
 }
 
-export async function provisionServiceNetwork(serviceId, orgId, routerId, provisionMode = 'both') {
+export async function provisionServiceNetwork(serviceId, orgId, routerId, provisionMode = 'both', options = {}) {
   const ctx = await loadServiceContext(serviceId, orgId);
   if (!ctx) throw new Error('Servicio no encontrado');
 
@@ -74,9 +75,10 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
 
   await testRouterConnection(router);
 
-  const mode = ['pppoe', 'queue', 'both'].includes(provisionMode) ? provisionMode : 'both';
+  const mode = ['pppoe', 'queue', 'both', 'static'].includes(provisionMode) ? provisionMode : 'both';
   const doPppoe = mode === 'pppoe' || mode === 'both';
-  const doQueue = mode === 'queue' || mode === 'both';
+  const doQueue = mode === 'queue' || mode === 'both' || mode === 'static';
+  const doStaticLease = mode === 'static' || (mode === 'both' && ctx.service.macAddress);
 
   let username = ctx.service.pppoeUsername;
   let password = ctx.service.pppoePassword;
@@ -84,13 +86,21 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
     ({ username, password } = generatePppCredentials(ctx.client.id, serviceId));
   }
 
-  const profile = ctx.service.pppProfile || 'default';
+  const profile = options.pppProfile || ctx.service.pppProfile || 'default';
   const queueName = (!ctx.service.queueName || isLegacyQueueName(ctx.service.queueName))
     ? buildQueueName(ctx.client.fullName, serviceId)
     : ctx.service.queueName;
   const maxLimit = buildQueueLimits(ctx.plan.uploadSpeed, ctx.plan.downloadSpeed);
   const queueComment = `${ctx.client.fullName} — ${ctx.plan.name}`;
-  const actions = { pppoe: null, queue: null };
+  const actions = { pppoe: null, queue: null, dhcpLease: null };
+
+  if (doStaticLease && ctx.service.ipAddress) {
+    actions.dhcpLease = await upsertDhcpStaticLease(router, {
+      address: ctx.service.ipAddress,
+      macAddress: ctx.service.macAddress || undefined,
+      comment: ctx.client.fullName,
+    });
+  }
 
   if (doPppoe) {
     if (!username || !password) throw new Error('PPPoE requiere usuario — crea primero el secret o usa modo cola con IP');

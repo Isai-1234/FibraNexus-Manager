@@ -38,11 +38,12 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [serviceForm, setServiceForm] = useState<any>(defaultServiceForm())
   const [provisionRouterId, setProvisionRouterId] = useState<number | null>(null)
   const [provisionMode, setProvisionMode] = useState('both')
+  const [provisionPppProfile, setProvisionPppProfile] = useState('default')
   const [provisioning, setProvisioning] = useState(false)
   const [routerCredForm, setRouterCredForm] = useState<any>({})
   const [savingRouterCred, setSavingRouterCred] = useState(false)
   const [savingService, setSavingService] = useState(false)
-  const [generatingInvoice, setGeneratingInvoice] = useState<number | null>(null)
+  const [pppProfiles, setPppProfiles] = useState<any[]>([])
 
   function api() {
     return axios.create({
@@ -60,6 +61,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setPlans(Array.isArray(pRes.data) ? pRes.data : [])
     }).catch(() => {})
   }, [clientId])
+
+  async function loadPppProfiles(routerId: number) {
+    try {
+      const res = await api().get(`/network/routers/${routerId}/ppp-profiles`)
+      setPppProfiles(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setPppProfiles([])
+    }
+  }
 
   async function loadAll() {
     setLoading(true)
@@ -115,6 +125,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       const res = await api().post(`/services/${serviceId}/provision`, {
         routerId,
         provisionMode,
+        pppProfile: provisionPppProfile,
       })
       const parts = []
       if (res.data.username) parts.push(`PPPoE: ${res.data.username}\nClave: ${res.data.password}`)
@@ -123,6 +134,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         parts.push(`Cola ${qAction}: ${res.data.queueName} (${res.data.maxLimit})`)
       }
       if (res.data.actions?.pppoe?.action === 'updated') parts.unshift('PPPoE actualizado (sin duplicar)')
+      if (res.data.actions?.dhcpLease) {
+        parts.push(`DHCP lease ${res.data.actions.dhcpLease.action}: ${res.data.service?.ipAddress || ''}`)
+      }
       if (res.data.service) {
         setServices((prev) => prev.map((s) => (s.id === serviceId
           ? { ...s, ...res.data.service, plan: s.plan, client: s.client }
@@ -423,6 +437,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                         <option value="both">PPPoE + Simple Queue (recomendado WISP)</option>
                         <option value="pppoe">Solo PPPoE (autenticación)</option>
                         <option value="queue">Solo Simple Queue (IP estática)</option>
+                        <option value="static">IP estática + cola + lease DHCP</option>
                       </select>
                       <p className="text-xs text-gray-500 mt-1">
                         Para antenas Ubiquiti en modo Station: usa <strong>PPPoE + Cola</strong>. La antena se configura con usuario/clave PPPoE.
@@ -683,6 +698,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                                     routerPass: r.credentials?.routerPass || '',
                                     tunnelHostname: r.credentials?.tunnelHostname || r.ipAddress || '',
                                   })
+                                  setProvisionPppProfile(s.pppProfile || 'default')
+                                  loadPppProfiles(id!)
                                 }
                               }}>
                               <option value="">Router...</option>
@@ -697,7 +714,17 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                               <option value="both">PPPoE + Simple Queue</option>
                               <option value="pppoe">Solo PPPoE</option>
                               <option value="queue">Solo Simple Queue</option>
+                              <option value="static">IP estática + cola + DHCP lease</option>
                             </select>
+                            {pppProfiles.length > 0 && (provisionMode === 'both' || provisionMode === 'pppoe') && (
+                              <select className="border rounded-lg px-3 py-2 text-sm bg-white min-w-[140px]"
+                                value={provisionPppProfile}
+                                onChange={e => setProvisionPppProfile(e.target.value)}>
+                                {pppProfiles.map((p: any) => (
+                                  <option key={p.name} value={p.name}>{p.name}</option>
+                                ))}
+                              </select>
+                            )}
                             <button disabled={provisioning || savingRouterCred} onClick={() => provisionNetwork(s.id, s.routerId)}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
                               <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : savingRouterCred ? 'Guardando API...' : (s.queueName || s.pppoeUsername ? 'Actualizar en router' : 'Aplicar en router')}

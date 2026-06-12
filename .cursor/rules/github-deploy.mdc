@@ -1,0 +1,33 @@
+---
+description: FibraNexus Manager — repo GitHub y despliegue en Render
+alwaysApply: true
+---
+
+# FibraNexus Manager — GitHub y producción
+
+Este proyecto **vive en GitHub**; no asumir setup solo local.
+
+- **Repo:** https://github.com/Isai-1234/FibraNexus-Manager
+- **Rama principal:** `main`
+- **Producción:** https://app.fibranexus.cl
+- **Stack:** GitHub → Vercel (frontend) + Render (API) + Supabase (PostgreSQL) + Cloudflare (túneles MikroTik)
+
+## Flujo de trabajo
+
+1. Cambios en `C:\Users\Isaí\Projects\FibraNexus-Manager`
+2. Commit y push a `origin/main`
+3. Render despliega automáticamente
+4. Verificar: `GET /api/health` → `version`, `commit`, `checks.database`, `runtime.processRole`
+5. Guía escala: `docs/escala.md`
+
+## ISP demo
+
+- Organización: **Internetsur**
+- Admin: `admin@fibranexus.cl`
+- Router lab: MikroTik L009 en nodo **Torre Pangui** (túnel Cloudflare + API REST)
+
+## Recordatorio al agente
+
+- Tras implementar features, **ofrecer push a GitHub** si hay cambios sin subir
+- No decir "solo está en local" sin verificar `git status` vs `origin/main`
+- Health endpoint es la fuente de verdad del deploy en producción

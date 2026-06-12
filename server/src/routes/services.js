@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { clientServices, clients, plans, users, equipment } from '../db/schema.js';
-import { and, eq, ne, inArray } from 'drizzle-orm';
+import { and, eq, ne, inArray, sql } from 'drizzle-orm';
+import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
 import { provisionServiceNetwork, suspendServiceNetwork, reactivateServiceNetwork } from '../lib/networkProvision.js';
+import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
 import { createInvoiceForService } from '../lib/invoiceService.js';
 
@@ -61,7 +63,9 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const services = await db.select({
+    const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
+
+    const baseQuery = db.select({
       id: clientServices.id, status: clientServices.status,
       ipAddress: clientServices.ipAddress, macAddress: clientServices.macAddress,
       routerId: clientServices.routerId, siteId: clientServices.siteId,
@@ -81,8 +85,18 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       .leftJoin(clients, eq(clientServices.clientId, clients.id))
       .leftJoin(users, eq(clients.userId, users.id))
       .leftJoin(plans, eq(clientServices.planId, plans.id))
-      .where(orgFilter(clients, orgId))
-      .limit(50);
+      .where(orgFilter(clients, orgId));
+
+    if (paginated) {
+      const [{ total }] = await db.select({ total: sql`count(*)::int` })
+        .from(clientServices)
+        .innerJoin(clients, eq(clientServices.clientId, clients.id))
+        .where(orgFilter(clients, orgId));
+      const services = await baseQuery.limit(limit).offset(offset);
+      return res.json({ items: services, pagination: paginationMeta(total, page, limit) });
+    }
+
+    const services = await baseQuery.limit(50);
     res.json(services);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar servicios' });
@@ -154,7 +168,12 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
 
     if (provisionNetwork && parsedRouterId && !Number.isNaN(parsedRouterId)) {
       try {
-        const result = await provisionServiceNetwork(service.id, orgId, parsedRouterId, provisionMode || 'both');
+        const result = await dispatch(JobNames.PROVISION_NETWORK, {
+          serviceId: service.id,
+          orgId,
+          routerId: parsedRouterId,
+          provisionMode: provisionMode || 'both',
+        });
         if (generateFirstInvoice) {
           try {
             const inv = await createInvoiceForService(orgId, service.id);
@@ -199,9 +218,14 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    const { status } = req.body;
+    const { status, pppProfile, ipAddress, macAddress } = req.body;
+    const patch = { updatedAt: new Date() };
+    if (status !== undefined) patch.status = status;
+    if (pppProfile !== undefined) patch.pppProfile = pppProfile;
+    if (ipAddress !== undefined) patch.ipAddress = ipAddress;
+    if (macAddress !== undefined) patch.macAddress = macAddress;
     const [updated] = await db.update(clientServices)
-      .set({ status, updatedAt: new Date() })
+      .set(patch)
       .where(eq(clientServices.id, serviceId))
       .returning();
     res.json(updated);
@@ -267,12 +291,21 @@ servicesRouter.post('/:id/provision', requireRole('admin', 'technician'), async 
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const serviceId = parseInt(req.params.id);
-    const { routerId, provisionMode } = req.body;
+    const { routerId, provisionMode, pppProfile } = req.body;
     if (!routerId) return res.status(400).json({ error: 'routerId requerido' });
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    const result = await provisionServiceNetwork(serviceId, orgId, parseInt(routerId, 10), provisionMode || 'both');
+    if (pppProfile) {
+      await db.update(clientServices).set({ pppProfile, updatedAt: new Date() }).where(eq(clientServices.id, serviceId));
+    }
+    const result = await dispatch(JobNames.PROVISION_NETWORK, {
+      serviceId,
+      orgId,
+      routerId: parseInt(routerId, 10),
+      provisionMode: provisionMode || 'both',
+      pppProfile,
+    });
     res.json({ message: 'Red provisionada', ...result });
   } catch (error) {
     res.status(503).json({ error: 'Error al provisionar: ' + error.message });

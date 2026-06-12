@@ -180,7 +180,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { name, type, brand, model, ipAddress, siteId, macAddress, notes } = req.body;
+    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
 
     if (siteId) {
@@ -199,6 +199,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       model: model || 'Unknown',
       ipAddress: ipAddress || null,
       macAddress: macAddress || null,
+      snmpCommunity: snmpCommunity || null,
       notes: notes || null,
       status: 'offline',
     }).returning();
