@@ -74,11 +74,24 @@ ${boot}
 
 function inferConnectionMethod(router) {
   const creds = router.credentials || {};
-  if (creds.connectionMethod) return creds.connectionMethod;
-  if (creds.tunnelHostname || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
+  const saved = routerInfoFromRouter(router);
+  if (creds.tunnelToken || creds.tunnelHostname || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
     return 'cloudflare_tunnel';
   }
-  return creds.agentToken ? 'agent' : 'direct';
+  if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && saved?.version) {
+    return 'cloudflare_tunnel';
+  }
+  if (creds.connectionMethod) return creds.connectionMethod;
+  return 'direct';
+}
+
+function routerInfoFromRouter(router) {
+  const agent = connectedAgents.get(String(router.id));
+  return agent?.routerInfo || router.credentials?.lastRouterInfo || null;
+}
+
+function resolveHost(router) {
+  return router.ipAddress || router.credentials?.tunnelHostname || null;
 }
 
 function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connectionMethod }) {
@@ -185,9 +198,10 @@ export async function agentHeartbeatHandler(req, res) {
     if (routerInfo?.version) updates.firmware = String(routerInfo.version).slice(0, 50);
 
     const creds = { ...router.credentials, lastRouterInfo: routerInfo || null };
-    if (!creds.connectionMethod) {
-      const inferred = inferConnectionMethod(router);
-      if (inferred !== 'agent') creds.connectionMethod = inferred;
+    if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && routerInfo?.version) {
+      creds.connectionMethod = 'cloudflare_tunnel';
+    } else if (!creds.connectionMethod) {
+      creds.connectionMethod = inferConnectionMethod({ ...router, credentials: creds });
     }
     await db.update(equipment).set({ ...updates, credentials: creds }).where(eq(equipment.id, router.id));
     connectedAgents.set(router.id.toString(), { routerId: router.id, lastSeen: new Date(), routerInfo });

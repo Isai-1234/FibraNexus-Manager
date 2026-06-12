@@ -94,12 +94,21 @@ function methodsForDevice(routerType: string) {
 }
 
 function resolveConnectionMethod(router: any) {
-  if (router.connectionMethod) return router.connectionMethod
-  if (router.credentials?.connectionMethod) return router.credentials.connectionMethod
-  if (router.credentials?.tunnelHostname || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
+  if (router.connectionMethod && router.connectionMethod !== 'agent') return router.connectionMethod
+  if (router.credentials?.connectionMethod && router.credentials.connectionMethod !== 'agent') {
+    return router.credentials.connectionMethod
+  }
+  if (router.credentials?.tunnelHostname || router.credentials?.tunnelToken || (router.ipAddress && String(router.ipAddress).includes('fibranexus.cl'))) {
     return 'cloudflare_tunnel'
   }
-  return 'agent'
+  if (router.credentials?.connectionMethod === 'agent' && String(router.credentials?.routerType || '').startsWith('mikrotik') && router.routerInfo?.version) {
+    return 'cloudflare_tunnel'
+  }
+  return router.credentials?.connectionMethod || 'direct'
+}
+
+function resolveHost(router: any) {
+  return router.ipAddress || router.credentials?.tunnelHostname || null
 }
 
 export default function RouterManager({ API, onBack }: Props) {
@@ -169,6 +178,15 @@ export default function RouterManager({ API, onBack }: Props) {
       setTestResult({ success: false, error: e.response?.data?.error || e.message })
     }
     setTesting(false)
+  }
+
+  async function handleSetHost(id: number, current: string | null) {
+    const host = prompt('Hostname del túnel Cloudflare (ej: l009-test.fibranexus.cl):', current || '')
+    if (!host?.trim()) return
+    try {
+      await api().patch(`/routers/${id}`, { tunnelHostname: host.trim(), connectionMethod: 'cloudflare_tunnel' })
+      loadRouters()
+    } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
   async function handleDelete(id: number) {
@@ -580,7 +598,14 @@ export default function RouterManager({ API, onBack }: Props) {
                   )}
 
                   <div className="space-y-2 text-sm mb-4">
-                    <div className="flex justify-between"><span className="text-gray-500">Host</span><span className="font-mono text-xs">{router.ipAddress || router.credentials?.tunnelHostname || '—'}</span></div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500">Host</span>
+                      <span className="font-mono text-xs flex items-center gap-1">
+                        {resolveHost(router) || (
+                          <button onClick={() => handleSetHost(router.id, null)} className="text-blue-600 hover:underline text-xs">+ Agregar host</button>
+                        )}
+                      </span>
+                    </div>
                     <div className="flex justify-between"><span className="text-gray-500">Ubicación</span><span>{router.location || '—'}</span></div>
                     {!info && router.firmware && (
                       <div className="flex justify-between"><span className="text-gray-500">Firmware</span><span className="text-xs">{router.firmware}</span></div>

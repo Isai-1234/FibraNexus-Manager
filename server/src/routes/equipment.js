@@ -9,11 +9,15 @@ export const equipmentRouter = Router();
 
 function inferConnectionMethod(item) {
   const creds = item.credentials || {};
-  if (creds.connectionMethod) return creds.connectionMethod;
-  if (creds.tunnelHostname || (item.ipAddress && String(item.ipAddress).includes('fibranexus.cl'))) {
+  const info = creds.lastRouterInfo;
+  if (creds.tunnelToken || creds.tunnelHostname || (item.ipAddress && String(item.ipAddress).includes('fibranexus.cl'))) {
     return 'cloudflare_tunnel';
   }
-  return creds.agentToken ? 'agent' : 'direct';
+  if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && info?.version) {
+    return 'cloudflare_tunnel';
+  }
+  if (creds.connectionMethod) return creds.connectionMethod;
+  return 'direct';
 }
 
 equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
