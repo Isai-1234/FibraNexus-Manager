@@ -1,5 +1,11 @@
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
+
+/** PNG personalizados — colocar en client/public/assets/link/ */
+export const LINK_VISUAL_ASSETS = {
+  cpe: '/assets/link/cpe-litebeam.png',
+  tower: '/assets/link/tower-sector.png',
+} as const
 
 type WirelessWarning = { type: string; label: string; severity: string }
 
@@ -30,6 +36,8 @@ interface Props {
   onRefresh?: () => void
   refreshing?: boolean
   className?: string
+  cpeImageUrl?: string
+  towerImageUrl?: string
 }
 
 function signalStrengthPercent(dbm: number | null | undefined) {
@@ -126,6 +134,73 @@ function SectorHornSvg({ uid }: { uid: string }) {
       <ellipse cx="70" cy="96" rx="10" ry="4" fill="#ef4444" opacity="0.9" />
       <rect x="60" y="92" width="20" height="6" rx="2" fill="#dc2626" />
     </g>
+  )
+}
+
+function LinkHardware({
+  uid,
+  online,
+  apLabel,
+  cpeSrc,
+  towerSrc,
+}: {
+  uid: string
+  online: boolean
+  apLabel: string
+  cpeSrc: string
+  towerSrc: string
+}) {
+  const [cpeOk, setCpeOk] = useState(true)
+  const [towerOk, setTowerOk] = useState(true)
+
+  return (
+    <>
+      {/* CPE — izquierda (LiteBeam, proporción natural) */}
+      <div className="absolute left-[2%] sm:left-[4%] bottom-[12%] z-10 flex flex-col items-center max-w-[34%] sm:max-w-[28%]">
+        <div className="relative inline-flex justify-center">
+          {cpeOk ? (
+            <img
+              src={cpeSrc}
+              alt="Antena CPE LiteBeam"
+              className="block w-auto h-auto max-w-[min(34vw,165px)] max-h-[min(22vw,105px)] object-contain drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
+              onError={() => setCpeOk(false)}
+            />
+          ) : (
+            <svg viewBox="0 0 140 120" className="w-[min(34vw,165px)] h-auto" aria-hidden>
+              <LiteBeamSvg uid={uid} />
+            </svg>
+          )}
+          {online && (
+            <span className="absolute top-[38%] right-[18%] w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_12px_#22d3ee] animate-pulse" />
+          )}
+        </div>
+        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center">CPE · Cliente</p>
+      </div>
+
+      {/* Torre / sectoriales — derecha (mástil alto) */}
+      <div className="absolute right-[1%] sm:right-[2%] bottom-[6%] z-10 flex flex-col items-center max-w-[32%] sm:max-w-[26%]">
+        <div className="relative inline-flex justify-center">
+          {towerOk ? (
+            <img
+              src={towerSrc}
+              alt="Torre con antenas sectoriales"
+              className="block w-auto h-auto max-w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)] object-contain drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
+              onError={() => setTowerOk(false)}
+            />
+          ) : (
+            <svg viewBox="0 0 140 120" className="w-[min(30vw,150px)] h-auto" aria-hidden>
+              <SectorHornSvg uid={uid} />
+            </svg>
+          )}
+          {online && (
+            <span className="absolute top-[22%] left-[22%] w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#4ade80] animate-pulse" />
+          )}
+        </div>
+        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center truncate max-w-full px-1">
+          {apLabel.length > 18 ? `${apLabel.slice(0, 16)}…` : apLabel}
+        </p>
+      </div>
+    </>
   )
 }
 
@@ -258,6 +333,8 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
 
 export default function CpeLinkVisualizer({
   equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false, className = '',
+  cpeImageUrl = LINK_VISUAL_ASSETS.cpe,
+  towerImageUrl = LINK_VISUAL_ASSETS.tower,
 }: Props) {
   const uid = useId().replace(/:/g, '')
 
@@ -377,92 +454,71 @@ export default function CpeLinkVisualizer({
         </div>
       </div>
 
-      {/* escena SVG */}
+      {/* escena enlace */}
       <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center' : ''}`}>
-        <svg viewBox="0 0 580 230" className={`w-full h-auto ${immersive ? 'max-h-[min(52vh,520px)]' : ''}`} aria-label="Enlace LiteBeam a sectorial horn">
-          <defs>
-            <radialGradient id={`${uid}-shadow`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="rgba(0,0,0,0.5)" />
-              <stop offset="100%" stopColor="transparent" />
-            </radialGradient>
-            <linearGradient id={`${uid}-dish`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#ffffff" />
-              <stop offset="100%" stopColor="#e2e8f0" />
-            </linearGradient>
-            <linearGradient id={`${uid}-horn`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#f8fafc" />
-              <stop offset="100%" stopColor="#e2e8f0" />
-            </linearGradient>
-            <filter id={`${uid}-beamGlow`} x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="2" result="b" />
-              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-            <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={theme.primary} stopOpacity="0.1" />
-              <stop offset="40%" stopColor={theme.primary} stopOpacity="1" />
-              <stop offset="100%" stopColor={theme.secondary} stopOpacity="0.4" />
-            </linearGradient>
-            <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="transparent" />
-              <stop offset="100%" stopColor="rgba(34,211,238,0.04)" />
-            </linearGradient>
-          </defs>
+        <div className={`relative w-full ${immersive ? 'max-h-[min(58vh,560px)]' : 'max-h-[320px]'} aspect-[580/250]`}>
+          <svg
+            viewBox="0 0 580 230"
+            className="absolute inset-0 w-full h-full"
+            aria-hidden
+          >
+            <defs>
+              <filter id={`${uid}-beamGlow`} x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2" result="b" />
+                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor={theme.primary} stopOpacity="0.1" />
+                <stop offset="40%" stopColor={theme.primary} stopOpacity="1" />
+                <stop offset="100%" stopColor={theme.secondary} stopOpacity="0.4" />
+              </linearGradient>
+              <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="transparent" />
+                <stop offset="100%" stopColor="rgba(34,211,238,0.04)" />
+              </linearGradient>
+            </defs>
 
-          {/* grid piso */}
-          <g className="floor-grid" opacity="0.04">
-            {Array.from({ length: 12 }, (_, i) => (
-              <line key={`h${i}`} x1="0" y1={140 + i * 8} x2="580" y2={140 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
-            ))}
-            {Array.from({ length: 16 }, (_, i) => (
-              <line key={`v${i}`} x1={i * 38} y1="130" x2={i * 38 - 80} y2="230" stroke="#94a3b8" strokeWidth="0.5" />
-            ))}
-          </g>
-
-          <rect x="0" y="130" width="580" height="100" fill={`url(#${uid}-horizon)`} />
-
-          {/* torre fondo */}
-          <g opacity="0.08" transform="translate(440, 8)">
-            <line x1="24" y1="0" x2="24" y2="160" stroke="#cbd5e1" strokeWidth="4" />
-            <line x1="0" y1="35" x2="48" y2="35" stroke="#cbd5e1" strokeWidth="2.5" />
-            <line x1="4" y1="70" x2="44" y2="70" stroke="#cbd5e1" strokeWidth="2.5" />
-            <line x1="0" y1="105" x2="48" y2="105" stroke="#cbd5e1" strokeWidth="2.5" />
-          </g>
-
-          <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
-
-          {/* leader lines estilo Starlink */}
-          {online && signal != null && (
-            <g opacity="0.6">
-              <line x1="148" y1="32" x2="200" y2="12" stroke="#475569" strokeWidth="0.6" strokeDasharray="2 3" />
-              <rect x="200" y="2" width="90" height="18" rx="9" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-              <text x="245" y="14" textAnchor="middle" fill="#94a3b8" fontSize="8" fontFamily="system-ui,sans-serif">
-                {signal} dBm
-              </text>
+            <g className="floor-grid" opacity="0.04">
+              {Array.from({ length: 12 }, (_, i) => (
+                <line key={`h${i}`} x1="0" y1={140 + i * 8} x2="580" y2={140 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
+              ))}
+              {Array.from({ length: 16 }, (_, i) => (
+                <line key={`v${i}`} x1={i * 38} y1="130" x2={i * 38 - 80} y2="230" stroke="#94a3b8" strokeWidth="0.5" />
+              ))}
             </g>
-          )}
 
-          <g transform="translate(12, 36) scale(0.98)">
-            <LiteBeamSvg uid={uid} />
-            <text x="70" y="134" textAnchor="middle" fill="#475569" fontSize="8.5" fontFamily="system-ui,sans-serif">CPE · Cliente</text>
-          </g>
+            <rect x="0" y="130" width="580" height="100" fill={`url(#${uid}-horizon)`} />
 
-          <g transform="translate(418, 32) scale(0.98)">
-            <SectorHornSvg uid={uid} />
-            <text x="70" y="134" textAnchor="middle" fill="#475569" fontSize="8.5" fontFamily="system-ui,sans-serif">
-              {apLabel.length > 16 ? `${apLabel.slice(0, 14)}…` : apLabel}
-            </text>
-          </g>
+            <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
 
-          {/* leyenda TX/RX */}
-          {online && (
-            <g transform="translate(248, 198)" fontFamily="system-ui,sans-serif" fontSize="8" fill="#64748b">
-              <path d="M0 4 L6 0 L6 8 Z" fill="#22d3ee" opacity="0.8" transform="rotate(45 3 4)" />
-              <text x="12" y="7">Subida</text>
-              <path d="M72 4 L78 0 L78 8 Z" fill="#4ade80" opacity="0.8" transform="rotate(-135 75 4)" />
-              <text x="84" y="7">Bajada</text>
-            </g>
-          )}
-        </svg>
+            {online && signal != null && (
+              <g opacity="0.6">
+                <line x1="148" y1="32" x2="200" y2="12" stroke="#475569" strokeWidth="0.6" strokeDasharray="2 3" />
+                <rect x="200" y="2" width="90" height="18" rx="9" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                <text x="245" y="14" textAnchor="middle" fill="#94a3b8" fontSize="8" fontFamily="system-ui,sans-serif">
+                  {signal} dBm
+                </text>
+              </g>
+            )}
+
+            {online && (
+              <g transform="translate(248, 198)" fontFamily="system-ui,sans-serif" fontSize="8" fill="#64748b">
+                <path d="M0 4 L6 0 L6 8 Z" fill="#22d3ee" opacity="0.8" transform="rotate(45 3 4)" />
+                <text x="12" y="7">Subida</text>
+                <path d="M72 4 L78 0 L78 8 Z" fill="#4ade80" opacity="0.8" transform="rotate(-135 75 4)" />
+                <text x="84" y="7">Bajada</text>
+              </g>
+            )}
+          </svg>
+
+          <LinkHardware
+            uid={uid}
+            online={online}
+            apLabel={apLabel}
+            cpeSrc={cpeImageUrl}
+            towerSrc={towerImageUrl}
+          />
+        </div>
       </div>
 
       {/* métricas glass */}
