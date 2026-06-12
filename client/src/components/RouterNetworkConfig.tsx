@@ -23,6 +23,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
     server: { name: 'dhcp-wisp', interface: 'bridge', addressPool: 'pool-wisp' },
     lease: { address: '', macAddress: '', comment: '' },
     profile: { name: '', localAddress: '172.16.140.1', remoteAddress: 'pool-wisp', rateLimit: '10M/20M' },
+    pppServer: { serviceName: 'internet', interface: 'bridge', defaultProfile: '', oneSessionPerHost: true },
   })
 
   function api() {
@@ -46,6 +47,12 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
       }
       if (res.data.interfaces?.[0]?.name && !forms.server.interface) {
         setForms((f: any) => ({ ...f, server: { ...f.server, interface: res.data.interfaces[0].name } }))
+      }
+      if (res.data.pppProfiles?.[0]?.name && !forms.pppServer.defaultProfile) {
+        setForms((f: any) => ({
+          ...f,
+          pppServer: { ...f.pppServer, defaultProfile: res.data.pppProfiles[0].name, interface: f.pppServer.interface || res.data.interfaces?.[0]?.name || 'bridge' },
+        }))
       }
     } catch (e: any) {
       alert('Error: ' + (e.response?.data?.error || e.message))
@@ -223,30 +230,38 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
 
         {tab === 'ppp' && (
           <>
-            <p className="text-xs text-gray-500">Perfiles PPPoE en MikroTik — asigna pool remoto y rate-limit por plan.</p>
+            <p className="text-xs text-gray-500">
+              Pool (tab DHCP) → perfil PPPoE → servidor PPPoE en interfaz. Luego provisiona abonados con modo PPPoE + Cola.
+            </p>
+
             <section className="rounded-xl border p-4 space-y-3 bg-white">
+              <h4 className="font-semibold text-sm">1. Perfil PPPoE (pool remoto + rate-limit)</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Nombre perfil (ej: 20M)"
                   value={forms.profile.name} onChange={e => setForms({ ...forms, profile: { ...forms.profile, name: e.target.value } })} />
                 <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Rate 10M/20M"
                   value={forms.profile.rateLimit} onChange={e => setForms({ ...forms, profile: { ...forms.profile, rateLimit: e.target.value } })} />
-                <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Local address"
+                <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Local address (GW router)"
                   value={forms.profile.localAddress} onChange={e => setForms({ ...forms, profile: { ...forms.profile, localAddress: e.target.value } })} />
                 <select className="border rounded-lg px-3 py-2 text-sm bg-white"
                   value={forms.profile.remoteAddress} onChange={e => setForms({ ...forms, profile: { ...forms.profile, remoteAddress: e.target.value } })}>
                   <option value="">Remote pool…</option>
                   {(snapshot?.ipPools || []).map((p: any) => (
-                    <option key={p.name} value={p.name}>{p.name}</option>
+                    <option key={p.name} value={p.name}>{p.name} ({p.ranges})</option>
                   ))}
                 </select>
               </div>
+              {(snapshot?.ipPools || []).length === 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">Primero crea un pool en la tab DHCP.</p>
+              )}
               <button onClick={() => submit('ppp-profiles', {
                 name: forms.profile.name,
                 localAddress: forms.profile.localAddress,
                 remoteAddress: forms.profile.remoteAddress,
                 rateLimit: forms.profile.rateLimit,
               }, 'Perfil PPPoE creado')}
-                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                disabled={!forms.profile.name || !forms.profile.remoteAddress}
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 flex items-center gap-1">
                 <Plus className="h-3.5 w-3.5" /> Crear perfil
               </button>
               {snapshot?.pppProfiles?.length > 0 && (
@@ -254,11 +269,69 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                   {snapshot.pppProfiles.map((p: any) => (
                     <li key={p['.id'] || p.name} className="bg-gray-50 px-2 py-1.5 rounded flex justify-between">
                       <span className="font-medium">{p.name}</span>
-                      <span className="text-gray-500">{p['rate-limit'] || p['remote-address'] || ''}</span>
+                      <span className="text-gray-500">{p['local-address'] || ''} → {p['remote-address'] || p['rate-limit'] || ''}</span>
                     </li>
                   ))}
                 </ul>
               )}
+            </section>
+
+            <section className="rounded-xl border p-4 space-y-3 bg-white">
+              <h4 className="font-semibold text-sm">2. Servidor PPPoE (escucha en interfaz)</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Service name"
+                  value={forms.pppServer.serviceName}
+                  onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, serviceName: e.target.value } })} />
+                <select className="border rounded-lg px-3 py-2 text-sm bg-white"
+                  value={forms.pppServer.interface}
+                  onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, interface: e.target.value } })}>
+                  <option value="">Interfaz…</option>
+                  {(snapshot?.interfaces || []).map((i: any) => (
+                    <option key={i.name} value={i.name}>{i.name} ({i.type})</option>
+                  ))}
+                </select>
+                <select className="border rounded-lg px-3 py-2 text-sm bg-white col-span-2"
+                  value={forms.pppServer.defaultProfile}
+                  onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, defaultProfile: e.target.value } })}>
+                  <option value="">Perfil por defecto…</option>
+                  {(snapshot?.pppProfiles || []).map((p: any) => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={forms.pppServer.oneSessionPerHost !== false}
+                  onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, oneSessionPerHost: e.target.checked } })} />
+                Una sesión por host (recomendado WISP)
+              </label>
+              <button onClick={() => submit('ppp/server', {
+                serviceName: forms.pppServer.serviceName,
+                interface: forms.pppServer.interface,
+                defaultProfile: forms.pppServer.defaultProfile,
+                oneSessionPerHost: forms.pppServer.oneSessionPerHost !== false,
+                authentication: 'pap,chap,mschap2,mschap1',
+              }, 'Servidor PPPoE activo')}
+                disabled={!forms.pppServer.serviceName || !forms.pppServer.interface || !forms.pppServer.defaultProfile}
+                className="text-sm px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1">
+                <Plus className="h-3.5 w-3.5" /> Crear / actualizar servidor
+              </button>
+              {snapshot?.pppoeServers?.length > 0 && (
+                <ul className="text-xs space-y-1 mt-2">
+                  {snapshot.pppoeServers.map((s: any) => (
+                    <li key={s['.id'] || s.interface} className="bg-emerald-50 text-emerald-800 px-2 py-1.5 rounded">
+                      <span className="font-medium">{s['service-name']}</span>
+                      {' · '}{s.interface}
+                      {' · perfil '}{s['default-profile']}
+                      {s.disabled === 'true' && ' (deshabilitado)'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-dashed p-3 bg-gray-50 text-xs text-gray-600 space-y-1">
+              <p className="font-medium text-gray-800">3. Abonado (Cliente → Provisionar)</p>
+              <p>Modo <strong>PPPoE + Simple Queue</strong> → crea usuario/clave en el router. La antena usa service-name <code className="bg-white px-1 rounded">{forms.pppServer.serviceName || 'internet'}</code>.</p>
             </section>
           </>
         )}

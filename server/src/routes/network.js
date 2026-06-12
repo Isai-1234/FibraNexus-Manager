@@ -13,6 +13,8 @@ import {
   upsertDhcpStaticLease,
   createPppProfile,
   listPppProfiles,
+  upsertPppoeServer,
+  listPppoeServers,
 } from '../lib/mikrotikNetwork.js';
 import { pollEquipmentList } from '../lib/snmpPoller.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
@@ -68,6 +70,49 @@ networkRouter.post('/routers/:id/ppp-profiles', requireRole('admin'), async (req
       comment,
     });
     res.status(201).json(result);
+  } catch (error) {
+    res.status(503).json({ error: error.message });
+  }
+});
+
+networkRouter.post('/routers/:id/ppp/server', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const router = await getRouterOr404(req.params.id, orgId, res);
+    if (!router) return;
+    const {
+      serviceName,
+      interface: iface,
+      defaultProfile,
+      authentication,
+      oneSessionPerHost,
+      comment,
+    } = req.body;
+    if (!serviceName || !iface || !defaultProfile) {
+      return res.status(400).json({ error: 'serviceName, interface y defaultProfile requeridos' });
+    }
+    const result = await upsertPppoeServer(router, {
+      serviceName,
+      interface: iface,
+      defaultProfile,
+      authentication,
+      oneSessionPerHost: oneSessionPerHost !== false,
+      comment,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(503).json({ error: error.message });
+  }
+});
+
+networkRouter.get('/routers/:id/ppp/servers', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const router = await getRouterOr404(req.params.id, orgId, res);
+    if (!router) return;
+    res.json(await listPppoeServers(router));
   } catch (error) {
     res.status(503).json({ error: error.message });
   }

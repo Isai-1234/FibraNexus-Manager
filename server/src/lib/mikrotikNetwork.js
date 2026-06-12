@@ -86,18 +86,66 @@ export async function createPppProfile(router, { name, 'local-address': localAdd
   return mikrotikRequest(router, 'PUT', '/ppp/profile', body);
 }
 
+// ─── PPPoE Server ─────────────────────────────────────────────
+export async function listPppoeServers(router) {
+  return asList(await mikrotikRequest(router, 'GET', '/interface/pppoe-server/server'));
+}
+
+export async function findPppoeServerByInterface(router, iface) {
+  const servers = await listPppoeServers(router);
+  return servers.find((s) => s.interface === iface) || null;
+}
+
+export async function createPppoeServer(router, {
+  serviceName,
+  interface: iface,
+  defaultProfile,
+  authentication = 'pap,chap,mschap2,mschap1',
+  oneSessionPerHost = true,
+  comment = '',
+}) {
+  return mikrotikRequest(router, 'PUT', '/interface/pppoe-server/server', {
+    'service-name': serviceName,
+    interface: iface,
+    'default-profile': defaultProfile,
+    authentication,
+    'one-session-per-host': oneSessionPerHost ? 'yes' : 'no',
+    disabled: 'false',
+    comment,
+  });
+}
+
+export async function upsertPppoeServer(router, opts) {
+  const existing = await findPppoeServerByInterface(router, opts.interface);
+  const body = {
+    'service-name': opts.serviceName,
+    'default-profile': opts.defaultProfile,
+    authentication: opts.authentication || 'pap,chap,mschap2,mschap1',
+    'one-session-per-host': opts.oneSessionPerHost !== false ? 'yes' : 'no',
+    disabled: 'false',
+    comment: opts.comment || '',
+  };
+  if (existing?.['.id']) {
+    await mikrotikRequest(router, 'PATCH', `/interface/pppoe-server/server/${existing['.id']}`, body);
+    return { action: 'updated', server: existing };
+  }
+  await createPppoeServer(router, opts);
+  return { action: 'created' };
+}
+
 // ─── Interfaces (para elegir en DHCP) ───────────────────────
 export async function listInterfaces(router) {
   return asList(await mikrotikRequest(router, 'GET', '/interface'));
 }
 
 export async function getRouterNetworkSnapshot(router) {
-  const [pools, dhcpServers, dhcpNetworks, dhcpLeases, pppProfiles, interfaces] = await Promise.all([
+  const [pools, dhcpServers, dhcpNetworks, dhcpLeases, pppProfiles, pppoeServers, interfaces] = await Promise.all([
     listIpPools(router).catch(() => []),
     listDhcpServers(router).catch(() => []),
     listDhcpNetworks(router).catch(() => []),
     listDhcpLeases(router).catch(() => []),
     listPppProfiles(router).catch(() => []),
+    listPppoeServers(router).catch(() => []),
     listInterfaces(router).catch(() => []),
   ]);
   return {
@@ -106,6 +154,7 @@ export async function getRouterNetworkSnapshot(router) {
     dhcpNetworks,
     dhcpLeases,
     pppProfiles,
+    pppoeServers,
     interfaces: interfaces.filter((i) => !i.disabled || i.disabled === 'false').map((i) => ({
       name: i.name,
       type: i.type,

@@ -28,6 +28,6 @@ Este proyecto **vive en GitHub**; no asumir setup solo local.
 
 ## Recordatorio al agente
 
-- Tras implementar features, **ofrecer push a GitHub** si hay cambios sin subir
+- Tras completar una feature o fix, **commit + push a `main` sin dejar a medias** (salvo que el usuario pida lo contrario)
 - No decir "solo está en local" sin verificar `git status` vs `origin/main`
 - Health endpoint es la fuente de verdad del deploy en producción
