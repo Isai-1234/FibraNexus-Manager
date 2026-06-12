@@ -18,6 +18,7 @@ import {
 } from '../lib/mikrotikNetwork.js';
 import { pollEquipmentList } from '../lib/snmpPoller.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
+import { findNextFreeIpForSite } from '../lib/ipAllocation.js';
 
 export const networkRouter = Router();
 
@@ -29,6 +30,22 @@ async function getRouterOr404(routerId, orgId, res) {
   }
   return router;
 }
+
+networkRouter.get('/sites/:siteId/next-free-ip', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const siteId = parseInt(req.params.siteId, 10);
+    const { routerId, poolName } = req.query;
+    const result = await findNextFreeIpForSite(orgId, siteId, {
+      routerId: routerId ? parseInt(routerId, 10) : undefined,
+      poolName: poolName || undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 networkRouter.get('/routers/:id/snapshot', requireRole('admin', 'technician'), async (req, res) => {
   try {

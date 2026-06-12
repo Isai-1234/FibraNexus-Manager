@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network
+  Layers, Antenna, Network, Search
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
@@ -79,6 +79,8 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [selectedRouter, setSelectedRouter] = useState<any>(null)
   const [routerPanelTab, setRouterPanelTab] = useState<'subscribers' | 'infra'>('subscribers')
   const [routers, setRouters] = useState<any[]>([])
+  const [suggestingIp, setSuggestingIp] = useState(false)
+  const [ipSuggestHint, setIpSuggestHint] = useState('')
 
   function api() {
     return axios.create({
@@ -161,9 +163,30 @@ export default function NetworkManager({ API, onBack }: Props) {
       })
       setShowEquipForm(false)
       setEquipForm({ type: 'cpe', brand: 'Ubiquiti' })
+      setIpSuggestHint('')
       await refreshSelectedSite()
       loadAll()
     } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function suggestFreeIp() {
+    const siteId = equipForm.siteId || selectedSite?.id
+    if (!siteId) {
+      alert('Selecciona un nodo en el árbol primero')
+      return
+    }
+    setSuggestingIp(true)
+    setIpSuggestHint('')
+    try {
+      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const q = routerId ? `?routerId=${routerId}` : ''
+      const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
+      setEquipForm((f: any) => ({ ...f, ipAddress: res.data.ip, siteId }))
+      setIpSuggestHint(`Asignada desde pool ${res.data.pool} · ${res.data.ranges}`)
+    } catch (e: any) {
+      alert(e.response?.data?.error || e.message)
+    }
+    setSuggestingIp(false)
   }
 
   async function assignToSite(equipmentId: number, siteId: number | null) {
@@ -307,7 +330,7 @@ export default function NetworkManager({ API, onBack }: Props) {
                       className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 flex items-center gap-1">
                       <Router className="h-3.5 w-3.5" /> Router
                     </button>
-                    <button onClick={() => { setEquipForm({ ...equipForm, siteId: selectedSite.id, type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
+                    <button onClick={() => { setEquipForm({ ...equipForm, siteId: selectedSite.id, type: 'cpe', brand: 'Ubiquiti' }); setIpSuggestHint(''); setShowEquipForm(true) }}
                       className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 flex items-center gap-1">
                       <Antenna className="h-3.5 w-3.5" /> Antena CPE
                     </button>
@@ -678,8 +701,19 @@ export default function NetworkManager({ API, onBack }: Props) {
               </div>
               <div>
                 <label className="text-sm font-medium">IP / hostname</label>
-                <input className="w-full border rounded-lg px-3 py-2 mt-1" value={equipForm.ipAddress || ''}
-                  onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
+                <div className="flex gap-2 mt-1">
+                  <input className="flex-1 border rounded-lg px-3 py-2 font-mono text-sm" placeholder="172.16.140.50"
+                    value={equipForm.ipAddress || ''}
+                    onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
+                  <button type="button" onClick={suggestFreeIp} disabled={suggestingIp || !selectedSite}
+                    className="shrink-0 px-3 py-2 border rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-40 flex items-center gap-1.5"
+                    title="Buscar siguiente IP libre en el MikroTik del nodo">
+                    <Search className={`h-4 w-4 ${suggestingIp ? 'animate-pulse' : ''}`} />
+                    {suggestingIp ? '…' : 'IP libre'}
+                  </button>
+                </div>
+                {ipSuggestHint && <p className="text-xs text-emerald-700 mt-1">{ipSuggestHint}</p>}
+                <p className="text-xs text-gray-500 mt-1">Usa el pool DHCP del router (leases, equipos y abonados ya registrados).</p>
               </div>
               {equipForm.type === 'cpe' && (
                 <>

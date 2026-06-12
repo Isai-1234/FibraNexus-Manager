@@ -31,7 +31,7 @@ export async function getHealthPayload() {
     name: 'FibraNexus Manager',
     version: '1.2.0',
     commit: config.commit,
-    features: ['ola1-billing', 'network-manager', 'auto-suspend', 'dhcp-pppoe-snmp', 'scale-ready', 'pppoe-server'],
+    features: ['ola1-billing', 'network-manager', 'auto-suspend', 'dhcp-pppoe-snmp', 'scale-ready', 'pppoe-server', 'next-free-ip'],
     runtime: {
       processRole: config.processRole,
       runsApi: runsApi(),
