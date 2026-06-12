@@ -42,6 +42,12 @@ export async function runMigrations(connectionString) {
       }
     }
 
+    await sql`
+      UPDATE users u SET organization_id = o.id
+      FROM organizations o
+      WHERE u.organization_id IS NULL AND o.slug = 'internetsur'
+    `;
+
     console.log('Multi-tenant migration OK');
   } finally {
     await sql.end();

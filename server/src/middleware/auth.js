@@ -1,16 +1,26 @@
 import jwt from 'jsonwebtoken';
+import { db } from '../db/index.js';
+import { users } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
 
-export function authenticateToken(req, res, next) {
+export async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let organizationId = decoded.organizationId || null;
+
+    if (!organizationId) {
+      const user = await db.query.users.findFirst({ where: eq(users.id, decoded.id) });
+      organizationId = user?.organizationId || null;
+    }
+
     req.user = {
       id: decoded.id,
       email: decoded.email,
       role: decoded.role,
-      organizationId: decoded.organizationId || null,
+      organizationId,
     };
     next();
   } catch (error) {
