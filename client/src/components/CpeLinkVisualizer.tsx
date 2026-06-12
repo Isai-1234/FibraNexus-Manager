@@ -164,7 +164,7 @@ function LinkHardware({
             <img
               src={cpeSrc}
               alt="Antena CPE LiteBeam"
-              className="block w-auto h-auto max-w-[min(34vw,165px)] max-h-[min(22vw,105px)] object-contain drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
+              className="block w-auto h-auto max-w-[min(34vw,165px)] max-h-[min(22vw,105px)] object-contain brightness-0 invert drop-shadow-[0_8px_28px_rgba(255,255,255,0.12)]"
               onError={() => setCpeOk(false)}
             />
           ) : (
@@ -186,7 +186,7 @@ function LinkHardware({
             <img
               src={towerSrc}
               alt="Torre con antenas sectoriales"
-              className="block w-auto h-auto max-w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)] object-contain drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
+              className="block w-auto h-auto max-w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)] object-contain brightness-0 invert drop-shadow-[0_8px_28px_rgba(255,255,255,0.12)]"
               onError={() => setTowerOk(false)}
             />
           ) : (

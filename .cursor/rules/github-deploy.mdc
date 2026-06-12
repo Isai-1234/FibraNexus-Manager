@@ -10,7 +10,7 @@ Este proyecto **vive en GitHub**; no asumir setup solo local.
 - **Repo:** https://github.com/Isai-1234/FibraNexus-Manager
 - **Rama principal:** `main`
 - **Producción:** https://app.fibranexus.cl
-- **Stack:** GitHub → Vercel (frontend) + Render (API) + Supabase (PostgreSQL) + Cloudflare (túneles MikroTik)
+- **Stack:** GitHub → **Render** (frontend + API en un solo servicio) + Supabase (PostgreSQL) + Cloudflare (túneles MikroTik)
 
 ## Flujo de trabajo
 
