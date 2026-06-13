@@ -1,15 +1,26 @@
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
 import cpeArt from '../assets/link/cpe-litebeam.png'
 import towerArt from '../assets/link/tower-sector.png'
 
-/** Puntos de emisión del enlace (viewBox 580×250) — punta del feed horn CPE ↔ sectorial torre */
-const LINK_BEAM = {
+/** Layout unificado viewBox 580×250 — imágenes y haces comparten coordenadas */
+const LINK_LAYOUT = {
   viewW: 580,
   viewH: 250,
-  cpe: { x: 168, y: 128 },
-  tower: { x: 412, y: 102 },
+  cpeImg: { x: 8, y: 108, w: 186, h: 136 },
+  towerImg: { x: 396, y: 14, w: 176, h: 224 },
+  cpeHorn: { x: 188, y: 172 },
+  towerHorn: { x: 396, y: 154 },
 } as const
+
+const LINK_BEAM = {
+  viewW: LINK_LAYOUT.viewW,
+  viewH: LINK_LAYOUT.viewH,
+  cpe: LINK_LAYOUT.cpeHorn,
+  tower: LINK_LAYOUT.towerHorn,
+} as const
+
+const LINK_ART_FILTER = 'brightness(0) saturate(100%) invert(1) contrast(1.18)'
 
 export const LINK_VISUAL_ASSETS = {
   cpe: cpeArt,
@@ -146,78 +157,85 @@ function SectorHornSvg({ uid }: { uid: string }) {
   )
 }
 
-function LinkHardware({
+function LinkHardwareSvg({
   uid,
   online,
-  apLabel,
   cpeSrc,
   towerSrc,
 }: {
   uid: string
   online: boolean
-  apLabel: string
   cpeSrc: string
   towerSrc: string
 }) {
-  const cpePct = `${(LINK_BEAM.cpe.x / LINK_BEAM.viewW) * 100}%`
-  const cpeTop = `${(LINK_BEAM.cpe.y / LINK_BEAM.viewH) * 100}%`
-  const towerPct = `${(LINK_BEAM.tower.x / LINK_BEAM.viewW) * 100}%`
-  const towerTop = `${(LINK_BEAM.tower.y / LINK_BEAM.viewH) * 100}%`
-  const artShadow = 'drop-shadow-[0_12px_32px_rgba(0,0,0,0.55)]'
+  const [cpeImgOk, setCpeImgOk] = useState(true)
+  const [towerImgOk, setTowerImgOk] = useState(true)
+  const { cpeImg, towerImg } = LINK_LAYOUT
+  const artStyle = { filter: LINK_ART_FILTER, opacity: 0.98 }
+  const showCpeImg = Boolean(cpeSrc) && cpeImgOk
+  const showTowerImg = Boolean(towerSrc) && towerImgOk
 
   return (
-    <>
-      {/* CPE — izquierda */}
-      <div className="absolute left-[1%] sm:left-[2%] bottom-[8%] z-10 flex flex-col items-center pointer-events-none">
-        <div className="relative w-[min(36vw,175px)] max-h-[min(24vw,115px)] flex items-end justify-center">
-          {cpeSrc ? (
-            <img
-              src={cpeSrc}
-              alt="Antena CPE LiteBeam"
-              className={`block w-full h-auto max-h-[min(24vw,115px)] object-contain object-bottom ${artShadow}`}
-            />
-          ) : (
-            <svg viewBox="0 0 140 120" className="w-full h-auto" aria-hidden>
-              <LiteBeamSvg uid={uid} />
-            </svg>
-          )}
-        </div>
-        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center">CPE · Cliente</p>
-      </div>
+    <g aria-hidden>
+      {showCpeImg ? (
+        <image
+          href={cpeSrc}
+          x={cpeImg.x}
+          y={cpeImg.y}
+          width={cpeImg.w}
+          height={cpeImg.h}
+          preserveAspectRatio="xMaxYMax meet"
+          style={artStyle}
+          onError={() => setCpeImgOk(false)}
+        />
+      ) : (
+        <g transform={`translate(${cpeImg.x + 24}, ${cpeImg.y + 8}) scale(1.15)`}>
+          <LiteBeamSvg uid={uid} />
+        </g>
+      )}
 
-      {/* Torre / sectoriales — derecha */}
-      <div className="absolute right-[0%] sm:right-[1%] bottom-[2%] z-10 flex flex-col items-center pointer-events-none">
-        <div className="relative w-[min(32vw,160px)] max-h-[min(52vw,250px)] flex items-end justify-center">
-          {towerSrc ? (
-            <img
-              src={towerSrc}
-              alt="Torre con antenas sectoriales"
-              className={`block w-full h-auto max-h-[min(52vw,250px)] object-contain object-bottom ${artShadow}`}
-            />
-          ) : (
-            <svg viewBox="0 0 140 120" className="w-full h-auto" aria-hidden>
-              <SectorHornSvg uid={uid} />
-            </svg>
-          )}
-        </div>
-        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center truncate max-w-[min(32vw,160px)] px-1">
-          {apLabel.length > 18 ? `${apLabel.slice(0, 16)}…` : apLabel}
-        </p>
-      </div>
+      {showTowerImg ? (
+        <image
+          href={towerSrc}
+          x={towerImg.x}
+          y={towerImg.y}
+          width={towerImg.w}
+          height={towerImg.h}
+          preserveAspectRatio="xMinYMax meet"
+          style={artStyle}
+          onError={() => setTowerImgOk(false)}
+        />
+      ) : (
+        <g transform={`translate(${towerImg.x + 18}, ${towerImg.y + 28}) scale(1.15)`}>
+          <SectorHornSvg uid={uid} />
+        </g>
+      )}
 
-      {/* Indicadores en punta de emisión (centro del radio) */}
       {online && (
         <>
-          <span
-            className="absolute z-20 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_14px_#22d3ee] animate-pulse -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-            style={{ left: cpePct, top: cpeTop }}
-          />
-          <span
-            className="absolute z-20 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_12px_#4ade80] animate-pulse -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-            style={{ left: towerPct, top: towerTop }}
-          />
+          <circle cx={LINK_BEAM.cpe.x} cy={LINK_BEAM.cpe.y} r="5" fill="#22d3ee" opacity="0.95">
+            <animate attributeName="r" values="4;6.5;4" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <circle cx={LINK_BEAM.tower.x} cy={LINK_BEAM.tower.y} r="4" fill="#4ade80" opacity="0.95">
+            <animate attributeName="r" values="3;5.5;3" dur="2.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.65;1;0.65" dur="2.2s" repeatCount="indefinite" />
+          </circle>
         </>
       )}
+    </g>
+  )
+}
+
+function LinkHardwareLabels({ apLabel }: { apLabel: string }) {
+  return (
+    <>
+      <p className="absolute left-[2%] bottom-[1%] z-10 text-[10px] sm:text-xs text-slate-500 text-center pointer-events-none">
+        CPE · Cliente
+      </p>
+      <p className="absolute right-[2%] bottom-[1%] z-10 text-[10px] sm:text-xs text-slate-500 text-center truncate max-w-[38%] pointer-events-none">
+        {apLabel.length > 18 ? `${apLabel.slice(0, 16)}…` : apLabel}
+      </p>
     </>
   )
 }
@@ -525,6 +543,13 @@ export default function CpeLinkVisualizer({
 
             <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
 
+            <LinkHardwareSvg
+              uid={uid}
+              online={online}
+              cpeSrc={cpeImageUrl}
+              towerSrc={towerImageUrl}
+            />
+
             {online && signal != null && (
               <g opacity="0.65">
                 <line
@@ -574,13 +599,7 @@ export default function CpeLinkVisualizer({
             )}
           </svg>
 
-          <LinkHardware
-            uid={uid}
-            online={online}
-            apLabel={apLabel}
-            cpeSrc={cpeImageUrl}
-            towerSrc={towerImageUrl}
-          />
+          <LinkHardwareLabels apLabel={apLabel} />
         </div>
       </div>
 
