@@ -1,0 +1,4 @@
+{
+  "git.rebaseWhenPull": false,
+  "git.confirmSync": false
+}
