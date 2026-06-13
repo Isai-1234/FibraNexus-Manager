@@ -11,8 +11,8 @@ import {
   removeSimpleQueue,
   findSimpleQueueByTarget,
   buildQueueLimits,
-  testRouterConnection,
 } from './mikrotikClient.js';
+import { testRouterConnection } from './routerClient.js';
 import { upsertDhcpStaticLease, removeDhcpLease } from './mikrotikNetwork.js';
 import { sanitizeMikrotikText } from './mikrotikText.js';
 

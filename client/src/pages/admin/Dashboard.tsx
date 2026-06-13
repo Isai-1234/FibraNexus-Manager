@@ -677,6 +677,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 ))}
               </div>
 
+              {equipmentSubTab === 'routers' && (
+                <div className="bg-sky-50 border border-sky-100 rounded-xl px-5 py-3 text-sm text-sky-900">
+                  <strong>Routers vía Cloudflare</strong> — MikroTik de borde con túnel + hostnames extra para nodos EdgeRouter aguas abajo.
+                  Estado Online = heartbeat (MikroTik) o consulta API cada ~3 min (EdgeRouter).
+                </div>
+              )}
+
               {equipmentSubTab === 'infrastructure' && (
                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-5 py-3 text-sm text-emerald-900">
                   <strong>Estado automático vía SNMP</strong> — Si la antena tiene IP y community configurada (ej. <code className="font-mono text-xs">internetsur-lab</code>),
@@ -721,8 +728,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                 <span className={`w-2 h-2 rounded-full ${item.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
                                 {statusLabel[item.status] || item.status}
                               </span>
-                              {item.snmpCommunity && item.status !== 'online' && (
+                              {item.snmpCommunity && item.status !== 'online' && item.type !== 'router' && (
                                 <p className="text-xs text-amber-600 mt-1">Revisar SNMP en antena</p>
+                              )}
+                              {item.type === 'router' && item.status !== 'online' && item.credentials?.routerType?.startsWith('edgerouter') && (
+                                <p className="text-xs text-amber-600 mt-1">Configurar hostname Cloudflare → IP local</p>
+                              )}
+                              {item.type === 'router' && item.status !== 'online' && !item.credentials?.routerType?.startsWith('edgerouter') && item.credentials?.connectionMethod === 'cloudflare_tunnel' && (
+                                <p className="text-xs text-amber-600 mt-1">Revisar túnel Cloudflare / credenciales API</p>
                               )}
                             </td>
                             <td className="p-4">

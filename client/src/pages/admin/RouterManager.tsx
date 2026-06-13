@@ -7,6 +7,7 @@ interface Props { API: string; onBack: () => void }
 const ROUTER_TYPES = [
   { value: 'mikrotik_v7', label: 'Mikrotik RouterOS 7', description: 'REST API nativa (recomendado)', brand: 'Mikrotik' },
   { value: 'mikrotik_v6', label: 'Mikrotik RouterOS 6', description: 'API puerto 8728', brand: 'Mikrotik' },
+  { value: 'edgerouter_v4', label: 'Ubiquiti EdgeRouter 4', description: 'EdgeOS — nodo aguas abajo del MikroTik', brand: 'Ubiquiti' },
   { value: 'ubiquiti', label: 'Ubiquiti UniFi/AirMax', description: 'UISP API', brand: 'Ubiquiti' },
   { value: 'olt_huawei', label: 'OLT Huawei', description: 'SNMP + Telnet', brand: 'Huawei' },
   { value: 'olt_zte', label: 'OLT ZTE', description: 'SNMP + Telnet', brand: 'ZTE' },
@@ -23,6 +24,11 @@ const DEVICE_PROFILES: Record<string, { defaultMethod: string; methods: string[]
     defaultMethod: 'direct',
     methods: ['direct', 'vpn', 'agent'],
     hint: 'RouterOS 6 usa API puerto 8728. Sin container mode — no aplica túnel Cloudflare en router.',
+  },
+  edgerouter_v4: {
+    defaultMethod: 'cloudflare_tunnel',
+    methods: ['cloudflare_tunnel', 'vpn', 'agent', 'direct'],
+    hint: 'Cloudflare va en el MikroTik de borde (como tu L009). FibraNexus agrega un hostname extra que apunta al EdgeRouter — no instalas cloudflared en el EdgeRouter.',
   },
   ubiquiti: {
     defaultMethod: 'direct',
@@ -275,6 +281,7 @@ export default function RouterManager({ API, onBack }: Props) {
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
   const selectedMethod = CONNECTION_METHODS.find(m => m.value === form.connectionMethod)
   const defaultPort = form.routerType === 'mikrotik_v6' ? '8728' : '443'
+  const isEdgeRouter = form.routerType === 'edgerouter_v4'
 
   const installCmd = newRouter ? `AGENT_TOKEN=${newRouter.agentToken} ROUTER_IP=${form.routerIp || '192.168.X.X'} ROUTER_TYPE=${form.routerType} ROUTER_USER=${form.routerUser || 'admin'} ROUTER_PASS=${form.routerPass || 'TU_PASSWORD'} node fibranexus-agent.js` : ''
 
@@ -307,7 +314,17 @@ export default function RouterManager({ API, onBack }: Props) {
                     {ROUTER_TYPES.map(rt => (
                       <button key={rt.value} onClick={() => {
                         const profile = DEVICE_PROFILES[rt.value]
-                        setForm({ ...form, routerType: rt.value, connectionMethod: profile?.defaultMethod || 'direct' })
+                        const base: any = { routerType: rt.value, connectionMethod: profile?.defaultMethod || 'direct' }
+                        if (rt.value === 'edgerouter_v4') {
+                          base.location = 'Nodo 2'
+                          base.model = 'EdgeRouter 4'
+                          base.lanSubnet = '192.168.2.0/24'
+                          base.lanInterface = 'ether2'
+                          base.dhcpSharedNetwork = 'LAN'
+                          base.routerIp = '172.16.11.254'
+                          base.connectionMethod = 'cloudflare_tunnel'
+                        }
+                        setForm({ ...form, ...base })
                         setStep(2)
                       }}
                         className="text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition">
@@ -387,11 +404,17 @@ export default function RouterManager({ API, onBack }: Props) {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {form.connectionMethod === 'cloudflare_tunnel' ? 'IP local del router (LAN)' : form.connectionMethod === 'agent' ? 'IP local del router' : 'IP pública o dominio'}
+                        {form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter
+                          ? 'IP local del EdgeRouter (LAN)'
+                          : form.connectionMethod === 'cloudflare_tunnel'
+                            ? 'IP local del router (LAN)'
+                            : form.connectionMethod === 'agent'
+                              ? 'IP local del router'
+                              : 'IP pública o dominio'}
                         <span className="text-red-500"> *</span>
                       </label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
-                        placeholder={form.connectionMethod === 'cloudflare_tunnel' ? '192.168.3.253' : form.connectionMethod === 'agent' ? '192.168.1.1' : 'router.miempresa.cl'} 
+                        placeholder={form.connectionMethod === 'cloudflare_tunnel' ? '192.168.3.253' : form.connectionMethod === 'agent' ? (isEdgeRouter ? '192.168.2.1' : '192.168.1.1') : isEdgeRouter ? '192.168.2.1' : 'router.miempresa.cl'} 
                         value={form.routerIp || ''} onChange={e => setForm({ ...form, routerIp: e.target.value })} />
                     </div>
                     <div>
@@ -404,19 +427,76 @@ export default function RouterManager({ API, onBack }: Props) {
 
                   {form.connectionMethod === 'cloudflare_tunnel' && (
                     <div className="space-y-3 p-4 bg-sky-50 border border-sky-200 rounded-xl">
-                      <p className="text-sm font-medium text-sky-900">Cloudflare Tunnel</p>
+                      <p className="text-sm font-medium text-sky-900">
+                        {isEdgeRouter ? 'Cloudflare vía MikroTik de borde' : 'Cloudflare Tunnel'}
+                      </p>
+                      {isEdgeRouter && (
+                        <>
+                          <p className="text-xs text-sky-800">
+                            El túnel sigue corriendo en tu MikroTik (ej. L009). Solo agregas un hostname nuevo en Cloudflare que apunte a la IP local del EdgeRouter.
+                          </p>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">MikroTik de borde (opcional)</label>
+                            <select className="w-full border rounded-lg px-3 py-2 text-sm"
+                              value={form.parentRouterId || ''}
+                              onChange={e => setForm({ ...form, parentRouterId: e.target.value || null })}>
+                              <option value="">— Seleccionar —</option>
+                              {routers.filter(r => r.credentials?.routerType?.startsWith('mikrotik')).map(r => (
+                                <option key={r.id} value={r.id}>{r.name} ({r.credentials?.tunnelHostname || r.ipAddress})</option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Hostname del túnel <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {isEdgeRouter ? 'Hostname Cloudflare del EdgeRouter' : 'Hostname del túnel'} <span className="text-red-500">*</span>
+                        </label>
                         <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
-                          placeholder="l009-cliente.fibranexus.cl" 
+                          placeholder={isEdgeRouter ? 'nodo2-isp.fibranexus.cl' : 'l009-cliente.fibranexus.cl'} 
                           value={form.tunnelHostname || ''} onChange={e => setForm({ ...form, tunnelHostname: e.target.value })} />
+                        {isEdgeRouter && (
+                          <p className="text-xs text-gray-500 mt-1">En Cloudflare Zero Trust → tu túnel → Public Hostname → URL: <code className="font-mono">https://IP_LOCAL:443</code></p>
+                        )}
+                      </div>
+                      {!isEdgeRouter && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Token del túnel <span className="text-red-500">*</span></label>
+                          <input type="password" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono text-xs" 
+                            placeholder="eyJhIjoi..." 
+                            value={form.tunnelToken || ''} onChange={e => setForm({ ...form, tunnelToken: e.target.value })} />
+                          <p className="text-xs text-gray-500 mt-1">Cloudflare Zero Trust → Networks → Tunnels → copiar token</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {isEdgeRouter && (
+                    <div className="space-y-3 p-4 bg-violet-50 border border-violet-200 rounded-xl">
+                      <p className="text-sm font-medium text-violet-900">Red del nodo (LAN clientes)</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Subred LAN</label>
+                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                            placeholder="192.168.2.0/24"
+                            value={form.lanSubnet || ''}
+                            onChange={e => setForm({ ...form, lanSubnet: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Interfaz LAN</label>
+                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                            placeholder="ether2"
+                            value={form.lanInterface || ''}
+                            onChange={e => setForm({ ...form, lanInterface: e.target.value })} />
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Token del túnel <span className="text-red-500">*</span></label>
-                        <input type="password" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono text-xs" 
-                          placeholder="eyJhIjoi..." 
-                          value={form.tunnelToken || ''} onChange={e => setForm({ ...form, tunnelToken: e.target.value })} />
-                        <p className="text-xs text-gray-500 mt-1">Cloudflare Zero Trust → Networks → Tunnels → copiar token</p>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Shared network DHCP (EdgeOS)</label>
+                        <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                          placeholder="LAN"
+                          value={form.dhcpSharedNetwork || ''}
+                          onChange={e => setForm({ ...form, dhcpSharedNetwork: e.target.value })} />
+                        <p className="text-xs text-gray-500 mt-1">Nombre del shared-network en EdgeOS donde vive la subred de clientes.</p>
                       </div>
                     </div>
                   )}
@@ -464,7 +544,7 @@ export default function RouterManager({ API, onBack }: Props) {
                           {testResult.success ? <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                           <div>
                             {testResult.success ? (
-                              <><p className="font-medium">Conexión exitosa</p><p className="text-xs mt-1">{JSON.stringify(testResult.data).slice(0, 100)}</p></>
+                              <><p className="font-medium">Conexión exitosa</p><p className="text-xs mt-1">{testResult.data?.routerInfo?.version || testResult.data?.routerInfo?.hostName || JSON.stringify(testResult.data).slice(0, 100)}</p></>
                             ) : (
                               <><p className="font-medium">Error de conexión</p><p className="text-xs mt-1">{testResult.error}</p></>
                             )}
@@ -481,7 +561,12 @@ export default function RouterManager({ API, onBack }: Props) {
 
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Atrás</button>
-                    <button onClick={handleCreate} disabled={!form.name || !form.routerIp || !form.routerUser || !form.routerPass || (form.connectionMethod === 'cloudflare_tunnel' && (!form.tunnelHostname || !form.tunnelToken))}
+                    <button onClick={handleCreate} disabled={
+                      !form.name || !form.routerUser || !form.routerPass
+                      || (form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter && (!form.tunnelHostname || !form.routerIp))
+                      || (form.connectionMethod === 'cloudflare_tunnel' && !isEdgeRouter && (!form.tunnelHostname || !form.tunnelToken))
+                      || (form.connectionMethod !== 'cloudflare_tunnel' && !form.routerIp)
+                    }
                       className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
                       Registrar router →
                     </button>
@@ -538,6 +623,24 @@ export default function RouterManager({ API, onBack }: Props) {
                             </li>
                           ))}
                         </ol>
+                      </div>
+                    </div>
+                  ) : form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter ? (
+                    <div className="space-y-4">
+                      <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+                        <p className="font-semibold text-sky-900 text-sm mb-2">☁️ Un paso en Cloudflare (2 minutos)</p>
+                        <p className="text-xs text-sky-800 mb-3">El cloudflared sigue en tu MikroTik. Solo publica el EdgeRouter con un hostname nuevo:</p>
+                        <ol className="space-y-2 text-xs text-gray-700">
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
+                        </ol>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                        <div className="flex justify-between"><span>Hostname:</span><span className="font-mono text-xs">{form.tunnelHostname}</span></div>
+                        <div className="flex justify-between mt-1"><span>IP local EdgeRouter:</span><span className="font-mono text-xs">{form.routerIp}</span></div>
                       </div>
                     </div>
                   ) : form.connectionMethod === 'agent' ? (
@@ -609,7 +712,7 @@ export default function RouterManager({ API, onBack }: Props) {
           <Shield className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold text-blue-900 text-sm">Multi-dispositivo — elige el método según tu equipo</p>
-            <p className="text-sm text-blue-700 mt-0.5">MikroTik, Ubiquiti, OLTs, SNMP. IP directa · VPN · Agente · Cloudflare en router (solo L009/container avanzado).</p>
+            <p className="text-sm text-blue-700 mt-0.5">MikroTik (borde), EdgeRouter (nodo downstream), Ubiquiti, OLTs, SNMP. IP directa · VPN · Agente.</p>
           </div>
         </div>
 
@@ -645,7 +748,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   {router.status === 'online' && info && (
                     <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
                       <div className="text-center">
-                        <p className="text-[10px] uppercase text-gray-400 font-semibold">RouterOS</p>
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">{router.credentials?.routerType === 'edgerouter_v4' ? 'EdgeOS' : 'RouterOS'}</p>
                         <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
                       </div>
                       <div className="text-center border-x border-slate-200">
@@ -669,6 +772,9 @@ export default function RouterManager({ API, onBack }: Props) {
                       </span>
                     </div>
                     <div className="flex justify-between"><span className="text-gray-500">Ubicación</span><span>{router.location || '—'}</span></div>
+                    {router.credentials?.lanSubnet && (
+                      <div className="flex justify-between"><span className="text-gray-500">LAN nodo</span><span className="font-mono text-xs">{router.credentials.lanSubnet} · {router.credentials.lanInterface || '—'}</span></div>
+                    )}
                     {!info && router.firmware && (
                       <div className="flex justify-between"><span className="text-gray-500">Firmware</span><span className="text-xs">{router.firmware}</span></div>
                     )}
@@ -716,7 +822,7 @@ export default function RouterManager({ API, onBack }: Props) {
             <div className="flex justify-between mb-4">
               <div>
                 <h3 className="font-bold text-lg">Credenciales API — {editingRouter.name}</h3>
-                <p className="text-sm text-gray-500">Usuario/contraseña REST MikroTik para provisionar PPPoE y colas</p>
+                <p className="text-sm text-gray-500">Usuario/contraseña API del router para provisionar y monitorear</p>
               </div>
               <button onClick={() => setEditingRouter(null)}><X className="h-5 w-5" /></button>
             </div>
@@ -748,7 +854,7 @@ export default function RouterManager({ API, onBack }: Props) {
               </div>
               {credTestResult && (
                 <div className={`text-sm p-3 rounded-lg ${credTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                  {credTestResult.success ? 'Conexión OK — RouterOS responde' : credTestResult.error}
+                  {credTestResult.success ? 'Conexión OK — router responde' : credTestResult.error}
                 </div>
               )}
             </div>

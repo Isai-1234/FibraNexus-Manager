@@ -19,8 +19,11 @@ export function startScheduler() {
       const { dispatch, JobNames } = await import('./jobs/queue.js');
       const orgs = await db.select({ id: organizations.id }).from(organizations)
         .where(eq(organizations.isActive, true));
-      for (const org of orgs) await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
-      console.log('SNMP initial poll completed for %d org(s)', orgs.length);
+      for (const org of orgs) {
+        await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
+        await dispatch(JobNames.ROUTER_POLL_ORG, { orgId: org.id });
+      }
+      console.log('SNMP + router initial poll completed for %d org(s)', orgs.length);
     } catch (err) {
       console.error('SNMP initial poll error:', err.message);
     }
@@ -78,9 +81,10 @@ export function startScheduler() {
         .where(eq(organizations.isActive, true));
       for (const org of orgs) {
         await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
+        await dispatch(JobNames.ROUTER_POLL_ORG, { orgId: org.id });
       }
     } catch (err) {
-      console.error('SNMP scheduler error:', err.message);
+      console.error('SNMP/router scheduler error:', err.message);
     }
   }, 3 * 60 * 1000);
 }

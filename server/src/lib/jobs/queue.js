@@ -8,6 +8,7 @@ export const JobNames = {
   SNMP_POLL_BATCH: 'snmp-poll-batch',
   SNMP_POLL_ORG: 'snmp-poll-org',
   BILLING_ORG: 'billing-org',
+  ROUTER_POLL_ORG: 'router-poll-org',
 };
 
 /**

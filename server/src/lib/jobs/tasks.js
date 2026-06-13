@@ -35,6 +35,11 @@ export const jobTasks = {
   },
 
   'billing-org': async ({ orgId }) => runBillingJobsForOrg(orgId),
+
+  'router-poll-org': async ({ orgId }) => {
+    const { pollAllRoutersForOrg } = await import('../routerPoller.js');
+    return pollAllRoutersForOrg(orgId);
+  },
 };
 
 export async function runTask(jobName, payload) {

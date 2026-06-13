@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import crypto from 'crypto';
+import { refreshStaleRouters } from '../lib/routerPoller.js';
 
 export const routersRouter = Router();
 export const connectedAgents = new Map();
@@ -115,7 +116,8 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const routers = await db.select().from(equipment).where(
       and(eq(equipment.type, 'router'), orgFilter(equipment, orgId)),
     ).limit(50);
-    const routersWithStatus = routers.map(r => {
+    const refreshed = await refreshStaleRouters(routers, orgId);
+    const routersWithStatus = refreshed.map(r => {
       const agent = connectedAgents.get(r.id.toString());
       const connectionMethod = inferConnectionMethod(r);
       return {
@@ -141,28 +143,46 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
     const {
       name, brand, model, location, routerType, snmpCommunity,
       connectionMethod, routerIp, routerPort, routerUser, routerPass,
-      tunnelHostname, tunnelToken,
+      tunnelHostname, tunnelToken, lanSubnet, lanInterface, dhcpSharedNetwork,
+      parentRouterId,
     } = req.body;
     if (!name || !routerType) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
+
+    const isEdge = String(routerType).startsWith('edgerouter');
+    const method = connectionMethod || (isEdge ? 'cloudflare_tunnel' : 'direct');
+    if (method === 'cloudflare_tunnel' && !tunnelHostname && !isEdge) {
+      return res.status(400).json({ error: 'Hostname del túnel requerido' });
+    }
+    if (method === 'cloudflare_tunnel' && isEdge && !tunnelHostname) {
+      return res.status(400).json({ error: 'Hostname Cloudflare para el EdgeRouter requerido (ej: nodo2-isp.fibranexus.cl)' });
+    }
+    if (isEdge && method === 'cloudflare_tunnel' && !routerIp) {
+      return res.status(400).json({ error: 'IP local del EdgeRouter requerida (ej: 172.16.11.254)' });
+    }
     const agentToken = crypto.randomUUID();
     const credentials = {
       agentToken,
       routerType,
-      connectionMethod: connectionMethod || 'direct',
+      connectionMethod: method,
       routerPort: routerPort || '443',
       tunnelHostname: tunnelHostname || null,
       tunnelToken: tunnelToken || null,
+      parentRouterId: parentRouterId ? parseInt(parentRouterId, 10) : null,
       routerUser: routerUser || null,
       routerPass: routerPass || null,
+      routerLocalIp: routerIp || null,
+      lanSubnet: lanSubnet || null,
+      lanInterface: lanInterface || null,
+      dhcpSharedNetwork: dhcpSharedNetwork || null,
       encryptedAt: new Date().toISOString(),
     };
     const [router] = await db.insert(equipment).values({
       organizationId: orgId,
       name,
       type: 'router',
-      brand: brand || routerType,
+      brand: brand || (routerType?.startsWith('edgerouter') ? 'Ubiquiti' : routerType),
       model: model || 'Unknown',
-      ipAddress: tunnelHostname || routerIp || null,
+      ipAddress: method === 'cloudflare_tunnel' ? (tunnelHostname || routerIp || null) : (routerIp || tunnelHostname || null),
       location,
       status: 'offline',
       snmpCommunity,
@@ -237,7 +257,7 @@ routersRouter.post('/:id/test-connection', requireRole('admin', 'technician'), a
     ).limit(1);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
 
-    const { testRouterConnection } = await import('../lib/mikrotikClient.js');
+    const { testRouterConnection } = await import('../lib/routerClient.js');
     const info = await testRouterConnection(router);
     res.json({ success: true, routerInfo: info });
   } catch (error) {
@@ -270,35 +290,13 @@ routersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 
 routersRouter.post('/test-connection', requireRole('admin'), async (req, res) => {
   try {
-    const { routerType, routerIp, routerPort, routerUser, routerPass, connectionMethod, tunnelHostname } = req.body;
+    const { routerUser, routerPass } = req.body;
     if (!routerUser || !routerPass) {
       return res.status(400).json({ error: 'Usuario y contraseña son requeridos' });
     }
-    const host = connectionMethod === 'cloudflare_tunnel' ? tunnelHostname : routerIp;
-    if (!host) return res.status(400).json({ error: 'Host o túnel requerido' });
-    const port = routerPort || (routerType === 'mikrotik_v6' ? '8728' : '443');
-    const url = `https://${host}:${port}/rest/system/resource`;
-    const auth = Buffer.from(`${routerUser}:${routerPass}`).toString('base64');
-    const https = await import('https');
-    const result = await new Promise((resolve, reject) => {
-      const req = https.default.request(url, {
-        method: 'GET',
-        headers: { Authorization: `Basic ${auth}` },
-        rejectUnauthorized: false,
-        timeout: 10000,
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode === 200) resolve(JSON.parse(data));
-          else reject(new Error(`HTTP ${res.statusCode}`));
-        });
-      });
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout - router no responde')); });
-      req.end();
-    });
-    res.json({ success: true, routerInfo: result });
+    const { testRouterConnectionRaw } = await import('../lib/routerClient.js');
+    const result = await testRouterConnectionRaw(req.body);
+    res.json(result);
   } catch (error) {
     res.status(503).json({ error: 'No se pudo conectar: ' + error.message });
   }

@@ -1,0 +1,231 @@
+import https from 'https';
+import { inferConnectionMethod } from './tenant.js';
+
+export const EDGEROUTER_TYPES = ['edgerouter_v4', 'edgerouter'];
+
+export function isEdgeRouterType(routerType) {
+  return EDGEROUTER_TYPES.includes(String(routerType || ''));
+}
+
+function resolveHost(router) {
+  const creds = router.credentials || {};
+  const method = inferConnectionMethod(router);
+  if (method === 'cloudflare_tunnel' && creds.tunnelHostname) {
+    return creds.tunnelHostname;
+  }
+  return router.ipAddress;
+}
+
+function resolvePort(router) {
+  const creds = router.credentials || {};
+  return String(creds.routerPort || '443');
+}
+
+export function getRouterCredentials(router) {
+  const creds = router.credentials || {};
+  const user = creds.routerUser;
+  const pass = creds.routerPass;
+  if (!user || !pass) {
+    throw new Error('Router sin credenciales API. Edita el router y guarda usuario/contraseña.');
+  }
+  return { user, pass };
+}
+
+function edgeosHttpsRequest({ host, port, path, method, headers, body, timeout = 15000 }) {
+  const payload = body ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: host,
+      port,
+      path,
+      method,
+      headers: {
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+        ...headers,
+      },
+      rejectUnauthorized: false,
+      timeout,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        resolve({ statusCode: res.statusCode, headers: res.headers, body: data });
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout conectando al EdgeRouter')); });
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+function parseCookies(setCookieHeader) {
+  const raw = Array.isArray(setCookieHeader) ? setCookieHeader : (setCookieHeader ? [setCookieHeader] : []);
+  return raw.map(c => c.split(';')[0]).join('; ');
+}
+
+export async function edgeosLogin({ host, port, user, pass }) {
+  const res = await edgeosHttpsRequest({
+    host,
+    port,
+    path: '/api/edge/login',
+    method: 'POST',
+    body: { username: user, password: pass },
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`EdgeOS login HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
+  }
+  const cookie = parseCookies(res.headers['set-cookie']);
+  if (!cookie) throw new Error('EdgeOS no devolvió cookie de sesión');
+  return cookie;
+}
+
+export async function edgeosDataGet({ host, port, cookie, dataPath }) {
+  const query = encodeURIComponent(dataPath);
+  const res = await edgeosHttpsRequest({
+    host,
+    port,
+    path: `/api/edge/data.json?data=${query}`,
+    method: 'GET',
+    headers: { Cookie: cookie },
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`EdgeOS data HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
+  }
+  try {
+    return JSON.parse(res.body);
+  } catch {
+    throw new Error('EdgeOS devolvió JSON inválido');
+  }
+}
+
+export async function edgeosBatch({ host, port, cookie, payload }) {
+  const res = await edgeosHttpsRequest({
+    host,
+    port,
+    path: '/api/edge/batch.json',
+    method: 'POST',
+    headers: { Cookie: cookie },
+    body: payload,
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`EdgeOS batch HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
+  }
+  try {
+    return JSON.parse(res.body);
+  } catch {
+    return { raw: res.body };
+  }
+}
+
+function normalizeStatus(data) {
+  const status = data?.status || data?.data?.status || {};
+  const uptimeSec = Number(status.uptime || status['system-uptime'] || 0);
+  const uptime = uptimeSec > 0 ? formatUptime(uptimeSec) : (status.uptime || '—');
+  return {
+    version: status.version || status['firmware-version'] || status['build'] || 'EdgeOS',
+    uptime,
+    cpuLoad: status.cpu != null ? Number(status.cpu) : null,
+    hostName: status['host-name'] || status.hostname || null,
+    platform: status.platform || null,
+  };
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+export async function testEdgeRouterConnection(router) {
+  const host = resolveHost(router);
+  if (!host) throw new Error('Router sin host configurado');
+  const port = resolvePort(router);
+  const { user, pass } = getRouterCredentials(router);
+  const cookie = await edgeosLogin({ host, port, user, pass });
+  const data = await edgeosDataGet({ host, port, cookie, dataPath: 'status' });
+  const info = normalizeStatus(data);
+  const creds = router.credentials || {};
+  return {
+    ...info,
+    lanSubnet: creds.lanSubnet || null,
+    lanInterface: creds.lanInterface || null,
+  };
+}
+
+export async function testEdgeRouterConnectionRaw({ host, port = '443', user, pass }) {
+  const cookie = await edgeosLogin({ host, port, user, pass });
+  const data = await edgeosDataGet({ host, port, cookie, dataPath: 'status' });
+  return normalizeStatus(data);
+}
+
+/** Reserva DHCP estática en la LAN del nodo (ej. 192.168.2.0/24 en ether2) */
+export async function upsertDhcpStaticMapping(router, { name, mac, ip, description = '' }) {
+  const host = resolveHost(router);
+  const port = resolvePort(router);
+  const { user, pass } = getRouterCredentials(router);
+  const creds = router.credentials || {};
+  const subnet = creds.lanSubnet || '192.168.2.0/24';
+  const sharedNetwork = creds.dhcpSharedNetwork || 'LAN';
+  const mappingName = String(name || `fn-${ip.replace(/\./g, '-')}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  const cookie = await edgeosLogin({ host, port, user, pass });
+  const payload = {
+    SET: {
+      service: {
+        'dhcp-server': {
+          'shared-network-name': {
+            [sharedNetwork]: {
+              subnet: {
+                [subnet]: {
+                  'static-mapping': {
+                    [mappingName]: {
+                      'mac-address': mac,
+                      'ip-address': ip,
+                      ...(description ? { 'description': description } : {}),
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+  await edgeosBatch({ host, port, cookie, payload });
+  return { action: 'upserted', mappingName, ip, mac };
+}
+
+export async function removeDhcpStaticMapping(router, mappingName) {
+  const host = resolveHost(router);
+  const port = resolvePort(router);
+  const { user, pass } = getRouterCredentials(router);
+  const creds = router.credentials || {};
+  const subnet = creds.lanSubnet || '192.168.2.0/24';
+  const sharedNetwork = creds.dhcpSharedNetwork || 'LAN';
+
+  const cookie = await edgeosLogin({ host, port, user, pass });
+  const payload = {
+    DELETE: {
+      service: {
+        'dhcp-server': {
+          'shared-network-name': {
+            [sharedNetwork]: {
+              subnet: {
+                [subnet]: {
+                  'static-mapping': mappingName,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+  await edgeosBatch({ host, port, cookie, payload });
+  return { action: 'removed', mappingName };
+}
