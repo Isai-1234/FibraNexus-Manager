@@ -22,14 +22,14 @@ const LINK_LAYOUT = {
   cpeBox: {
     x: 6, y: 118, w: 192, h: 128,
     align: 'xMaxYMax',
-    srcAspect: 16 / 9,
-    hornRel: { x: 0.84, y: 0.26 },
+    srcAspect: 1440 / 810,
+    hornRel: { x: 0.68, y: 0.42 },
   } satisfies ImgBox,
   towerBox: {
     x: 390, y: 6, w: 184, h: 232,
     align: 'xMinYMax',
-    srcAspect: 2 / 3,
-    hornRel: { x: 0.16, y: 0.36 },
+    srcAspect: 1440 / 810,
+    hornRel: { x: 0.32, y: 0.38 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
