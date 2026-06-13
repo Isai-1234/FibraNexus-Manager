@@ -349,7 +349,9 @@ function SignalBeams({
 
   const { cpe, tower } = LINK_BEAM
   const midX = (cpe.x + tower.x) / 2
-  const midY = (cpe.y + tower.y) / 2
+  // Arco suave hacia arriba: el control point desplazado -18px convierte la
+  // bezier cuadrática en una parábola visible (en línea recta sería plana).
+  const midY = (cpe.y + tower.y) / 2 - 18
   const corePath = `M ${cpe.x} ${cpe.y} Q ${midX} ${midY} ${tower.x} ${tower.y}`
   const rxPath = `M ${tower.x} ${tower.y} Q ${midX} ${midY} ${cpe.x} ${cpe.y}`
 
@@ -359,76 +361,96 @@ function SignalBeams({
 
   const paths = useMemo(() => Array.from({ length: beamCount }, (_, i) => {
     const t = (i - (beamCount - 1) / 2) / (beamCount - 1 || 1)
-    const yOff = t * 22
-    const curve = t * 8
+    const yOff = t * 24
+    const curve = t * 6
     const d = `M ${cpe.x} ${cpe.y} Q ${midX + curve} ${midY + yOff} ${tower.x} ${tower.y}`
     return { id: i, d, delay: i * 0.14, color: i % 2 === 0 ? colors.primary : colors.secondary }
   }), [beamCount, colors.primary, colors.secondary, cpe.x, cpe.y, tower.x, tower.y, midX, midY])
 
   return (
-    <g filter={`url(#${uid}-beamGlow)`}>
-      {/* Brillo en puntas de emisión */}
-      <circle cx={cpe.x} cy={cpe.y} r="6" fill={colors.primary} opacity="0.15">
-        <animate attributeName="r" values="4;9;4" dur="2.2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.1;0.35;0.1" dur="2.2s" repeatCount="indefinite" />
+    <g>
+      {/* ── Backbone: línea sólida permanente, visible con o sin animación ── */}
+      <path
+        d={corePath}
+        fill="none"
+        stroke={colors.primary}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        opacity={0.22}
+      />
+
+      {/* ── Halo de emisión — puntas CPE y torre ── */}
+      <circle cx={cpe.x} cy={cpe.y} r="5" fill={colors.primary} opacity="0.2">
+        <animate attributeName="r" values="4;11;4" dur="2.2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.12;0.32;0.12" dur="2.2s" repeatCount="indefinite" />
       </circle>
-      <circle cx={tower.x} cy={tower.y} r="5" fill={colors.rx} opacity="0.12">
-        <animate attributeName="r" values="3;8;3" dur="2.4s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.08;0.3;0.08" dur="2.4s" repeatCount="indefinite" />
+      <circle cx={tower.x} cy={tower.y} r="5" fill={colors.rx} opacity="0.15">
+        <animate attributeName="r" values="3;10;3" dur="2.4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.1;0.28;0.1" dur="2.4s" repeatCount="indefinite" />
       </circle>
 
+      {/* ── Pulso en punto medio del arco ── */}
+      <circle cx={midX} cy={midY} r="3" fill={colors.primary} opacity="0.3">
+        <animate attributeName="r" values="2;14;2" dur="2.8s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.3;0;0.3" dur="2.8s" repeatCount="indefinite" />
+      </circle>
+
+      {/* ── Haces TX en abanico ── */}
       {paths.map((b) => (
-        <g key={`tx-${b.id}`}>
-          <path
-            d={b.d}
-            fill="none"
-            stroke={b.color}
-            strokeWidth={b.id === Math.floor(beamCount / 2) ? 2.2 : 1.4}
-            strokeLinecap="round"
-            strokeDasharray="5 12 2 16"
-            opacity={0.25 + (strength / 100) * 0.5}
-            className="beam-tx"
-            style={{ animationDuration: `${txDur}s`, animationDelay: `${b.delay}s` }}
-          />
-        </g>
+        <path
+          key={`tx-${b.id}`}
+          d={b.d}
+          fill="none"
+          stroke={b.color}
+          strokeWidth={b.id === Math.floor(beamCount / 2) ? 2.4 : 1.5}
+          strokeLinecap="round"
+          strokeDasharray="7 10 2 13"
+          opacity={Math.max(0.32, 0.25 + (strength / 100) * 0.5)}
+          className="beam-tx"
+          style={{ animationDuration: `${txDur}s`, animationDelay: `${b.delay}s` }}
+        />
       ))}
 
+      {/* ── Core beam: gradiente + flujo + pulso de opacidad ── */}
       <path
         d={corePath}
         fill="none"
         stroke={`url(#${uid}-beamTx)`}
-        strokeWidth="3"
+        strokeWidth="3.5"
         strokeLinecap="round"
-        strokeDasharray="12 12 3 16"
-        opacity={Math.max(0.62, 0.55 + (strength / 100) * 0.35)}
+        strokeDasharray="14 10 3 12"
+        opacity={Math.max(0.72, 0.55 + (strength / 100) * 0.35)}
         className="beam-core"
         style={{ animationDuration: `${txDur * 0.9}s, 2.4s` }}
       />
 
+      {/* ── Haces RX (retorno) ── */}
       {paths.slice(0, Math.ceil(beamCount / 2)).map((b) => (
         <path
           key={`rx-${b.id}`}
           d={b.d}
           fill="none"
           stroke={colors.rx}
-          strokeWidth="1.2"
+          strokeWidth="1.3"
           strokeLinecap="round"
           strokeDasharray="4 14 2 18"
-          opacity={0.2 + (strength / 100) * 0.35}
+          opacity={Math.max(0.22, 0.2 + (strength / 100) * 0.35)}
           className="beam-rx"
           style={{ animationDuration: `${rxDur}s`, animationDelay: `${b.delay + 0.3}s` }}
         />
       ))}
 
+      {/* ── Partículas TX ── */}
       {[0, 1, 2, 3].map((p) => (
-        <circle key={`ptx-${p}`} r="2" fill={colors.primary} className="beam-particle">
+        <circle key={`ptx-${p}`} r="2.2" fill={colors.primary}>
           <animateMotion dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} path={corePath} />
           <animate attributeName="opacity" values="0;1;1;0" dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} />
         </circle>
       ))}
 
+      {/* ── Partículas RX ── */}
       {[0, 1, 2].map((p) => (
-        <circle key={`prx-${p}`} r="1.8" fill={colors.rx} className="beam-particle">
+        <circle key={`prx-${p}`} r="1.8" fill={colors.rx}>
           <animateMotion dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} path={rxPath} />
           <animate attributeName="opacity" values="0;0.9;0.9;0" dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} />
         </circle>
@@ -600,17 +622,13 @@ export default function CpeLinkVisualizer({
             aria-hidden
           >
             <defs>
-              <filter id={`${uid}-beamGlow`} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" result="b" />
-                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
               <clipPath id={`${uid}-gridClip`}>
                 <rect x="0" y="158" width="580" height="95" />
               </clipPath>
               <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor={theme.primary} stopOpacity="0.1" />
-                <stop offset="40%" stopColor={theme.primary} stopOpacity="1" />
-                <stop offset="100%" stopColor={theme.secondary} stopOpacity="0.4" />
+                <stop offset="0%"   stopColor={theme.primary}   stopOpacity="0.55" />
+                <stop offset="45%"  stopColor={theme.primary}   stopOpacity="1" />
+                <stop offset="100%" stopColor={theme.secondary}  stopOpacity="0.65" />
               </linearGradient>
               <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="transparent" />
