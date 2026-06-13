@@ -23,13 +23,13 @@ const LINK_LAYOUT = {
     x: 6, y: 118, w: 192, h: 128,
     align: 'xMaxYMax',
     srcAspect: 1440 / 810,
-    hornRel: { x: 0.68, y: 0.42 },
+    hornRel: { x: 0.95, y: 0.36 },
   } satisfies ImgBox,
   towerBox: {
     x: 390, y: 6, w: 184, h: 232,
     align: 'xMinYMax',
     srcAspect: 1440 / 810,
-    hornRel: { x: 0.32, y: 0.38 },
+    hornRel: { x: 0.05, y: 0.50 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
@@ -85,7 +85,7 @@ const LINK_BEAM = {
 } as const
 
 /** Trazo oscuro sobre transparente → blanco nítido en tema oscuro */
-const LINK_ART_FILTER =
+const LINK_ART_FILTER = 'none'
   'brightness(0) saturate(100%) invert(1) contrast(1.08) drop-shadow(0 0 10px rgba(255,255,255,0.25))'
 
 export const LINK_VISUAL_ASSETS = {
