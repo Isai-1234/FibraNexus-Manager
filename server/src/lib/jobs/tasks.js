@@ -40,6 +40,21 @@ export const jobTasks = {
     const { pollAllRoutersForOrg } = await import('../routerPoller.js');
     return pollAllRoutersForOrg(orgId);
   },
+
+  'suspend-service': async ({ serviceId, orgId }) => {
+    const { suspendServiceNetwork } = await import('../networkProvision.js');
+    return suspendServiceNetwork(serviceId, orgId);
+  },
+
+  'reactivate-service': async ({ serviceId, orgId }) => {
+    const { reactivateServiceNetwork } = await import('../networkProvision.js');
+    return reactivateServiceNetwork(serviceId, orgId);
+  },
+
+  'sync-queue-metadata': async ({ serviceId, orgId }) => {
+    const { syncServiceQueueMetadata } = await import('../networkProvision.js');
+    return syncServiceQueueMetadata(serviceId, orgId);
+  },
 };
 
 export async function runTask(jobName, payload) {

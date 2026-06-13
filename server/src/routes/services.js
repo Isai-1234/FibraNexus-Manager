@@ -5,7 +5,6 @@ import { and, eq, ne, inArray, sql } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
-import { provisionServiceNetwork, suspendServiceNetwork, reactivateServiceNetwork, syncServiceQueueMetadata } from '../lib/networkProvision.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
 import { createInvoiceForService } from '../lib/invoiceService.js';
@@ -249,7 +248,7 @@ servicesRouter.put('/:id/suspend', requireRole('admin', 'technician'), async (re
 
     let networkResult = null;
     try {
-      networkResult = await suspendServiceNetwork(serviceId, orgId);
+      networkResult = await dispatch(JobNames.SUSPEND_SERVICE, { serviceId, orgId });
     } catch (netErr) {
       networkResult = { error: netErr.message };
     }
@@ -275,7 +274,7 @@ servicesRouter.put('/:id/reactivate', requireRole('admin'), async (req, res) => 
 
     let networkResult = null;
     try {
-      networkResult = await reactivateServiceNetwork(serviceId, orgId);
+      networkResult = await dispatch(JobNames.REACTIVATE_SERVICE, { serviceId, orgId });
     } catch (netErr) {
       networkResult = { error: netErr.message };
     }
@@ -320,7 +319,7 @@ servicesRouter.post('/:id/sync-queue', requireRole('admin', 'technician'), async
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    const result = await syncServiceQueueMetadata(serviceId, orgId);
+    const result = await dispatch(JobNames.SYNC_QUEUE_METADATA, { serviceId, orgId });
     if (result.skipped) {
       return res.json({ message: result.reason, skipped: true });
     }

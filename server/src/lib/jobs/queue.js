@@ -9,6 +9,9 @@ export const JobNames = {
   SNMP_POLL_ORG: 'snmp-poll-org',
   BILLING_ORG: 'billing-org',
   ROUTER_POLL_ORG: 'router-poll-org',
+  SUSPEND_SERVICE: 'suspend-service',
+  REACTIVATE_SERVICE: 'reactivate-service',
+  SYNC_QUEUE_METADATA: 'sync-queue-metadata',
 };
 
 /**
@@ -17,7 +20,12 @@ export const JobNames = {
  */
 export async function dispatch(jobName, payload) {
   if (shouldUseJobQueue()) {
-    return enqueueRedis(jobName, payload);
+    try {
+      return await enqueueRedis(jobName, payload);
+    } catch (err) {
+      console.warn('Redis enqueue failed, falling back to inline execution: %s', err.message);
+      return runTask(jobName, payload);
+    }
   }
   return runTask(jobName, payload);
 }
