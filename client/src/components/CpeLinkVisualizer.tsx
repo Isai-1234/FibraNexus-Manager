@@ -4,23 +4,72 @@ import cpeArt from '../assets/link/cpe-litebeam.png'
 import towerArt from '../assets/link/tower-sector.png'
 
 /** Layout unificado viewBox 580×250 — imágenes y haces comparten coordenadas */
+const LINK_SRC_ASPECT = 1024 / 576
+
+type ImgBox = { x: number; y: number; w: number; h: number; align: 'xMaxYMax' | 'xMinYMax'; hornRel: { x: number; y: number } }
+
 const LINK_LAYOUT = {
   viewW: 580,
   viewH: 250,
-  cpeImg: { x: 8, y: 108, w: 186, h: 136 },
-  towerImg: { x: 396, y: 14, w: 176, h: 224 },
-  cpeHorn: { x: 188, y: 172 },
-  towerHorn: { x: 396, y: 154 },
+  /** PNG 1024×576 — cajas con meet + punta relativa dentro del bitmap renderizado */
+  cpeBox: { x: 8, y: 108, w: 186, h: 136, align: 'xMaxYMax', hornRel: { x: 0.86, y: 0.24 } } satisfies ImgBox,
+  towerBox: { x: 396, y: 14, w: 176, h: 224, align: 'xMinYMax', hornRel: { x: 0.1, y: 0.2 } } satisfies ImgBox,
+  /** SVG integrado — posición calibrada para que el horn local coincida con el haz */
+  vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
+  vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
+  preferVector: true,
 } as const
+
+function renderedImageRect(box: ImgBox) {
+  const boxAspect = box.w / box.h
+  let rw = box.w
+  let rh = box.h
+  if (LINK_SRC_ASPECT > boxAspect) {
+    rh = box.w / LINK_SRC_ASPECT
+  } else {
+    rw = box.h * LINK_SRC_ASPECT
+  }
+  const ox = box.align === 'xMaxYMax' ? box.x + box.w - rw : box.x
+  const oy = box.y + box.h - rh
+  return { x: ox, y: oy, w: rw, h: rh }
+}
+
+function hornFromBox(box: ImgBox) {
+  const rect = renderedImageRect(box)
+  return {
+    x: rect.x + rect.w * box.hornRel.x,
+    y: rect.y + rect.h * box.hornRel.y,
+  }
+}
+
+function hornFromVector(v: { tx: number; ty: number; scale: number; horn: { x: number; y: number } }) {
+  return {
+    x: v.tx + v.horn.x * v.scale,
+    y: v.ty + v.horn.y * v.scale,
+  }
+}
+
+function linkBeamEndpoints(preferVector: boolean) {
+  if (preferVector) {
+    return {
+      cpe: hornFromVector(LINK_LAYOUT.vectorCpe),
+      tower: hornFromVector(LINK_LAYOUT.vectorTower),
+    }
+  }
+  return {
+    cpe: hornFromBox(LINK_LAYOUT.cpeBox),
+    tower: hornFromBox(LINK_LAYOUT.towerBox),
+  }
+}
 
 const LINK_BEAM = {
   viewW: LINK_LAYOUT.viewW,
   viewH: LINK_LAYOUT.viewH,
-  cpe: LINK_LAYOUT.cpeHorn,
-  tower: LINK_LAYOUT.towerHorn,
+  ...linkBeamEndpoints(LINK_LAYOUT.preferVector),
 } as const
 
-const LINK_ART_FILTER = 'brightness(0) saturate(100%) invert(1) contrast(1.18)'
+const LINK_ART_FILTER =
+  'drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 10px rgba(255,255,255,0.35)) contrast(1.45) brightness(1.15)'
 
 export const LINK_VISUAL_ASSETS = {
   cpe: cpeArt,
@@ -106,23 +155,23 @@ export function linkTheme(score: number, online: boolean, hasWarning: boolean) {
 
 function LiteBeamSvg({ uid }: { uid: string }) {
   return (
-    <g>
+    <g opacity="0.98">
       <ellipse cx="70" cy="118" rx="34" ry="7" fill={`url(#${uid}-shadow)`} />
-      <rect x="64" y="102" width="12" height="16" rx="2" fill="#d1d5db" />
-      <rect x="58" y="114" width="24" height="5" rx="2" fill="#9ca3af" />
-      <path d="M18 88 Q8 55 22 28 Q38 18 52 32 L58 88 Z" fill={`url(#${uid}-dish)`} stroke="#cbd5e1" strokeWidth="0.8" />
+      <rect x="64" y="102" width="12" height="16" rx="2" fill="#e2e8f0" />
+      <rect x="58" y="114" width="24" height="5" rx="2" fill="#cbd5e1" />
+      <path d="M18 88 Q8 55 22 28 Q38 18 52 32 L58 88 Z" fill={`url(#${uid}-dish)`} stroke="#e2e8f0" strokeWidth="1" />
       {Array.from({ length: 8 }, (_, i) => (
-        <line key={`l${i}`} x1="24" y1={36 + i * 6} x2="48" y2={32 + i * 5} stroke="#cbd5e1" strokeWidth="0.35" opacity="0.45" />
+        <line key={`l${i}`} x1="24" y1={36 + i * 6} x2="48" y2={32 + i * 5} stroke="#e2e8f0" strokeWidth="0.45" opacity="0.55" />
       ))}
-      <path d="M122 88 Q132 55 118 28 Q102 18 88 32 L82 88 Z" fill={`url(#${uid}-dish)`} stroke="#cbd5e1" strokeWidth="0.8" />
+      <path d="M122 88 Q132 55 118 28 Q102 18 88 32 L82 88 Z" fill={`url(#${uid}-dish)`} stroke="#e2e8f0" strokeWidth="1" />
       {Array.from({ length: 8 }, (_, i) => (
-        <line key={`r${i}`} x1="116" y1={36 + i * 6} x2="92" y2={32 + i * 5} stroke="#cbd5e1" strokeWidth="0.35" opacity="0.45" />
+        <line key={`r${i}`} x1="116" y1={36 + i * 6} x2="92" y2={32 + i * 5} stroke="#e2e8f0" strokeWidth="0.45" opacity="0.55" />
       ))}
-      <path d="M52 88 L58 32 Q70 24 82 32 L88 88 Z" fill="#fafafa" stroke="#cbd5e1" strokeWidth="0.8" />
-      <ellipse cx="70" cy="72" rx="8" ry="5" fill="none" stroke="#94a3b8" strokeWidth="0.7" opacity="0.45" />
-      <path d="M66 78 Q70 74 74 78 Q70 84 66 78" fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5" />
-      <rect x="67" y="38" width="6" height="28" rx="2" fill="#e5e7eb" stroke="#94a3b8" strokeWidth="0.7" />
-      <ellipse cx="70" cy="32" rx="9" ry="10" fill="#fafafa" stroke="#94a3b8" strokeWidth="0.9" />
+      <path d="M52 88 L58 32 Q70 24 82 32 L88 88 Z" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1" />
+      <ellipse cx="70" cy="72" rx="8" ry="5" fill="none" stroke="#cbd5e1" strokeWidth="0.8" opacity="0.55" />
+      <path d="M66 78 Q70 74 74 78 Q70 84 66 78" fill="none" stroke="#cbd5e1" strokeWidth="1.1" opacity="0.6" />
+      <rect x="67" y="38" width="6" height="28" rx="2" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="0.8" />
+      <ellipse cx="70" cy="32" rx="9" ry="10" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
       <circle cx="70" cy="32" r="3" fill="#22d3ee">
         <animate attributeName="r" values="3;5.5;3" dur="2.4s" repeatCount="indefinite" />
         <animate attributeName="opacity" values="0.45;1;0.45" dur="2.4s" repeatCount="indefinite" />
@@ -137,18 +186,18 @@ function LiteBeamSvg({ uid }: { uid: string }) {
 
 function SectorHornSvg({ uid }: { uid: string }) {
   return (
-    <g>
+    <g opacity="0.98">
       <ellipse cx="70" cy="118" rx="28" ry="6" fill={`url(#${uid}-shadow)`} />
-      <path d="M48 95 L42 118 L52 118 L56 95 Z" fill="#9ca3af" stroke="#64748b" strokeWidth="0.7" />
-      <path d="M92 95 L98 118 L88 118 L84 95 Z" fill="#9ca3af" stroke="#64748b" strokeWidth="0.7" />
-      <rect x="54" y="108" width="32" height="8" rx="2" fill="#64748b" />
-      <path d="M38 95 Q38 60 70 38 Q102 60 102 95 Z" fill={`url(#${uid}-horn)`} stroke="#cbd5e1" strokeWidth="0.8" />
+      <path d="M48 95 L42 118 L52 118 L56 95 Z" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="0.8" />
+      <path d="M92 95 L98 118 L88 118 L84 95 Z" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="0.8" />
+      <rect x="54" y="108" width="32" height="8" rx="2" fill="#94a3b8" />
+      <path d="M38 95 Q38 60 70 38 Q102 60 102 95 Z" fill={`url(#${uid}-horn)`} stroke="#e2e8f0" strokeWidth="1" />
       {[52, 64, 76, 88].map((cy, i) => (
-        <ellipse key={cy} cx="70" cy={cy} rx={18 + i * 4} ry={6 + i} fill="none" stroke="#e2e8f0" strokeWidth="0.6" opacity="0.7" />
+        <ellipse key={cy} cx="70" cy={cy} rx={18 + i * 4} ry={6 + i} fill="none" stroke="#f1f5f9" strokeWidth="0.7" opacity="0.75" />
       ))}
-      <ellipse cx="70" cy="40" rx="14" ry="12" fill="#fafafa" stroke="#94a3b8" strokeWidth="1" />
-      <ellipse cx="70" cy="40" rx="6" ry="5" fill="#1e293b" opacity="0.12" />
-      <circle cx="70" cy="40" r="2.5" fill="#4ade80" opacity="0.9">
+      <ellipse cx="70" cy="40" rx="14" ry="12" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
+      <ellipse cx="70" cy="40" rx="6" ry="5" fill="#1e293b" opacity="0.15" />
+      <circle cx="70" cy="40" r="2.5" fill="#4ade80" opacity="1">
         <animate attributeName="opacity" values="0.4;1;0.4" dur="1.8s" repeatCount="indefinite" />
       </circle>
       <ellipse cx="70" cy="96" rx="10" ry="4" fill="#ef4444" opacity="0.9" />
@@ -170,26 +219,27 @@ function LinkHardwareSvg({
 }) {
   const [cpeImgOk, setCpeImgOk] = useState(true)
   const [towerImgOk, setTowerImgOk] = useState(true)
-  const { cpeImg, towerImg } = LINK_LAYOUT
-  const artStyle = { filter: LINK_ART_FILTER, opacity: 0.98 }
-  const showCpeImg = Boolean(cpeSrc) && cpeImgOk
-  const showTowerImg = Boolean(towerSrc) && towerImgOk
+  const { cpeBox, towerBox, vectorCpe, vectorTower, preferVector } = LINK_LAYOUT
+  const beam = linkBeamEndpoints(preferVector)
+  const artStyle = { filter: LINK_ART_FILTER, opacity: 1 }
+  const showCpeImg = !preferVector && Boolean(cpeSrc) && cpeImgOk
+  const showTowerImg = !preferVector && Boolean(towerSrc) && towerImgOk
 
   return (
     <g aria-hidden>
       {showCpeImg ? (
         <image
           href={cpeSrc}
-          x={cpeImg.x}
-          y={cpeImg.y}
-          width={cpeImg.w}
-          height={cpeImg.h}
+          x={cpeBox.x}
+          y={cpeBox.y}
+          width={cpeBox.w}
+          height={cpeBox.h}
           preserveAspectRatio="xMaxYMax meet"
           style={artStyle}
           onError={() => setCpeImgOk(false)}
         />
       ) : (
-        <g transform={`translate(${cpeImg.x + 24}, ${cpeImg.y + 8}) scale(1.15)`}>
+        <g transform={`translate(${vectorCpe.tx}, ${vectorCpe.ty}) scale(${vectorCpe.scale})`}>
           <LiteBeamSvg uid={uid} />
         </g>
       )}
@@ -197,27 +247,27 @@ function LinkHardwareSvg({
       {showTowerImg ? (
         <image
           href={towerSrc}
-          x={towerImg.x}
-          y={towerImg.y}
-          width={towerImg.w}
-          height={towerImg.h}
+          x={towerBox.x}
+          y={towerBox.y}
+          width={towerBox.w}
+          height={towerBox.h}
           preserveAspectRatio="xMinYMax meet"
           style={artStyle}
           onError={() => setTowerImgOk(false)}
         />
       ) : (
-        <g transform={`translate(${towerImg.x + 18}, ${towerImg.y + 28}) scale(1.15)`}>
+        <g transform={`translate(${vectorTower.tx}, ${vectorTower.ty}) scale(${vectorTower.scale})`}>
           <SectorHornSvg uid={uid} />
         </g>
       )}
 
       {online && (
         <>
-          <circle cx={LINK_BEAM.cpe.x} cy={LINK_BEAM.cpe.y} r="5" fill="#22d3ee" opacity="0.95">
+          <circle cx={beam.cpe.x} cy={beam.cpe.y} r="5" fill="#22d3ee" opacity="0.95">
             <animate attributeName="r" values="4;6.5;4" dur="2s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />
           </circle>
-          <circle cx={LINK_BEAM.tower.x} cy={LINK_BEAM.tower.y} r="4" fill="#4ade80" opacity="0.95">
+          <circle cx={beam.tower.x} cy={beam.tower.y} r="4" fill="#4ade80" opacity="0.95">
             <animate attributeName="r" values="3;5.5;3" dur="2.2s" repeatCount="indefinite" />
             <animate attributeName="opacity" values="0.65;1;0.65" dur="2.2s" repeatCount="indefinite" />
           </circle>
@@ -527,6 +577,18 @@ export default function CpeLinkVisualizer({
               <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="transparent" />
                 <stop offset="100%" stopColor="rgba(34,211,238,0.04)" />
+              </linearGradient>
+              <radialGradient id={`${uid}-shadow`} cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#000" stopOpacity="0.35" />
+                <stop offset="100%" stopColor="#000" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id={`${uid}-dish`} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#f8fafc" />
+                <stop offset="100%" stopColor="#cbd5e1" />
+              </linearGradient>
+              <linearGradient id={`${uid}-horn`} x1="50%" y1="0%" x2="50%" y2="100%">
+                <stop offset="0%" stopColor="#f1f5f9" />
+                <stop offset="100%" stopColor="#94a3b8" />
               </linearGradient>
             </defs>
 
