@@ -1,7 +1,10 @@
 {
   "name": "FibraNexus Manager",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
-  "postCreateCommand": "git config pull.rebase false && bash scripts/sync-main.sh",
+  "features": {
+    "ghcr.io/devcontainers/features/git-lfs:1": {}
+  },
+  "postCreateCommand": "git lfs install && git config pull.rebase false && bash scripts/sync-main.sh",
   "postStartCommand": "bash scripts/sync-main.sh",
   "customizations": {
     "vscode": {
