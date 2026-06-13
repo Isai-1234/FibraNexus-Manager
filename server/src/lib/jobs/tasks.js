@@ -23,7 +23,12 @@ export const jobTasks = {
         .limit(1);
       siteRouter = r || null;
     }
-    return pollDeviceSnmp(eqRow, siteRouter);
+    const result = await pollDeviceSnmp(eqRow, siteRouter);
+    if (!result.error) {
+      const { persistPollResult } = await import('../equipmentStatus.js');
+      await persistPollResult(eqRow, result);
+    }
+    return result;
   },
 
   'snmp-poll-batch': async ({ items, routerBySiteId }) =>

@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { pollEquipmentList } from './snmpPoller.js';
 
@@ -19,16 +19,18 @@ export function isPollable(item) {
 
 async function buildRouterBySiteMap(items, orgId) {
   const siteIds = [...new Set(items.map((e) => e.siteId).filter(Boolean))];
+  if (!siteIds.length) return new Map();
+  // P1: 1 query con inArray en lugar de N queries seriales
+  const routers = await db.select().from(equipment)
+    .where(and(
+      inArray(equipment.siteId, siteIds),
+      eq(equipment.type, 'router'),
+      orgFilter(equipment, orgId),
+    ));
+  // Un router por site: si hay varios, toma el primero encontrado
   const map = new Map();
-  for (const siteId of siteIds) {
-    const [router] = await db.select().from(equipment)
-      .where(and(
-        eq(equipment.siteId, siteId),
-        eq(equipment.type, 'router'),
-        orgFilter(equipment, orgId),
-      ))
-      .limit(1);
-    if (router) map.set(siteId, router);
+  for (const router of routers) {
+    if (router.siteId && !map.has(router.siteId)) map.set(router.siteId, router);
   }
   return map;
 }

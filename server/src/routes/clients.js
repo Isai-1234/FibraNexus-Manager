@@ -8,8 +8,9 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { listClientEquipment } from '../lib/equipmentClientLink.js';
-import { refreshStaleEquipmentStatus } from '../lib/equipmentStatus.js';
+import { attachSnmpDisplay, isPollable, isPollStale } from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
+import { dispatch, JobNames } from '../lib/jobs/queue.js';
 
 export const clientsRouter = Router();
 
@@ -65,29 +66,52 @@ clientsRouter.get('/:id/equipment', requireRole('admin', 'technician'), async (r
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const clientId = parseInt(req.params.id, 10);
-    let items = await listClientEquipment(clientId, orgId);
+    const items = await listClientEquipment(clientId, orgId);
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.ipAddress && !item.macAddress && item.siteId) {
-        const mac = await enrichMacFromDhcp(orgId, {
-          siteId: item.siteId,
-          ipAddress: item.ipAddress,
-          macAddress: null,
-        });
-        if (mac) {
-          await db.update(equipment).set({ macAddress: mac, updatedAt: new Date() })
-            .where(eq(equipment.id, item.id));
-          items[i] = { ...item, macAddress: mac };
+    // Capa 4: respuesta inmediata desde caché BD — sin esperar SNMP
+    res.json(items.map((e) => ({ ...attachSnmpDisplay(e), isStale: isPollStale(e.lastSeen) })));
+
+    // Enriquecimiento de MAC en background — no bloquea al usuario
+    Promise.resolve().then(async () => {
+      for (const item of items) {
+        if (item.ipAddress && !item.macAddress && item.siteId) {
+          try {
+            const mac = await enrichMacFromDhcp(orgId, {
+              siteId: item.siteId,
+              ipAddress: item.ipAddress,
+              macAddress: null,
+            });
+            if (mac) {
+              await db.update(equipment).set({ macAddress: mac, updatedAt: new Date() })
+                .where(eq(equipment.id, item.id));
+            }
+          } catch { /* silencioso */ }
         }
       }
-    }
-
-    items = await refreshStaleEquipmentStatus(items, orgId);
-    res.json(items);
+    }).catch(() => {});
   } catch (error) {
     const status = error.message === 'Abonado no encontrado' ? 404 : 500;
     res.status(status).json({ error: error.message || 'Error al listar equipos' });
+  }
+});
+
+clientsRouter.post('/:id/equipment/refresh', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const clientId = parseInt(req.params.id, 10);
+    const items = await listClientEquipment(clientId, orgId);
+    const pollable = items.filter(isPollable);
+
+    // Respuesta 202 inmediata — los polls corren en background
+    res.status(202).json({ queued: pollable.length, skipped: items.length - pollable.length });
+
+    Promise.all(
+      pollable.map((eq) => dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: eq.id, orgId })),
+    ).catch((err) => console.error('[equipment-refresh]', err.message));
+  } catch (error) {
+    const status = error.message === 'Abonado no encontrado' ? 404 : 500;
+    res.status(status).json({ error: error.message || 'Error al iniciar actualización' });
   }
 });
 

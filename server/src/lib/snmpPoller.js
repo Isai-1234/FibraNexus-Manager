@@ -100,38 +100,38 @@ export function snmpWalk(host, community, baseOid, { port = 161, timeout = 8000,
 }
 
 async function getIndexedViaRouter(router, host, community) {
-  const merged = {};
-  for (const [key, col] of Object.entries(UBNT_COLS)) {
-    for (const idx of [1, 2, 3, 0]) {
-      const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
-      try {
-        const val = await mikrotikSnmpGet(router, { address: host, community, oid });
-        if (val != null && val !== '') {
-          merged[key] = val;
-          break;
-        }
-      } catch { /* siguiente índice */ }
-    }
-  }
-  return merged;
+  // P0: 6 columnas en paralelo — de 24 awaits seriales a 6 cadenas independientes
+  const entries = await Promise.all(
+    Object.entries(UBNT_COLS).map(async ([key, col]) => {
+      for (const idx of [1, 2, 3, 0]) {
+        const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
+        try {
+          const val = await mikrotikSnmpGet(router, { address: host, community, oid });
+          if (val != null && val !== '') return [key, val];
+        } catch { /* siguiente índice */ }
+      }
+      return null;
+    }),
+  );
+  return Object.fromEntries(entries.filter(Boolean));
 }
 
 async function getIndexedDirect(host, community) {
-  const merged = {};
-  for (const [key, col] of Object.entries(UBNT_COLS)) {
-    for (const idx of [1, 2, 3, 0]) {
-      const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
-      try {
-        const data = await snmpGet(host, community, [oid], { timeout: 4000 });
-        const val = data[oid];
-        if (val != null && val !== '') {
-          merged[key] = val;
-          break;
-        }
-      } catch { /* siguiente índice */ }
-    }
-  }
-  return merged;
+  // P0: 6 columnas en paralelo — de 24 awaits seriales a 6 cadenas independientes
+  const entries = await Promise.all(
+    Object.entries(UBNT_COLS).map(async ([key, col]) => {
+      for (const idx of [1, 2, 3, 0]) {
+        const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
+        try {
+          const data = await snmpGet(host, community, [oid], { timeout: 3000 });
+          const val = data[oid];
+          if (val != null && val !== '') return [key, val];
+        } catch { /* siguiente índice */ }
+      }
+      return null;
+    }),
+  );
+  return Object.fromEntries(entries.filter(Boolean));
 }
 
 async function fetchUbntWireless(host, community, router, pollMethod) {
@@ -237,7 +237,12 @@ export async function pollDeviceSnmp(equipment, router = null) {
   let pollMethod = 'direct';
 
   try {
-    data = await snmpGet(host, community, SNMP_OIDS);
+    // P0: si hay router como fallback, el intento directo usa timeout corto (2s, sin retry)
+    // para no bloquear 10s en CPEs en LAN privada que nunca son accesibles directamente.
+    const directOpts = router
+      ? { timeout: 2000, retries: 0 }
+      : { timeout: 5000, retries: 1 };
+    data = await snmpGet(host, community, SNMP_OIDS, directOpts);
   } catch (directErr) {
     if (!router) throw directErr;
     pollMethod = 'router';
@@ -278,19 +283,19 @@ export async function pollDeviceSnmp(equipment, router = null) {
 }
 
 export async function pollEquipmentList(items, routerBySiteId = new Map()) {
-  const results = [];
-  for (const eq of items) {
-    if (!eq.ipAddress || !eq.snmpCommunity) {
-      results.push({ id: eq.id, name: eq.name, skipped: true, reason: 'Sin IP o community SNMP' });
-      continue;
-    }
-    const router = eq.siteId ? routerBySiteId.get(eq.siteId) : null;
-    try {
-      const snmpData = await pollDeviceSnmp(eq, router);
-      results.push({ id: eq.id, name: eq.name, ...snmpData });
-    } catch (err) {
-      results.push({ id: eq.id, name: eq.name, online: false, error: err.message });
-    }
-  }
-  return results;
+  // P0: todos los dispositivos en paralelo — de O(n×T) serial a O(max(T)) paralelo
+  return Promise.all(
+    items.map(async (eq) => {
+      if (!eq.ipAddress || !eq.snmpCommunity) {
+        return { id: eq.id, name: eq.name, skipped: true, reason: 'Sin IP o community SNMP' };
+      }
+      const router = eq.siteId ? routerBySiteId.get(eq.siteId) : null;
+      try {
+        const snmpData = await pollDeviceSnmp(eq, router);
+        return { id: eq.id, name: eq.name, ...snmpData };
+      } catch (err) {
+        return { id: eq.id, name: eq.name, online: false, error: err.message };
+      }
+    }),
+  );
 }
