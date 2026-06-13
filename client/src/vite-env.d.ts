@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-declare module '*.svg?raw' {
+declare module '*.png' {
   const src: string
   export default src
 }

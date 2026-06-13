@@ -1,11 +1,19 @@
 import { useId, useMemo } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
-import cpeSvg from '../assets/link/cpe-litebeam.svg?raw'
-import towerSvg from '../assets/link/tower-sector.svg?raw'
+import cpeArt from '../assets/link/cpe-litebeam.png'
+import towerArt from '../assets/link/tower-sector.png'
+
+/** Puntos de emisión del enlace (viewBox 580×250) — punta del feed horn CPE ↔ sectorial torre */
+const LINK_BEAM = {
+  viewW: 580,
+  viewH: 250,
+  cpe: { x: 168, y: 128 },
+  tower: { x: 412, y: 102 },
+} as const
 
 export const LINK_VISUAL_ASSETS = {
-  cpe: cpeSvg,
-  tower: towerSvg,
+  cpe: cpeArt,
+  tower: towerArt,
 } as const
 
 type WirelessWarning = { type: string; label: string; severity: string }
@@ -138,17 +146,6 @@ function SectorHornSvg({ uid }: { uid: string }) {
   )
 }
 
-function LinkArt({ svg, className, label }: { svg: string; className: string; label: string }) {
-  return (
-    <div
-      className={`${className} [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full`}
-      role="img"
-      aria-label={label}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  )
-}
-
 function LinkHardware({
   uid,
   online,
@@ -162,47 +159,65 @@ function LinkHardware({
   cpeSrc: string
   towerSrc: string
 }) {
-  const cpeWrap = 'w-[min(34vw,165px)] max-h-[min(22vw,105px)]'
-  const towerWrap = 'w-[min(30vw,150px)] max-h-[min(50vw,240px)] sm:max-h-[min(45vw,220px)]'
-  const artClass = 'object-contain drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]'
+  const cpePct = `${(LINK_BEAM.cpe.x / LINK_BEAM.viewW) * 100}%`
+  const cpeTop = `${(LINK_BEAM.cpe.y / LINK_BEAM.viewH) * 100}%`
+  const towerPct = `${(LINK_BEAM.tower.x / LINK_BEAM.viewW) * 100}%`
+  const towerTop = `${(LINK_BEAM.tower.y / LINK_BEAM.viewH) * 100}%`
+  const artShadow = 'drop-shadow-[0_12px_32px_rgba(0,0,0,0.55)]'
 
   return (
     <>
       {/* CPE — izquierda */}
-      <div className="absolute left-[2%] sm:left-[4%] bottom-[12%] z-10 flex flex-col items-center max-w-[34%] sm:max-w-[28%]">
-        <div className={`relative inline-flex justify-center ${cpeWrap}`}>
+      <div className="absolute left-[1%] sm:left-[2%] bottom-[8%] z-10 flex flex-col items-center pointer-events-none">
+        <div className="relative w-[min(36vw,175px)] max-h-[min(24vw,115px)] flex items-end justify-center">
           {cpeSrc ? (
-            <LinkArt svg={cpeSrc} className={artClass} label="Antena CPE LiteBeam" />
+            <img
+              src={cpeSrc}
+              alt="Antena CPE LiteBeam"
+              className={`block w-full h-auto max-h-[min(24vw,115px)] object-contain object-bottom ${artShadow}`}
+            />
           ) : (
             <svg viewBox="0 0 140 120" className="w-full h-auto" aria-hidden>
               <LiteBeamSvg uid={uid} />
             </svg>
-          )}
-          {online && (
-            <span className="absolute top-[38%] right-[18%] w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_12px_#22d3ee] animate-pulse" />
           )}
         </div>
         <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center">CPE · Cliente</p>
       </div>
 
       {/* Torre / sectoriales — derecha */}
-      <div className="absolute right-[1%] sm:right-[2%] bottom-[6%] z-10 flex flex-col items-center max-w-[32%] sm:max-w-[26%]">
-        <div className={`relative inline-flex justify-center ${towerWrap}`}>
+      <div className="absolute right-[0%] sm:right-[1%] bottom-[2%] z-10 flex flex-col items-center pointer-events-none">
+        <div className="relative w-[min(32vw,160px)] max-h-[min(52vw,250px)] flex items-end justify-center">
           {towerSrc ? (
-            <LinkArt svg={towerSrc} className={artClass} label="Torre con antenas sectoriales" />
+            <img
+              src={towerSrc}
+              alt="Torre con antenas sectoriales"
+              className={`block w-full h-auto max-h-[min(52vw,250px)] object-contain object-bottom ${artShadow}`}
+            />
           ) : (
             <svg viewBox="0 0 140 120" className="w-full h-auto" aria-hidden>
               <SectorHornSvg uid={uid} />
             </svg>
           )}
-          {online && (
-            <span className="absolute top-[22%] left-[22%] w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#4ade80] animate-pulse" />
-          )}
         </div>
-        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center truncate max-w-full px-1">
+        <p className="text-[10px] sm:text-xs text-slate-500 mt-2 text-center truncate max-w-[min(32vw,160px)] px-1">
           {apLabel.length > 18 ? `${apLabel.slice(0, 16)}…` : apLabel}
         </p>
       </div>
+
+      {/* Indicadores en punta de emisión (centro del radio) */}
+      {online && (
+        <>
+          <span
+            className="absolute z-20 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_14px_#22d3ee] animate-pulse -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ left: cpePct, top: cpeTop }}
+          />
+          <span
+            className="absolute z-20 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_12px_#4ade80] animate-pulse -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ left: towerPct, top: towerTop }}
+          />
+        </>
+      )}
     </>
   )
 }
@@ -248,20 +263,36 @@ function SignalBeams({
 }) {
   if (!online) return null
 
+  const { cpe, tower } = LINK_BEAM
+  const midX = (cpe.x + tower.x) / 2
+  const midY = (cpe.y + tower.y) / 2
+  const corePath = `M ${cpe.x} ${cpe.y} Q ${midX} ${midY} ${tower.x} ${tower.y}`
+  const rxPath = `M ${tower.x} ${tower.y} Q ${midX} ${midY} ${cpe.x} ${cpe.y}`
+
   const beamCount = strength >= 75 ? 9 : strength >= 50 ? 6 : 4
   const txDur = Math.max(0.7, 2.8 - (txSpeed / 150))
   const rxDur = Math.max(0.7, 2.8 - (rxSpeed / 150))
 
   const paths = useMemo(() => Array.from({ length: beamCount }, (_, i) => {
     const t = (i - (beamCount - 1) / 2) / (beamCount - 1 || 1)
-    const y = t * 26
-    const curve = t * 10
-    const d = `M 158 58 Q ${290 + curve} ${56 + y} 418 54`
-    return { id: i, d, y, delay: i * 0.14, color: i % 2 === 0 ? colors.primary : colors.secondary }
-  }), [beamCount, colors.primary, colors.secondary])
+    const yOff = t * 22
+    const curve = t * 8
+    const d = `M ${cpe.x} ${cpe.y} Q ${midX + curve} ${midY + yOff} ${tower.x} ${tower.y}`
+    return { id: i, d, delay: i * 0.14, color: i % 2 === 0 ? colors.primary : colors.secondary }
+  }), [beamCount, colors.primary, colors.secondary, cpe.x, cpe.y, tower.x, tower.y, midX, midY])
 
   return (
     <g filter={`url(#${uid}-beamGlow)`}>
+      {/* Brillo en puntas de emisión */}
+      <circle cx={cpe.x} cy={cpe.y} r="6" fill={colors.primary} opacity="0.15">
+        <animate attributeName="r" values="4;9;4" dur="2.2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.1;0.35;0.1" dur="2.2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={tower.x} cy={tower.y} r="5" fill={colors.rx} opacity="0.12">
+        <animate attributeName="r" values="3;8;3" dur="2.4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.08;0.3;0.08" dur="2.4s" repeatCount="indefinite" />
+      </circle>
+
       {paths.map((b) => (
         <g key={`tx-${b.id}`}>
           <path
@@ -279,7 +310,7 @@ function SignalBeams({
       ))}
 
       <path
-        d="M 158 58 Q 290 56 418 54"
+        d={corePath}
         fill="none"
         stroke={`url(#${uid}-beamTx)`}
         strokeWidth="2.8"
@@ -307,14 +338,14 @@ function SignalBeams({
 
       {[0, 1, 2, 3].map((p) => (
         <circle key={`ptx-${p}`} r="2" fill={colors.primary} className="beam-particle">
-          <animateMotion dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} path="M 158 58 Q 290 56 418 54" />
+          <animateMotion dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} path={corePath} />
           <animate attributeName="opacity" values="0;1;1;0" dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} />
         </circle>
       ))}
 
       {[0, 1, 2].map((p) => (
         <circle key={`prx-${p}`} r="1.8" fill={colors.rx} className="beam-particle">
-          <animateMotion dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} path="M 418 54 Q 290 56 158 58" />
+          <animateMotion dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} path={rxPath} />
           <animate attributeName="opacity" values="0;0.9;0.9;0" dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} />
         </circle>
       ))}
@@ -461,7 +492,7 @@ export default function CpeLinkVisualizer({
       <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center' : ''}`}>
         <div className={`relative w-full ${immersive ? 'max-h-[min(58vh,560px)]' : 'max-h-[320px]'} aspect-[580/250]`}>
           <svg
-            viewBox="0 0 580 230"
+            viewBox="0 0 580 250"
             className="absolute inset-0 w-full h-full"
             aria-hidden
           >
@@ -495,17 +526,46 @@ export default function CpeLinkVisualizer({
             <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
 
             {online && signal != null && (
-              <g opacity="0.6">
-                <line x1="148" y1="32" x2="200" y2="12" stroke="#475569" strokeWidth="0.6" strokeDasharray="2 3" />
-                <rect x="200" y="2" width="90" height="18" rx="9" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
-                <text x="245" y="14" textAnchor="middle" fill="#94a3b8" fontSize="8" fontFamily="system-ui,sans-serif">
+              <g opacity="0.65">
+                <line
+                  x1={LINK_BEAM.cpe.x}
+                  y1={LINK_BEAM.cpe.y - 18}
+                  x2={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2}
+                  y2={LINK_BEAM.cpe.y - 32}
+                  stroke="#475569"
+                  strokeWidth="0.6"
+                  strokeDasharray="2 3"
+                />
+                <rect
+                  x={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2 - 45}
+                  y={LINK_BEAM.cpe.y - 42}
+                  width="90"
+                  height="18"
+                  rx="9"
+                  fill="rgba(255,255,255,0.06)"
+                  stroke="rgba(255,255,255,0.1)"
+                  strokeWidth="0.5"
+                />
+                <text
+                  x={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2}
+                  y={LINK_BEAM.cpe.y - 30}
+                  textAnchor="middle"
+                  fill="#94a3b8"
+                  fontSize="8"
+                  fontFamily="system-ui,sans-serif"
+                >
                   {signal} dBm
                 </text>
               </g>
             )}
 
             {online && (
-              <g transform="translate(248, 198)" fontFamily="system-ui,sans-serif" fontSize="8" fill="#64748b">
+              <g
+                transform={`translate(${(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2 - 40}, ${LINK_BEAM.viewH - 28})`}
+                fontFamily="system-ui,sans-serif"
+                fontSize="8"
+                fill="#64748b"
+              >
                 <path d="M0 4 L6 0 L6 8 Z" fill="#22d3ee" opacity="0.8" transform="rotate(45 3 4)" />
                 <text x="12" y="7">Subida</text>
                 <path d="M72 4 L78 0 L78 8 Z" fill="#4ade80" opacity="0.8" transform="rotate(-135 75 4)" />
