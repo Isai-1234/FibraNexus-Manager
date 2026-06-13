@@ -50,7 +50,7 @@ export function mikrotikRequest(router, method, path, body = null) {
         ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
       },
       rejectUnauthorized: false,
-      timeout: 15000,
+      timeout: 6000,
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });

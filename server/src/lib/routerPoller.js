@@ -58,16 +58,18 @@ export async function pollAllRoutersForOrg(orgId, { maxPoll = 20 } = {}) {
 
   const candidates = routers.filter((r) => isApiPollableRouter(r) && isRouterPollStale(r));
   const toPoll = candidates.slice(0, maxPoll);
-  let online = 0;
-  let offline = 0;
 
-  for (const router of toPoll) {
-    const result = await pollRouterApi(router);
-    if (result.online) online++;
-    else offline++;
-    await persistRouterPollResult(router, result);
-  }
+  // Paralelo: N routers offline ya no suman sus timeouts de 6s c/u
+  const results = await Promise.all(
+    toPoll.map(async (router) => {
+      const result = await pollRouterApi(router);
+      await persistRouterPollResult(router, result);
+      return result;
+    }),
+  );
 
+  const online = results.filter((r) => r.online).length;
+  const offline = results.filter((r) => !r.online).length;
   return { polled: toPoll.length, online, offline, skipped: routers.length - toPoll.length };
 }
 

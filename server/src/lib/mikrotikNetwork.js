@@ -194,17 +194,28 @@ export async function mikrotikSnmpWalk(router, { address, community, oid }) {
   }
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`snmp-via-router timeout ${ms}ms`)), ms)),
+  ]);
+}
+
 export async function snmpGetViaRouter(router, host, community, oids) {
-  const out = {};
-  for (const oid of oids) {
-    try {
-      const val = await mikrotikSnmpGet(router, { address: host, community, oid });
-      if (val != null) out[oid] = String(val);
-    } catch {
-      /* OID no disponible */
-    }
-  }
-  return out;
+  // Paralelo + timeout duro por OID: 3 OIDs × 15s serial → max 1.5s paralelo
+  const entries = await Promise.all(
+    oids.map(async (oid) => {
+      try {
+        const val = await withTimeout(
+          mikrotikSnmpGet(router, { address: host, community, oid }),
+          1500,
+        );
+        if (val != null) return [oid, String(val)];
+      } catch { /* OID no disponible o timeout */ }
+      return null;
+    }),
+  );
+  return Object.fromEntries(entries.filter(Boolean));
 }
 
 export async function snmpWalkViaRouter(router, host, community, baseOid) {

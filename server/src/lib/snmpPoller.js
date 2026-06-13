@@ -1,6 +1,15 @@
 import snmp from 'net-snmp';
 import { snmpGetViaRouter, snmpWalkViaRouter, mikrotikSnmpGet } from './mikrotikNetwork.js';
 
+function withHardTimeout(promise, ms, label = '') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Hard timeout ${label} (${ms}ms)`)), ms),
+    ),
+  ]);
+}
+
 const SYS_DESCR = '1.3.6.1.2.1.1.1.0';
 const SYS_NAME = '1.3.6.1.2.1.1.5.0';
 const SYS_UPTIME = '1.3.6.1.2.1.1.3.0';
@@ -100,13 +109,16 @@ export function snmpWalk(host, community, baseOid, { port = 161, timeout = 8000,
 }
 
 async function getIndexedViaRouter(router, host, community) {
-  // P0: 6 columnas en paralelo — de 24 awaits seriales a 6 cadenas independientes
+  // 6 columnas en paralelo; cada índice tiene 1s hard timeout (CPE offline falla rápido)
   const entries = await Promise.all(
     Object.entries(UBNT_COLS).map(async ([key, col]) => {
       for (const idx of [1, 2, 3, 0]) {
         const oid = `${UBNT_WL_STAT}.${col}.${idx}`;
         try {
-          const val = await mikrotikSnmpGet(router, { address: host, community, oid });
+          const val = await withHardTimeout(
+            mikrotikSnmpGet(router, { address: host, community, oid }),
+            1000,
+          );
           if (val != null && val !== '') return [key, val];
         } catch { /* siguiente índice */ }
       }
@@ -283,7 +295,7 @@ export async function pollDeviceSnmp(equipment, router = null) {
 }
 
 export async function pollEquipmentList(items, routerBySiteId = new Map()) {
-  // P0: todos los dispositivos en paralelo — de O(n×T) serial a O(max(T)) paralelo
+  // Todos los dispositivos en paralelo; 6s hard ceiling por dispositivo
   return Promise.all(
     items.map(async (eq) => {
       if (!eq.ipAddress || !eq.snmpCommunity) {
@@ -291,7 +303,7 @@ export async function pollEquipmentList(items, routerBySiteId = new Map()) {
       }
       const router = eq.siteId ? routerBySiteId.get(eq.siteId) : null;
       try {
-        const snmpData = await pollDeviceSnmp(eq, router);
+        const snmpData = await withHardTimeout(pollDeviceSnmp(eq, router), 6000, eq.name);
         return { id: eq.id, name: eq.name, ...snmpData };
       } catch (err) {
         return { id: eq.id, name: eq.name, online: false, error: err.message };

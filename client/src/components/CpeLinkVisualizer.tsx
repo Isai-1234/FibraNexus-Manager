@@ -117,6 +117,7 @@ interface Props {
   } | null
   siteName?: string
   immersive?: boolean
+  isStale?: boolean
   onExpand?: () => void
   onRefresh?: () => void
   refreshing?: boolean
@@ -472,7 +473,8 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
 }
 
 export default function CpeLinkVisualizer({
-  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false, className = '',
+  equipment, siteName, immersive = false, isStale = false, onExpand, onRefresh, refreshing = false,
+  className = '',
   cpeImageUrl = LINK_VISUAL_ASSETS.cpe,
   towerImageUrl = LINK_VISUAL_ASSETS.tower,
 }: Props) {
@@ -600,18 +602,54 @@ export default function CpeLinkVisualizer({
             )}
           </div>
           <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm ${
-            online
+            online && !isStale
               ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 shadow-[0_0_20px_-5px_rgba(52,211,153,0.4)]'
-              : 'bg-red-500/10 text-red-300 border border-red-400/20'
+              : online && isStale
+                ? 'bg-amber-500/10 text-amber-300 border border-amber-400/20'
+                : 'bg-red-500/10 text-red-300 border border-red-400/20'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]' : 'bg-red-400'}`} />
-            {online ? 'En línea' : 'Sin enlace'}
+            <span className={`w-2 h-2 rounded-full ${
+              online && !isStale ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]'
+              : online && isStale ? 'bg-amber-400'
+              : 'bg-red-400'
+            }`} />
+            {online && !isStale ? 'En línea' : online && isStale ? 'Datos desactualizados' : 'Desconectada'}
           </span>
-          {equipment.snmpUptime && (
+          {isStale && (
+            <span className="text-[10px] text-amber-600/80 font-mono flex items-center gap-1">
+              Última lectura: {equipment.snmpPolledAt ? new Date(equipment.snmpPolledAt).toLocaleTimeString('es-CL') : 'desconocida'}
+            </span>
+          )}
+          {!isStale && equipment.snmpUptime && (
             <span className="text-[10px] text-slate-600 font-mono">uptime {equipment.snmpUptime}</span>
           )}
         </div>
       </div>
+
+      {/* banner offline — visible cuando CPE desconectada, sin animaciones */}
+      {!online && (
+        <div className="mx-4 mb-1 flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3">
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-red-300">Antena desconectada</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {isStale
+                ? 'Sin datos recientes. Pulsa ↻ para verificar el estado actual.'
+                : `Sin respuesta SNMP${equipment.snmpPolledAt ? ` — verificado ${new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}` : ''}.`}
+            </p>
+          </div>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="ml-auto shrink-0 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs hover:bg-red-500/20 transition disabled:opacity-40"
+            >
+              {refreshing ? '…' : '↻ Verificar'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* escena enlace */}
       <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center justify-center' : ''}`}>

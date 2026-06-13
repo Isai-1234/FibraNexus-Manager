@@ -123,14 +123,21 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   }
 
   async function refreshSnmpPoll() {
-    const antenna = clientEquipment.find((e) => e.type === 'cpe') || clientEquipment[0]
-    if (!antenna?.id) return
+    if (!clientEquipment.length) return
     setSnmpRefreshing(true)
     try {
-      await api().post(`/network/equipment/${antenna.id}/snmp/poll`)
-      await loadClientEquipment()
+      // Dispara el poll en background → respuesta 202 inmediata
+      await api().post(`/clients/${clientId}/equipment/refresh`)
+      // Polling cada 2s hasta que los datos sean frescos (máx 8 intentos = 16s)
+      for (let i = 0; i < 8; i++) {
+        await new Promise<void>((r) => setTimeout(r, 2000))
+        const res = await api().get(`/clients/${clientId}/equipment`)
+        const items: any[] = Array.isArray(res.data) ? res.data : []
+        setClientEquipment(items)
+        if (!items.some((e: any) => e.isStale)) break
+      }
     } catch (err: any) {
-      alert(err.response?.data?.error || 'No se pudo actualizar SNMP')
+      alert(err.response?.data?.error || 'No se pudo iniciar actualización SNMP')
     }
     setSnmpRefreshing(false)
   }
@@ -1025,6 +1032,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               <CpeLinkVisualizer
                 equipment={primaryAntenna || null}
                 siteName={primaryAntenna?.siteName}
+                isStale={primaryAntenna?.isStale ?? false}
                 onExpand={() => setLinkFullscreen(true)}
                 onRefresh={primaryAntenna ? refreshSnmpPoll : undefined}
                 refreshing={snmpRefreshing}
@@ -1166,6 +1174,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 equipment={primaryAntenna}
                 siteName={primaryAntenna.siteName}
                 immersive
+                isStale={primaryAntenna?.isStale ?? false}
                 onExpand={() => setLinkFullscreen(true)}
                 onRefresh={refreshSnmpPoll}
                 refreshing={snmpRefreshing}
@@ -1604,6 +1613,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 equipment={primaryAntenna || null}
                 siteName={primaryAntenna?.siteName}
                 immersive
+                isStale={primaryAntenna?.isStale ?? false}
                 onRefresh={primaryAntenna ? refreshSnmpPoll : undefined}
                 refreshing={snmpRefreshing}
               />

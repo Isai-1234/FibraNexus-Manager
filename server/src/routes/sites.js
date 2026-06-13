@@ -9,7 +9,8 @@ import { inferConnectionMethod } from '../lib/tenant.js';
 import { listPppoeActive, listPppoeSecrets, listSimpleQueues } from '../lib/mikrotikClient.js';
 import { loadRouter } from '../lib/networkProvision.js';
 import { assignEquipmentToClient, enrichEquipmentWithClients, syncEquipmentToClientService } from '../lib/equipmentClientLink.js';
-import { refreshStaleEquipmentStatus, attachSnmpDisplay } from '../lib/equipmentStatus.js';
+import { attachSnmpDisplay, isPollStale, isPollable } from '../lib/equipmentStatus.js';
+import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 
 export const sitesRouter = Router();
@@ -44,18 +45,18 @@ sitesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
 
     const flatSites = await db.select().from(sites).where(orgFilter(sites, orgId));
     const allEquipment = await db.select().from(equipment).where(orgFilter(equipment, orgId));
-    const polledEquipment = await refreshStaleEquipmentStatus(allEquipment, orgId);
 
+    // Capa 4: caché BD directo — sin SNMP en el handler HTTP
     const enrichedEquipment = await enrichEquipmentWithClients(
-      polledEquipment.map((item) => {
+      allEquipment.map((item) => {
         const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
-        const base = {
+        return {
           ...attachSnmpDisplay(item),
+          isStale: isPollStale(item.lastSeen),
           connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
           agentConnected: item.type === 'router' && (connectedAgents.has(item.id.toString()) || item.status === 'online'),
           agentLastSeen: agent?.lastSeen || item.lastSeen || null,
         };
-        return base;
       }),
       orgId,
     );
@@ -290,11 +291,13 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
       await syncEquipmentToClientService(result, result.clientId, orgId);
     }
 
-    const { refreshStaleEquipmentStatus } = await import('../lib/equipmentStatus.js');
-    const [polled] = await refreshStaleEquipmentStatus([result], orgId, { maxPoll: 1 });
-    result = polled || result;
+    // Respuesta inmediata; SNMP en background si el equipo es polleable
+    if (isPollable(result)) {
+      dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: result.id, orgId })
+        .catch((err) => console.error('[sites-equipment-put] snmp poll error:', err.message));
+    }
 
-    const [enriched] = await enrichEquipmentWithClients([result], orgId);
+    const [enriched] = await enrichEquipmentWithClients([{ ...attachSnmpDisplay(result), isStale: true }], orgId);
     res.json(enriched[0]);
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });

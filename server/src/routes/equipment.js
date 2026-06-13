@@ -5,8 +5,9 @@ import { and, eq, ne } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { connectedAgents } from './routers.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
-import { refreshStaleEquipmentStatus, attachSnmpDisplay, isPollable } from '../lib/equipmentStatus.js';
+import { attachSnmpDisplay, isPollable, isPollStale } from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
+import { dispatch, JobNames } from '../lib/jobs/queue.js';
 
 export const equipmentRouter = Router();
 
@@ -62,21 +63,11 @@ equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) =>
       .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')))
       .limit(50);
 
-    const refreshed = await refreshStaleEquipmentStatus(allEquipment, orgId);
-    const enriched = refreshed.map((item) => {
-      if (item.type === 'router') {
-        const agent = connectedAgents.get(item.id.toString());
-        const routerInfo = agent?.routerInfo || item.credentials?.lastRouterInfo || null;
-        return {
-          ...item,
-          connectionMethod: inferConnectionMethod(item),
-          routerInfo,
-          agentLastSeen: agent?.lastSeen || item.lastSeen || null,
-        };
-      }
-      return item;
-    });
-    res.json(enriched);
+    // Capa 4: caché BD directo — sin SNMP en el handler HTTP
+    res.json(allEquipment.map((item) => ({
+      ...attachSnmpDisplay(item),
+      isStale: isPollStale(item.lastSeen),
+    })));
   } catch (error) {
     res.status(500).json({ error: 'Error al listar equipos' });
   }
@@ -108,8 +99,12 @@ equipmentRouter.put('/:id', requireRole('admin'), async (req, res) => {
     const updated = await patchEquipmentRow(orgId, equipmentId, req.body);
     if (!updated) return res.status(404).json({ error: 'Equipo no encontrado' });
 
-    const [refreshed] = await refreshStaleEquipmentStatus([updated], orgId, { maxPoll: 1 });
-    res.json(refreshed || attachSnmpDisplay(updated));
+    // Respuesta inmediata; SNMP en background si el equipo es polleable
+    res.json({ ...attachSnmpDisplay(updated), isStale: true });
+    if (isPollable(updated)) {
+      dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: updated.id, orgId })
+        .catch((err) => console.error('[equipment-put] snmp poll error:', err.message));
+    }
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });
   }
@@ -123,8 +118,11 @@ equipmentRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     const updated = await patchEquipmentRow(orgId, equipmentId, req.body);
     if (!updated) return res.status(404).json({ error: 'Equipo no encontrado' });
 
-    const [refreshed] = await refreshStaleEquipmentStatus([updated], orgId, { maxPoll: 1 });
-    res.json(refreshed || attachSnmpDisplay(updated));
+    res.json({ ...attachSnmpDisplay(updated), isStale: true });
+    if (isPollable(updated)) {
+      dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: updated.id, orgId })
+        .catch((err) => console.error('[equipment-patch] snmp poll error:', err.message));
+    }
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });
   }

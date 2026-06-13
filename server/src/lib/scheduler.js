@@ -10,24 +10,8 @@ export function startScheduler() {
 
   console.log('Billing scheduler active');
 
-  // Primera pasada SNMP ~15s después del arranque
-  setTimeout(async () => {
-    try {
-      const { db } = await import('../db/index.js');
-      const { organizations } = await import('../db/schema.js');
-      const { eq } = await import('drizzle-orm');
-      const { dispatch, JobNames } = await import('./jobs/queue.js');
-      const orgs = await db.select({ id: organizations.id }).from(organizations)
-        .where(eq(organizations.isActive, true));
-      for (const org of orgs) {
-        await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
-        await dispatch(JobNames.ROUTER_POLL_ORG, { orgId: org.id });
-      }
-      console.log('SNMP + router initial poll completed for %d org(s)', orgs.length);
-    } catch (err) {
-      console.error('SNMP initial poll error:', err.message);
-    }
-  }, 15000);
+  // Primera pasada SNMP ~15s después del arranque (fire-and-forget)
+  setTimeout(() => triggerSnmpRound('initial'), 15000);
 
   setInterval(async () => {
     const hour = new Date().getHours();
@@ -70,21 +54,27 @@ export function startScheduler() {
     }
   }, 6 * 60 * 60 * 1000);
 
-  // SNMP: antenas/CPE con IP + community — cada 3 minutos por ISP activo
-  setInterval(async () => {
-    try {
-      const { db } = await import('../db/index.js');
-      const { organizations } = await import('../db/schema.js');
-      const { eq } = await import('drizzle-orm');
-      const { dispatch, JobNames } = await import('./jobs/queue.js');
-      const orgs = await db.select({ id: organizations.id }).from(organizations)
-        .where(eq(organizations.isActive, true));
-      for (const org of orgs) {
-        await dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id });
-        await dispatch(JobNames.ROUTER_POLL_ORG, { orgId: org.id });
-      }
-    } catch (err) {
-      console.error('SNMP/router scheduler error:', err.message);
+  // SNMP: antenas/CPE — cada 3 minutos, fire-and-forget para no bloquear el event loop
+  setInterval(() => triggerSnmpRound('scheduled'), 3 * 60 * 1000);
+}
+
+async function triggerSnmpRound(label) {
+  try {
+    const { db } = await import('../db/index.js');
+    const { organizations } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const { dispatch, JobNames } = await import('./jobs/queue.js');
+    const orgs = await db.select({ id: organizations.id }).from(organizations)
+      .where(eq(organizations.isActive, true));
+    // Fire-and-forget por org: el poll puede tardar más que el intervalo y eso es OK
+    for (const org of orgs) {
+      dispatch(JobNames.SNMP_POLL_ORG, { orgId: org.id })
+        .catch((err) => console.error('SNMP poll org %d error: %s', org.id, err.message));
+      dispatch(JobNames.ROUTER_POLL_ORG, { orgId: org.id })
+        .catch((err) => console.error('Router poll org %d error: %s', org.id, err.message));
     }
-  }, 3 * 60 * 1000);
+    console.log('[scheduler:%s] SNMP + router dispatched for %d org(s)', label, orgs.length);
+  } catch (err) {
+    console.error('[scheduler:%s] error: %s', label, err.message);
+  }
 }
