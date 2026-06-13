@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
-import cpeArt from '../assets/link/cpe-litebeam.svg'
-import towerArt from '../assets/link/tower-sector.svg'
+import cpeArt from '../assets/link/Gemini_Generated_Image_uepoonuepoonuepo-removebg-preview.png'
+import towerArt from '../assets/link/Gemini_Generated_Image_tc60kttc60kttc60-removebg-preview.png'
 
 /** Layout unificado viewBox 580×250 — imágenes y haces comparten coordenadas */
 type ImgBox = {
@@ -20,16 +20,16 @@ const LINK_LAYOUT = {
   /** true = SVG en assets/link/; false = dibujo integrado fallback */
   useAssetFiles: true,
   cpeBox: {
-    x: 6, y: 118, w: 192, h: 128,
+    x: 4, y: 108, w: 202, h: 140,
     align: 'xMaxYMax',
-    srcAspect: 1088 / 991,
-    hornRel: { x: 0.95, y: 0.36 },
+    srcAspect: 526 / 474,   // Litebeam CPE — 526×474
+    hornRel: { x: 0.90, y: 0.40 },
   } satisfies ImgBox,
   towerBox: {
-    x: 390, y: 6, w: 184, h: 232,
+    x: 368, y: 6, w: 208, h: 242,
     align: 'xMinYMax',
-    srcAspect: 1088 / 991,
-    hornRel: { x: 0.05, y: 0.50 },
+    srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
+    hornRel: { x: 0.22, y: 0.38 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
