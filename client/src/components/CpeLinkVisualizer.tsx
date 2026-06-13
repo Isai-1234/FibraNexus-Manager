@@ -397,12 +397,12 @@ function SignalBeams({
         d={corePath}
         fill="none"
         stroke={`url(#${uid}-beamTx)`}
-        strokeWidth="2.8"
+        strokeWidth="3"
         strokeLinecap="round"
-        strokeDasharray="10 18 4 22"
-        opacity={0.55 + (strength / 100) * 0.35}
-        className="beam-tx beam-core"
-        style={{ animationDuration: `${txDur * 0.9}s` }}
+        strokeDasharray="12 12 3 16"
+        opacity={Math.max(0.62, 0.55 + (strength / 100) * 0.35)}
+        className="beam-core"
+        style={{ animationDuration: `${txDur * 0.9}s, 2.4s` }}
       />
 
       {paths.slice(0, Math.ceil(beamCount / 2)).map((b) => (
@@ -487,10 +487,16 @@ export default function CpeLinkVisualizer({
           background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #060a12 45%, #030508 100%);
         }
         @keyframes beam-tx-flow {
-          to { stroke-dashoffset: -90; }
+          from { stroke-dashoffset: 0; }
+          to   { stroke-dashoffset: -90; }
         }
         @keyframes beam-rx-flow {
-          to { stroke-dashoffset: 90; }
+          from { stroke-dashoffset: 0; }
+          to   { stroke-dashoffset: 90; }
+        }
+        @keyframes beam-core-pulse {
+          0%, 100% { opacity: 0.62; }
+          50%       { opacity: 1; }
         }
         @keyframes aurora-drift {
           0%, 100% { transform: translateX(0) scale(1); opacity: 0.4; }
@@ -498,15 +504,28 @@ export default function CpeLinkVisualizer({
         }
         @keyframes grid-fade {
           0%, 100% { opacity: 0.03; }
-          50% { opacity: 0.06; }
+          50% { opacity: 0.055; }
         }
         @media (prefers-reduced-motion: no-preference) {
-          .beam-tx { animation: beam-tx-flow linear infinite; }
-          .beam-rx { animation: beam-rx-flow linear infinite; }
+          .beam-tx {
+            animation-name: beam-tx-flow;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+          }
+          .beam-rx {
+            animation-name: beam-rx-flow;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+          }
+          .beam-core {
+            animation-name: beam-tx-flow, beam-core-pulse;
+            animation-timing-function: linear, ease-in-out;
+            animation-iteration-count: infinite, infinite;
+          }
           .aurora-blob { animation: aurora-drift 8s ease-in-out infinite; }
-          .floor-grid { animation: grid-fade 6s ease-in-out infinite; }
+          .floor-grid  { animation: grid-fade 6s ease-in-out infinite; }
         }
-        .beam-core { filter: drop-shadow(0 0 8px ${theme.glow}); }
+        .beam-core { filter: drop-shadow(0 0 10px ${theme.glow}); }
       `}</style>
 
       {/* aurora atmosphere */}
@@ -573,18 +592,21 @@ export default function CpeLinkVisualizer({
       </div>
 
       {/* escena enlace */}
-      <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center' : ''}`}>
-        <div className={`relative w-full ${immersive ? 'max-h-[min(58vh,560px)]' : 'max-h-[320px]'} aspect-[580/250]`}>
+      <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center justify-center' : ''}`}>
+        <div className={`relative w-full mx-auto aspect-[580/250] overflow-hidden ${immersive ? 'max-w-[1300px]' : 'max-w-[742px]'}`}>
           <svg
             viewBox="0 0 580 250"
             className="absolute inset-0 w-full h-full"
             aria-hidden
           >
             <defs>
-              <filter id={`${uid}-beamGlow`} x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="2" result="b" />
+              <filter id={`${uid}-beamGlow`} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="b" />
                 <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              <clipPath id={`${uid}-gridClip`}>
+                <rect x="0" y="158" width="580" height="95" />
+              </clipPath>
               <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor={theme.primary} stopOpacity="0.1" />
                 <stop offset="40%" stopColor={theme.primary} stopOpacity="1" />
@@ -608,7 +630,7 @@ export default function CpeLinkVisualizer({
               </linearGradient>
             </defs>
 
-            <g className="floor-grid" opacity="0.04">
+            <g className="floor-grid" opacity="0.04" clipPath={`url(#${uid}-gridClip)`}>
               {Array.from({ length: 12 }, (_, i) => (
                 <line key={`h${i}`} x1="0" y1={140 + i * 8} x2="580" y2={140 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
               ))}
