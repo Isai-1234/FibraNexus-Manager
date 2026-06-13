@@ -1,0 +1,13 @@
+{
+  "name": "FibraNexus Manager",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "postStartCommand": "bash scripts/sync-main.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "git.rebaseWhenPull": false,
+        "git.confirmSync": false
+      }
+    }
+  }
+}
