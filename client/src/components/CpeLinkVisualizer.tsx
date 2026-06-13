@@ -1,33 +1,49 @@
 import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
-import cpeArt from '../assets/link/cpe-litebeam.png'
-import towerArt from '../assets/link/tower-sector.png'
+import cpeArt from '../assets/link/cpe-litebeam.svg'
+import towerArt from '../assets/link/tower-sector.svg'
 
 /** Layout unificado viewBox 580×250 — imágenes y haces comparten coordenadas */
-const LINK_SRC_ASPECT = 1024 / 576
-
-type ImgBox = { x: number; y: number; w: number; h: number; align: 'xMaxYMax' | 'xMinYMax'; hornRel: { x: number; y: number } }
+type ImgBox = {
+  x: number
+  y: number
+  w: number
+  h: number
+  align: 'xMaxYMax' | 'xMinYMax'
+  srcAspect: number
+  hornRel: { x: number; y: number }
+}
 
 const LINK_LAYOUT = {
   viewW: 580,
   viewH: 250,
-  /** PNG 1024×576 — cajas con meet + punta relativa dentro del bitmap renderizado */
-  cpeBox: { x: 8, y: 108, w: 186, h: 136, align: 'xMaxYMax', hornRel: { x: 0.86, y: 0.24 } } satisfies ImgBox,
-  towerBox: { x: 396, y: 14, w: 176, h: 224, align: 'xMinYMax', hornRel: { x: 0.1, y: 0.2 } } satisfies ImgBox,
-  /** SVG integrado — posición calibrada para que el horn local coincida con el haz */
+  /** true = SVG en assets/link/; false = dibujo integrado fallback */
+  useAssetFiles: true,
+  cpeBox: {
+    x: 6, y: 118, w: 192, h: 128,
+    align: 'xMaxYMax',
+    srcAspect: 16 / 9,
+    hornRel: { x: 0.84, y: 0.26 },
+  } satisfies ImgBox,
+  towerBox: {
+    x: 390, y: 6, w: 184, h: 232,
+    align: 'xMinYMax',
+    srcAspect: 2 / 3,
+    hornRel: { x: 0.16, y: 0.36 },
+  } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
-  preferVector: true,
 } as const
 
 function renderedImageRect(box: ImgBox) {
   const boxAspect = box.w / box.h
+  const srcAspect = box.srcAspect
   let rw = box.w
   let rh = box.h
-  if (LINK_SRC_ASPECT > boxAspect) {
-    rh = box.w / LINK_SRC_ASPECT
+  if (srcAspect > boxAspect) {
+    rh = box.w / srcAspect
   } else {
-    rw = box.h * LINK_SRC_ASPECT
+    rw = box.h * srcAspect
   }
   const ox = box.align === 'xMaxYMax' ? box.x + box.w - rw : box.x
   const oy = box.y + box.h - rh
@@ -49,27 +65,28 @@ function hornFromVector(v: { tx: number; ty: number; scale: number; horn: { x: n
   }
 }
 
-function linkBeamEndpoints(preferVector: boolean) {
-  if (preferVector) {
+function linkBeamEndpoints(useAssetFiles: boolean) {
+  if (useAssetFiles) {
     return {
-      cpe: hornFromVector(LINK_LAYOUT.vectorCpe),
-      tower: hornFromVector(LINK_LAYOUT.vectorTower),
+      cpe: hornFromBox(LINK_LAYOUT.cpeBox),
+      tower: hornFromBox(LINK_LAYOUT.towerBox),
     }
   }
   return {
-    cpe: hornFromBox(LINK_LAYOUT.cpeBox),
-    tower: hornFromBox(LINK_LAYOUT.towerBox),
+    cpe: hornFromVector(LINK_LAYOUT.vectorCpe),
+    tower: hornFromVector(LINK_LAYOUT.vectorTower),
   }
 }
 
 const LINK_BEAM = {
   viewW: LINK_LAYOUT.viewW,
   viewH: LINK_LAYOUT.viewH,
-  ...linkBeamEndpoints(LINK_LAYOUT.preferVector),
+  ...linkBeamEndpoints(LINK_LAYOUT.useAssetFiles),
 } as const
 
+/** Trazo oscuro sobre transparente → blanco nítido en tema oscuro */
 const LINK_ART_FILTER =
-  'drop-shadow(0 0 2px rgba(255,255,255,0.95)) drop-shadow(0 0 10px rgba(255,255,255,0.35)) contrast(1.45) brightness(1.15)'
+  'brightness(0) saturate(100%) invert(1) contrast(1.08) drop-shadow(0 0 10px rgba(255,255,255,0.25))'
 
 export const LINK_VISUAL_ASSETS = {
   cpe: cpeArt,
@@ -219,11 +236,11 @@ function LinkHardwareSvg({
 }) {
   const [cpeImgOk, setCpeImgOk] = useState(true)
   const [towerImgOk, setTowerImgOk] = useState(true)
-  const { cpeBox, towerBox, vectorCpe, vectorTower, preferVector } = LINK_LAYOUT
-  const beam = linkBeamEndpoints(preferVector)
+  const { cpeBox, towerBox, vectorCpe, vectorTower, useAssetFiles } = LINK_LAYOUT
+  const beam = linkBeamEndpoints(useAssetFiles)
   const artStyle = { filter: LINK_ART_FILTER, opacity: 1 }
-  const showCpeImg = !preferVector && Boolean(cpeSrc) && cpeImgOk
-  const showTowerImg = !preferVector && Boolean(towerSrc) && towerImgOk
+  const showCpeImg = useAssetFiles && Boolean(cpeSrc) && cpeImgOk
+  const showTowerImg = useAssetFiles && Boolean(towerSrc) && towerImgOk
 
   return (
     <g aria-hidden>
