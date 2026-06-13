@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2, Antenna, Pencil, Search, Send, MessageSquare } from 'lucide-react'
 import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
@@ -93,6 +93,14 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [sendingReply, setSendingReply] = useState(false)
   const [linkFullscreen, setLinkFullscreen] = useState(false)
   const [snmpRefreshing, setSnmpRefreshing] = useState(false)
+  const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'error' | 'success' | 'warning' | 'info' }[]>([])
+  const toastId = useRef(0)
+
+  function toast(msg: string, type: 'error' | 'success' | 'warning' | 'info' = 'info') {
+    const id = ++toastId.current
+    setToasts((prev) => [...prev, { id, msg, type }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000)
+  }
 
   function api() {
     return axios.create({
@@ -126,18 +134,20 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     if (!clientEquipment.length) return
     setSnmpRefreshing(true)
     try {
-      // Dispara el poll en background → respuesta 202 inmediata
+      // 202 inmediato — el poll SNMP corre en background
       await api().post(`/clients/${clientId}/equipment/refresh`)
-      // Polling cada 2s hasta que los datos sean frescos (máx 8 intentos = 16s)
-      for (let i = 0; i < 8; i++) {
+      // Polling cada 2s hasta datos frescos o confirmación offline (máx 10 intentos = 20s)
+      for (let i = 0; i < 10; i++) {
         await new Promise<void>((r) => setTimeout(r, 2000))
         const res = await api().get(`/clients/${clientId}/equipment`)
         const items: any[] = Array.isArray(res.data) ? res.data : []
         setClientEquipment(items)
+        // Parar si ningún equipo tiene datos obsoletos (incluye offline fresco = isStale:false)
         if (!items.some((e: any) => e.isStale)) break
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || 'No se pudo iniciar actualización SNMP')
+      // Sin alert nativo — mostrar banner inline que no bloquea el browser
+      toast(err.response?.data?.error || 'No se pudo iniciar actualización SNMP', 'error')
     }
     setSnmpRefreshing(false)
   }
@@ -204,7 +214,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setReplyText('')
       setTickets((prev) => prev.map((t) => t.id === res.data.id ? { ...t, status: res.data.status } : t))
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Error al enviar respuesta')
+      toast(err.response?.data?.error || 'Error al enviar respuesta', 'error')
     }
     setSendingReply(false)
   }
@@ -217,7 +227,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setTicketDetail(res.data)
       setTickets((prev) => prev.map((t) => t.id === res.data.id ? { ...t, status: res.data.status } : t))
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Error al actualizar estado')
+      toast(err.response?.data?.error || 'Error al actualizar estado', 'error')
     }
     setTicketLoading(false)
   }
@@ -225,13 +235,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   async function provisionNetwork(serviceId: number, serviceRouterId?: number | null) {
     const routerId = provisionRouterId || serviceRouterId || null
     if (!routerId) {
-      alert('Selecciona un router MikroTik')
+      toast('Selecciona un router MikroTik', 'warning')
       return
     }
     const router = routers.find((r) => r.id === routerId)
     if (router && !router.hasApiCredentials) {
       if (!routerCredForm.routerUser || !routerCredForm.routerPass) {
-        alert('Configura usuario y contraseña API del router antes de provisionar')
+        toast('Configura usuario y contraseña API del router antes de provisionar', 'warning')
         return
       }
       setSavingRouterCred(true)
@@ -245,7 +255,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         const rRes = await api().get('/routers')
         setRouters(Array.isArray(rRes.data) ? rRes.data : [])
       } catch (e: any) {
-        alert('Error al guardar credenciales: ' + (e.response?.data?.error || e.message))
+        toast('Error al guardar credenciales: ' + (e.response?.data?.error || e.message), 'error')
         setSavingRouterCred(false)
         return
       }
@@ -274,20 +284,20 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
           : s)))
       }
       await loadAll()
-      alert('Provisionado en router:\n' + parts.join('\n'))
+      toast('Provisionado en router: ' + parts.join(' · '), 'success')
     } catch (e: any) {
-      alert('Error: ' + (e.response?.data?.error || e.message))
+      toast('Error al provisionar: ' + (e.response?.data?.error || e.message), 'error')
     }
     setProvisioning(false)
   }
 
   async function createService() {
     if (!serviceForm.planId) {
-      alert('Selecciona un plan comercial')
+      toast('Selecciona un plan comercial', 'warning')
       return
     }
     if (serviceForm.provisionOnCreate && !serviceForm.routerId) {
-      alert('Selecciona el router donde provisionar, o desmarca "Provisionar en router"')
+      toast('Selecciona el router donde provisionar, o desmarca "Provisionar en router"', 'warning')
       return
     }
     setSavingService(true)
@@ -306,17 +316,17 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         billingDueDay: serviceForm.billingDueDay ?? 5,
         generateFirstInvoice: serviceForm.generateFirstInvoice !== false,
       })
-      if (res.data.invoiceWarning) alert('Servicio creado. Factura: ' + res.data.invoiceWarning)
+      if (res.data.invoiceWarning) toast('Servicio creado. Factura: ' + res.data.invoiceWarning, 'warning')
       else if (res.data.firstInvoice) {
-        alert(`Servicio creado.\nFactura ${res.data.firstInvoice.invoiceNumber} por $${Number(res.data.firstInvoice.total).toLocaleString('es-CL')}`)
+        toast(`Servicio creado · Factura ${res.data.firstInvoice.invoiceNumber} por $${Number(res.data.firstInvoice.total).toLocaleString('es-CL')}`, 'success')
       } else if (res.data.networkWarning) {
-        alert('Servicio creado con advertencia: ' + res.data.networkWarning)
+        toast('Servicio creado con advertencia: ' + res.data.networkWarning, 'warning')
       } else if (res.data.network) {
         const n = res.data.network
         const parts = ['Servicio creado.']
-        if (n.username) parts.push(`PPPoE: ${n.username} / ${n.password}`)
+        if (n.username) parts.push(`PPPoE: ${n.username}`)
         if (n.queueName) parts.push(`Cola: ${n.queueName}`)
-        alert(parts.join('\n'))
+        toast(parts.join(' · '), 'success')
       }
       setShowServiceForm(false)
       setServiceForm(defaultServiceForm())
@@ -325,7 +335,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       }
       loadAll()
     } catch (e: any) {
-      alert('Error: ' + (e.response?.data?.error || e.message))
+      toast('Error al crear servicio: ' + (e.response?.data?.error || e.message), 'error')
     }
     setSavingService(false)
   }
@@ -340,10 +350,10 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
         : `Factura ciclo completo\nTotal: $${p.total.toLocaleString('es-CL')}\nVence: ${formatDateCL(p.dueDate)}\n\n¿Generar?`
       if (!confirm(msg)) { setGeneratingInvoice(null); return }
       const res = await api().post(`/invoices/service/${serviceId}`)
-      alert(res.data.message + `\nTotal: $${Number(res.data.total).toLocaleString('es-CL')}`)
+      toast(res.data.message + ` · Total: $${Number(res.data.total).toLocaleString('es-CL')}`, 'success')
       loadAll()
     } catch (e: any) {
-      alert('Error: ' + (e.response?.data?.error || e.message))
+      toast('Error al generar factura: ' + (e.response?.data?.error || e.message), 'error')
     }
     setGeneratingInvoice(null)
   }
@@ -359,7 +369,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       await api().delete(`/services/${serviceId}`)
       loadAll()
     } catch (e: any) {
-      alert('Error: ' + (e.response?.data?.error || e.message))
+      toast('Error al eliminar servicio: ' + (e.response?.data?.error || e.message), 'error')
     }
   }
 
@@ -368,10 +378,10 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       const action = currentStatus === 'active' ? 'suspend' : 'reactivate'
       const res = await api().put(`/services/${serviceId}/${action}`)
       const net = res.data.network
-      if (net?.error) alert('Servicio actualizado pero red: ' + net.error)
-      else if (net?.skipped) alert('Servicio actualizado (sin provisión en router)')
+      if (net?.error) toast('Servicio actualizado pero red: ' + net.error, 'warning')
+      else if (net?.skipped) toast('Servicio actualizado (sin provisión en router)', 'info')
       loadAll()
-    } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
+    } catch (e: any) { toast('Error: ' + (e.response?.data?.error || e.message), 'error') }
   }
 
   async function payInvoice() {
@@ -380,13 +390,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       await api().post('/payments', { invoiceId: showPayModal.id, method: payMethod, amount: showPayModal.total })
       setShowPayModal(null)
       loadAll()
-    } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
+    } catch (e: any) { toast('Error al registrar pago: ' + (e.response?.data?.error || e.message), 'error') }
   }
 
   async function suggestFreeIp(target: 'create' | 'edit' | 'service', siteId?: number) {
     const sid = siteId || (target === 'edit' ? editingEquip?.siteId : equipForm.siteId || serviceForm.siteId)
     if (!sid) {
-      alert('Selecciona un nodo primero')
+      toast('Selecciona un nodo primero', 'warning')
       return
     }
     setSuggestingIp(true)
@@ -405,7 +415,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setIpSuggestHint(`Desde pool ${res.data.pool} · ${res.data.ranges}${macHint}`)
       if (!mac) await lookupMacForIp(ip, sid, target)
     } catch (e: any) {
-      alert(e.response?.data?.error || e.message)
+      toast(e.response?.data?.error || e.message, 'error')
     }
     setSuggestingIp(false)
   }
@@ -440,7 +450,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setIpSuggestHint('')
       await loadClientEquipment()
       loadAll()
-    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+    } catch (e: any) { toast(e.response?.data?.error || e.message, 'error') }
   }
 
   function openEditEquip(eq: any) {
@@ -471,7 +481,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setIpSuggestHint('')
       await loadClientEquipment()
       loadAll()
-    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+    } catch (e: any) { toast(e.response?.data?.error || e.message, 'error') }
   }
 
   async function unlinkEquipment(equipmentId: number, name: string) {
@@ -479,7 +489,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     try {
       await api().patch(`/sites/equipment/${equipmentId}`, { clientId: null })
       await loadClientEquipment()
-    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+    } catch (e: any) { toast(e.response?.data?.error || e.message, 'error') }
   }
 
   function applyEquipmentToService(equipmentId: string) {
@@ -1619,6 +1629,25 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {toasts.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
+          {toasts.map((t) => (
+            <div key={t.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border backdrop-blur-sm max-w-sm pointer-events-auto ${
+              t.type === 'error'   ? 'bg-red-950/90 border-red-500/30 text-red-200' :
+              t.type === 'success' ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-200' :
+              t.type === 'warning' ? 'bg-amber-950/90 border-amber-500/30 text-amber-200' :
+                                     'bg-slate-900/90 border-white/10 text-slate-200'
+            }`}>
+              <span className="text-sm leading-snug flex-1">{t.msg}</span>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                className="shrink-0 opacity-50 hover:opacity-100 text-lg leading-none"
+              >×</button>
+            </div>
+          ))}
         </div>
       )}
     </div>

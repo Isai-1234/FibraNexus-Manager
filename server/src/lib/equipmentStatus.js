@@ -90,10 +90,9 @@ export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 }
       credentials: { ...(row.credentials || {}), lastSnmp: r },
     };
 
-    if (!r.error) {
-      await db.update(equipment).set({ ...patch, updatedAt: new Date() })
-        .where(eq(equipment.id, row.id));
-    }
+    // Siempre escribir — un error de SNMP es offline confirmado
+    await db.update(equipment).set({ ...patch, updatedAt: new Date() })
+      .where(eq(equipment.id, row.id));
 
     byId.set(row.id, attachSnmpDisplay({ ...row, ...patch }));
   }
@@ -116,10 +115,10 @@ export async function pollAllSnmpForOrg(orgId) {
     if (r.skipped) continue;
     const row = items.find((e) => e.id === r.id);
     if (!row) continue;
-    if (r.error) offline++;
-    else if (r.online) online++;
+    if (r.online) online++;
     else offline++;
-    if (!r.error) await persistPollResult(row, r);
+    // Siempre persistir — error = offline confirmado; sin esto el status queda 'online' en BD
+    await persistPollResult(row, r);
   }
 
   return { polled: pollable.length, online, offline };

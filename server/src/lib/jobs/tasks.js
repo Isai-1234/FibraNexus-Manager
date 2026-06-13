@@ -23,11 +23,15 @@ export const jobTasks = {
         .limit(1);
       siteRouter = r || null;
     }
-    const result = await pollDeviceSnmp(eqRow, siteRouter);
-    if (!result.error) {
-      const { persistPollResult } = await import('../equipmentStatus.js');
-      await persistPollResult(eqRow, result);
+    let result;
+    try {
+      result = await pollDeviceSnmp(eqRow, siteRouter);
+    } catch (err) {
+      // Timeout o fallo de red = offline confirmado; persistir para que el dashboard sea correcto
+      result = { online: false, error: err.message, polledAt: new Date().toISOString() };
     }
+    const { persistPollResult } = await import('../equipmentStatus.js');
+    await persistPollResult(eqRow, result);
     return result;
   },
 
