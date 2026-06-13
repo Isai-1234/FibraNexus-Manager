@@ -29,7 +29,7 @@ export async function getHealthPayload() {
   return {
     status,
     name: 'FibraNexus Manager',
-    version: '1.2.2',
+    version: '1.2.3',
     commit: config.commit,
     features: ['ola1-billing', 'network-manager', 'auto-suspend', 'dhcp-pppoe-snmp', 'scale-ready', 'pppoe-server', 'next-free-ip', 'snmp-auto-status', 'dhcp-mac-sync'],
     runtime: {
