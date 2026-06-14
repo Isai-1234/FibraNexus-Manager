@@ -102,29 +102,56 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     // --- Fuente 2: RouterOS REST API para MikroTik ---
     if (isMikrotik && creds.routerUser && creds.routerPass) {
       try {
-        const rawIfaces = await mikrotikRequest(router, 'GET', '/interface');
         const now = Date.now();
-        const dtSec = latestSample ? Math.max(1, (now - latestSample.ts) / 1000) : 30;
+        let resultIfaces = null;
 
-        const newIfaces = (Array.isArray(rawIfaces) ? rawIfaces : [])
-          .filter(i => i.name && i.name !== 'lo' && i.type !== 'bridge')
-          .map(i => {
-            const rx = Number(i['rx-byte']) || 0;
-            const tx = Number(i['tx-byte']) || 0;
-            const prev = (latestSample?.ifaces || []).find(p => p.iface === i.name);
-            const rxBps = (prev && prev.rxRaw != null) ? Math.max(0, Math.round((rx - prev.rxRaw) / dtSec)) : 0;
-            const txBps = (prev && prev.txRaw != null) ? Math.max(0, Math.round((tx - prev.txRaw) / dtSec)) : 0;
-            return { iface: i.name, rxBps, txBps, rxRaw: rx, txRaw: tx, up: i.running !== false && i.running !== 'false' };
+        // Intento A: monitor-traffic — tasas instantáneas del hardware (respeta FastTrack/offloading)
+        try {
+          const monitorRaw = await mikrotikRequest(router, 'POST', '/interface/monitor-traffic', {
+            interface: 'all', duration: '1', once: '',
           });
+          const monItems = Array.isArray(monitorRaw) ? monitorRaw : [];
+          if (monItems.length > 0 && 'rx-bits-per-second' in (monItems[0] || {})) {
+            resultIfaces = monItems
+              .filter(i => i.name && i.name !== 'lo')
+              .map(i => ({
+                iface: i.name,
+                rxBps: Math.round(Number(i['rx-bits-per-second'] || 0) / 8),
+                txBps: Math.round(Number(i['tx-bits-per-second'] || 0) / 8),
+                rxRaw: null, txRaw: null, up: true,
+              }));
+            console.log(`[Bandwidth] MikroTik monitor-traffic OK: ${resultIfaces.length} ifaces`);
+          }
+        } catch (monErr) {
+          console.log(`[Bandwidth] monitor-traffic: ${monErr.message.slice(0, 60)} — usando delta`);
+        }
 
-        // Persistir muestra para próximo cálculo de BPS (fire-and-forget)
-        const newSample = { ts: now, ifaces: newIfaces };
-        const newSamples = [...(creds.bandwidthSamples || []).slice(-59), newSample];
-        db.update(equipment).set({ credentials: { ...creds, bandwidthSamples: newSamples } })
-          .where(eq(equipment.id, router.id)).catch(() => {});
+        // Intento B: delta de contadores acumulados (fallback para RouterOS sin monitor-traffic)
+        if (!resultIfaces) {
+          const rawIfaces = await mikrotikRequest(router, 'GET', '/interface');
+          const dtSec = latestSample ? Math.max(1, (now - latestSample.ts) / 1000) : 30;
 
-        const result = newIfaces
-          .filter(i => wanIface ? i.iface === wanIface : true)
+          const newIfaces = (Array.isArray(rawIfaces) ? rawIfaces : [])
+            .filter(i => i.name && i.name !== 'lo' && i.type !== 'bridge')
+            .map(i => {
+              const rx = Number(i['rx-byte']) || 0;
+              const tx = Number(i['tx-byte']) || 0;
+              const prev = (latestSample?.ifaces || []).find(p => p.iface === i.name);
+              const rxBps = (prev && prev.rxRaw != null) ? Math.max(0, Math.round((rx - prev.rxRaw) / dtSec)) : 0;
+              const txBps = (prev && prev.txRaw != null) ? Math.max(0, Math.round((tx - prev.txRaw) / dtSec)) : 0;
+              return { iface: i.name, rxBps, txBps, rxRaw: rx, txRaw: tx, up: i.running !== false && i.running !== 'false' };
+            });
+
+          const newSample = { ts: now, ifaces: newIfaces };
+          db.update(equipment)
+            .set({ credentials: { ...creds, bandwidthSamples: [...(creds.bandwidthSamples || []).slice(-59), newSample] } })
+            .where(eq(equipment.id, router.id)).catch(() => {});
+
+          resultIfaces = newIfaces;
+        }
+
+        const result = (resultIfaces || [])
+          .filter(i => wanIface ? i.iface === wanIface : i.iface !== 'lo')
           .map(({ iface, rxBps, txBps, up }) => ({ iface, rxBps, txBps, rxBytes: 0, txBytes: 0, up }));
 
         return res.json({ connected: true, ts: now, interfaces: result, source: 'api' });

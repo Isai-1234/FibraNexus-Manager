@@ -14,9 +14,11 @@ const W = 200
 const H = 34
 
 function fmt(bps: number) {
-  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)}M`
-  if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)}K`
-  return `${bps}b`
+  const mbps = (bps * 8) / 1_000_000
+  if (mbps >= 1000) return `${(mbps / 1000).toFixed(1)}G`
+  if (mbps >= 1) return `${mbps.toFixed(1)}M`
+  const kbps = (bps * 8) / 1_000
+  return kbps >= 1 ? `${kbps.toFixed(0)}K` : `<1K`
 }
 
 function buildPaths(samples: Sample[], maxVal: number) {
