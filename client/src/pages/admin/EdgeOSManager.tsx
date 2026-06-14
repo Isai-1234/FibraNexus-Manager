@@ -69,6 +69,11 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     if (!netForm.ipCidr) { setNetError('IP/CIDR es obligatorio (ej: 192.168.100.1/24)'); return }
     const ipErr = validateIpCidr(netForm.ipCidr)
     if (ipErr) { setNetError(ipErr); return }
+    const existing = (status?.networks || []).find((n: any) => n.iface === netForm.iface)
+    if (existing) {
+      const ok = confirm(`${netForm.iface} ya tiene una red configurada (${existing.ipCidr}).\n¿Reemplazarla con ${netForm.ipCidr.trim()}?`)
+      if (!ok) return
+    }
     setNetError('')
     setNetSaving(true)
     try {
