@@ -196,17 +196,17 @@ export default function RouterManager({ API, onBack }: Props) {
   useEffect(() => { loadRouters() }, [])
 
   useEffect(() => {
-    const interval = setInterval(loadRouters, 30000)
+    const interval = setInterval(() => loadRouters(true), 30000)
     return () => clearInterval(interval)
   }, [])
 
-  async function loadRouters() {
-    setLoading(true)
+  async function loadRouters(silent = false) {
+    if (!silent) setLoading(true)
     try {
       const res = await api().get('/routers')
       setRouters(Array.isArray(res.data) ? res.data : [])
-    } catch { setRouters([]) }
-    setLoading(false)
+    } catch { if (!silent) setRouters([]) }
+    if (!silent) setLoading(false)
   }
 
   async function handleCreate() {
