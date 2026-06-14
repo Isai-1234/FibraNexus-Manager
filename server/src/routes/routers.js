@@ -386,6 +386,26 @@ routersRouter.post('/test-connection', requireRole('admin'), async (req, res) =>
   }
 });
 
+routersRouter.post('/:id/token', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routerId = parseInt(req.params.id);
+    const [router] = await db.select().from(equipment).where(
+      and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
+    ).limit(1);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+    const newToken = crypto.randomUUID();
+    const updatedCreds = { ...(router.credentials || {}), agentToken: newToken };
+    await db.update(equipment)
+      .set({ credentials: updatedCreds, updatedAt: new Date() })
+      .where(eq(equipment.id, router.id));
+    res.json({ agentToken: newToken });
+  } catch (error) {
+    res.status(500).json({ error: 'Error generando token: ' + error.message });
+  }
+});
+
 routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
