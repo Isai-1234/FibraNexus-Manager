@@ -438,6 +438,52 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     } catch { /* sin lease aún */ }
   }
 
+  async function resolveDynamicIp(target: 'create' | 'edit') {
+    const form = target === 'edit' ? editEquipForm : equipForm
+    const sid = target === 'edit' ? (editEquipForm.siteId || editingEquip?.siteId) : equipForm.siteId
+    const mode = form.connectionMode || 'static'
+
+    if (mode === 'static') { suggestFreeIp(target); return }
+    if (!sid) { toast('Selecciona un nodo primero', 'warning'); return }
+
+    if (mode === 'dhcp' && !form.macAddress) {
+      toast('Ingresa la MAC del equipo primero', 'warning'); return
+    }
+    if (mode === 'pppoe' && !form.pppoeUsername) {
+      toast('Ingresa el usuario PPPoE primero', 'warning'); return
+    }
+
+    setSuggestingIp(true)
+    setIpSuggestHint('')
+    try {
+      const params = mode === 'dhcp'
+        ? `mode=dhcp&mac=${encodeURIComponent(form.macAddress)}`
+        : `mode=pppoe&username=${encodeURIComponent(form.pppoeUsername)}`
+      const res = await api().get(`/network/sites/${sid}/resolve-dynamic-ip?${params}`)
+      if (!res.data.ip) {
+        toast(
+          mode === 'dhcp'
+            ? 'MAC no encontrada en leases DHCP del MikroTik'
+            : 'Usuario PPPoE sin sesión activa en el router',
+          'warning',
+        )
+      } else {
+        const setter = target === 'edit'
+          ? (v: string) => setEditEquipForm((f: any) => ({ ...f, ipAddress: v }))
+          : (v: string) => setEquipForm((f: any) => ({ ...f, ipAddress: v }))
+        setter(res.data.ip)
+        setIpSuggestHint(
+          mode === 'dhcp'
+            ? `IP ${res.data.ip} · lease ${res.data.status || 'bound'}${res.data.hostname ? ` · ${res.data.hostname}` : ''}`
+            : `IP ${res.data.ip} · sesión PPPoE activa${res.data.uptime ? ` · uptime ${res.data.uptime}` : ''}`,
+        )
+      }
+    } catch (e: any) {
+      toast(e.response?.data?.error || e.message, 'error')
+    }
+    setSuggestingIp(false)
+  }
+
   async function createClientEquipment() {
     try {
       await api().post('/sites/equipment', {
@@ -845,8 +891,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                     onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })}
                     onBlur={e => lookupMacForIp(e.target.value, equipForm.siteId, 'create')} />
                   <button type="button" disabled={suggestingIp || !equipForm.siteId}
-                    onClick={() => suggestFreeIp('create')}
-                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                    onClick={() => resolveDynamicIp('create')}
+                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40"
+                    title={equipForm.connectionMode === 'dhcp' ? 'Buscar IP por MAC en MikroTik' : equipForm.connectionMode === 'pppoe' ? 'Buscar IP por usuario PPPoE' : 'Sugerir IP libre del pool'}>
                     <Search className="h-4 w-4" />
                   </button>
                 </div>
@@ -927,8 +974,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                     value={editEquipForm.ipAddress || ''}
                     onChange={e => setEditEquipForm({ ...editEquipForm, ipAddress: e.target.value })}
                     onBlur={e => lookupMacForIp(e.target.value, editEquipForm.siteId || editingEquip?.siteId, 'edit')} />
-                  <button type="button" disabled={suggestingIp} onClick={() => suggestFreeIp('edit')}
-                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40">
+                  <button type="button" disabled={suggestingIp} onClick={() => resolveDynamicIp('edit')}
+                    className="px-3 py-2 border rounded-lg text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-40"
+                    title={editEquipForm.connectionMode === 'dhcp' ? 'Buscar IP por MAC en MikroTik' : editEquipForm.connectionMode === 'pppoe' ? 'Buscar IP por usuario PPPoE' : 'Sugerir IP libre del pool'}>
                     <Search className="h-4 w-4" />
                   </button>
                 </div>
@@ -937,9 +985,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               <div>
                 <label className="block text-sm font-medium mb-1">MAC</label>
                 <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                  placeholder="Auto desde DHCP del MikroTik"
+                  placeholder="AA:BB:CC:DD:EE:FF"
                   value={editEquipForm.macAddress || ''} onChange={e => setEditEquipForm({ ...editEquipForm, macAddress: e.target.value })} />
-                <p className="text-xs text-gray-500 mt-1">Se completa al salir del campo IP si hay lease DHCP en el router.</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {editEquipForm.connectionMode === 'dhcp'
+                    ? 'Modo DHCP: ingresa la MAC y usa la lupa para buscar la IP activa en el MikroTik.'
+                    : editEquipForm.connectionMode === 'pppoe'
+                      ? 'Modo PPPoE: la IP se obtiene por usuario PPPoE. La MAC es opcional.'
+                      : 'Modo estático: la lupa sugiere la próxima IP libre del pool del nodo.'}
+                </p>
               </div>
               {editEquipForm.type === 'cpe' && (
                 <>

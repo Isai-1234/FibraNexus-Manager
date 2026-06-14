@@ -15,7 +15,9 @@ import {
   listPppProfiles,
   upsertPppoeServer,
   listPppoeServers,
+  listDhcpLeases,
 } from '../lib/mikrotikNetwork.js';
+import { listPppoeActive } from '../lib/mikrotikClient.js';
 import { pollEquipmentList } from '../lib/snmpPoller.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { findNextFreeIpForSite, resolveMacForIp } from '../lib/ipAllocation.js';
@@ -248,6 +250,49 @@ async function buildRouterBySiteMap(items, orgId) {
   }
   return map;
 }
+
+networkRouter.get('/sites/:siteId/resolve-dynamic-ip', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const siteId = parseInt(req.params.siteId, 10);
+    const { mode, mac, username } = req.query;
+
+    if (!['dhcp', 'pppoe'].includes(mode)) {
+      return res.status(400).json({ error: 'mode debe ser dhcp o pppoe' });
+    }
+
+    const [router] = await db.select().from(equipment)
+      .where(and(eq(equipment.siteId, siteId), eq(equipment.type, 'router'), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!router) return res.status(404).json({ error: 'No hay router MikroTik configurado en este nodo' });
+
+    if (mode === 'dhcp') {
+      if (!mac) return res.status(400).json({ error: 'Parámetro mac requerido' });
+      const norm = (mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+      const leases = await listDhcpLeases(router);
+      const lease = leases.find((l) =>
+        (l['mac-address'] || '').toLowerCase().replace(/[^0-9a-f]/g, '') === norm,
+      );
+      if (!lease) return res.json({ ip: null, status: 'not-found' });
+      return res.json({
+        ip: lease['active-address'] || lease.address || null,
+        status: lease.status || null,
+        hostname: lease['host-name'] || null,
+      });
+    }
+
+    if (mode === 'pppoe') {
+      if (!username) return res.status(400).json({ error: 'Parámetro username requerido' });
+      const sessions = await listPppoeActive(router);
+      const sess = sessions.find((s) => s.name === username);
+      if (!sess) return res.json({ ip: null, status: 'not-connected' });
+      return res.json({ ip: sess.address || null, status: 'active', uptime: sess.uptime || null });
+    }
+  } catch (error) {
+    res.status(503).json({ error: error.message });
+  }
+});
 
 networkRouter.post('/equipment/:id/snmp/poll', requireRole('admin', 'technician'), async (req, res) => {
   try {
