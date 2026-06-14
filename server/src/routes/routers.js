@@ -196,8 +196,10 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
         connectionMethod,
         hasApiCredentials: !!(r.credentials?.routerUser && r.credentials?.routerPass),
         credentials: { ...r.credentials, connectionMethod },
-        agentConnected: connectedAgents.has(r.id.toString()) || r.status === 'online'
-          || (r.credentials?.lastHeartbeat && Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000),
+        agentConnected: connectedAgents.has(r.id.toString())
+          || (r.credentials?.lastHeartbeat
+            ? Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000
+            : r.status === 'online'),
         agentLastSeen: agent?.lastSeen || r.lastSeen || null,
         routerInfo: agent?.routerInfo || r.credentials?.lastRouterInfo || null,
       };

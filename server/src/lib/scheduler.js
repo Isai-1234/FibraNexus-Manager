@@ -60,6 +60,10 @@ export function startScheduler() {
 
   // SNMP: antenas/CPE — cada 3 minutos, fire-and-forget para no bloquear el event loop
   setInterval(() => triggerSnmpRound('scheduled'), 3 * 60 * 1000);
+
+  // Heartbeat stale check: marcar offline routers con agentToken sin heartbeat reciente
+  setTimeout(() => markStaleHeartbeatRouters(), 30_000);
+  setInterval(() => markStaleHeartbeatRouters(), 3 * 60 * 1000);
 }
 
 async function triggerIpResolveRound(label) {
@@ -76,6 +80,30 @@ async function triggerIpResolveRound(label) {
     }
   } catch (err) {
     console.error('[scheduler:ip-resolve:%s] error: %s', label, err.message);
+  }
+}
+
+async function markStaleHeartbeatRouters() {
+  try {
+    const { db } = await import('../db/index.js');
+    const { equipment } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const routers = await db.select().from(equipment).where(eq(equipment.type, 'router'));
+    const staleMs = 3 * 60 * 1000; // sin heartbeat en 3 min → offline
+    const now = Date.now();
+    for (const r of routers) {
+      const lh = r.credentials?.agentToken && r.credentials?.lastHeartbeat;
+      if (!lh) continue; // sin agentToken → no es heartbeat router
+      const age = now - new Date(r.credentials.lastHeartbeat).getTime();
+      if (age > staleMs && r.status === 'online') {
+        await db.update(equipment)
+          .set({ status: 'offline', updatedAt: new Date() })
+          .where(eq(equipment.id, r.id));
+        console.log(`[scheduler:heartbeat-stale] router ${r.id} (${r.name}) marcado offline (sin heartbeat ${Math.round(age/60000)}min)`);
+      }
+    }
+  } catch (err) {
+    console.error('[scheduler:heartbeat-stale] error:', err.message);
   }
 }
 
