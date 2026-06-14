@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
+import { X, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, ChevronDown, ChevronUp, XCircle, Activity } from 'lucide-react'
 import axios from 'axios'
 
 interface Props {
@@ -10,9 +10,16 @@ interface Props {
 
 const INTERFACES = ['eth0', 'eth1', 'eth2', 'eth3', 'eth4', 'switch0']
 
+function fmtBps(bps: number): string {
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`
+  if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`
+  return `${bps} bps`
+}
+
 export default function EdgeOSManager({ API, router, onClose }: Props) {
   const [tab, setTab] = useState<'networks' | 'subscribers'>('networks')
   const [status, setStatus] = useState<any>(null)
+  const [bandwidth, setBandwidth] = useState<any>(null)
   const [subscribers, setSubscribers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [subLoading, setSubLoading] = useState(false)
@@ -40,12 +47,21 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     finally { setSubLoading(false) }
   }, [api, router.id])
 
+  const loadBandwidth = useCallback(async () => {
+    try {
+      const res = await api().get(`/edgeos/${router.id}/bandwidth`)
+      setBandwidth(res.data)
+    } catch { /* silent */ }
+  }, [api, router.id])
+
   useEffect(() => {
     loadStatus()
     loadSubscribers()
+    loadBandwidth()
     const interval = setInterval(loadStatus, 15000)
-    return () => clearInterval(interval)
-  }, [loadStatus, loadSubscribers])
+    const bwInterval = setInterval(loadBandwidth, 28000)
+    return () => { clearInterval(interval); clearInterval(bwInterval) }
+  }, [loadStatus, loadSubscribers, loadBandwidth])
 
   async function deleteNetwork(iface: string) {
     if (!confirm(`¿Eliminar interfaz ${iface} y su DHCP del EdgeRouter?`)) return
@@ -172,24 +188,34 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 <div>
                   <h3 className="text-xs font-semibold uppercase text-gray-400 mb-2">Interfaces configuradas</h3>
                   <div className="space-y-2">
-                    {status.networks.map((net: any) => (
-                      <div key={net.iface} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{net.iface} — <span className="font-mono">{net.ipCidr}</span></p>
-                            {net.description && <p className="text-xs text-gray-400">{net.description}</p>}
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {net.dhcp ? `DHCP ${net.poolStart}–${net.poolEnd}` : 'Sin DHCP'}
-                            </p>
+                    {status.networks.map((net: any) => {
+                      const lastSample = bandwidth?.samples?.slice(-1)[0]
+                      const ifaceBw = lastSample?.ifaces?.find((i: any) => i.iface === net.iface)
+                      return (
+                        <div key={net.iface} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">{net.iface} — <span className="font-mono">{net.ipCidr}</span></p>
+                              {net.description && <p className="text-xs text-gray-400">{net.description}</p>}
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {net.dhcp ? `DHCP ${net.poolStart}–${net.poolEnd}` : 'Sin DHCP'}
+                              </p>
+                              {ifaceBw && (
+                                <p className="text-xs text-emerald-600 mt-0.5 flex items-center gap-1">
+                                  <Activity className="h-3 w-3" />
+                                  ↓ {fmtBps(ifaceBw.rxBps)} · ↑ {fmtBps(ifaceBw.txBps)}
+                                </p>
+                              )}
+                            </div>
                           </div>
+                          <button onClick={() => deleteNetwork(net.iface)} disabled={actionLoading === `del-net-${net.iface}`}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                        <button onClick={() => deleteNetwork(net.iface)} disabled={actionLoading === `del-net-${net.iface}`}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}

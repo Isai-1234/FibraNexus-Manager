@@ -118,6 +118,52 @@ function resolveHost(router: any) {
   return router.ipAddress || router.credentials?.tunnelHostname || null
 }
 
+function RouterBrandImage({ brand, routerType, connected }: { brand: string; routerType?: string; connected?: boolean }) {
+  const b = (brand || '').toLowerCase()
+  const rt = (routerType || '').toLowerCase()
+  const isUbiquiti = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
+  const isMikrotik = b === 'mikrotik' || rt.startsWith('mikrotik')
+
+  const dot = (
+    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${connected ? 'bg-green-500' : 'bg-gray-300'}`} />
+  )
+
+  if (isUbiquiti) return (
+    <div className="relative shrink-0">
+      <div className="w-11 h-11 rounded-xl bg-[#0559C9] flex items-center justify-center shadow-sm">
+        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-white">
+          <path d="M20 4C11.16 4 4 11.16 4 20s7.16 16 16 16 16-7.16 16-16S28.84 4 20 4zm0 6c5.52 0 10 4.48 10 10s-4.48 10-10 10S10 25.52 10 20 14.48 10 20 10zm0 4a6 6 0 100 12A6 6 0 0020 14zm0 3a3 3 0 110 6 3 3 0 010-6z"/>
+        </svg>
+      </div>
+      {dot}
+    </div>
+  )
+
+  if (isMikrotik) return (
+    <div className="relative shrink-0">
+      <div className="w-11 h-11 rounded-xl bg-[#CC0000] flex items-center justify-center shadow-sm">
+        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-white">
+          <path d="M8 10h4v20H8zm10 0h4l8 10-8 10h-4l8-10z"/>
+        </svg>
+      </div>
+      {dot}
+    </div>
+  )
+
+  return (
+    <div className="relative shrink-0">
+      <div className="w-11 h-11 rounded-xl bg-gray-200 flex items-center justify-center shadow-sm">
+        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-gray-500">
+          <rect x="6" y="15" width="28" height="10" rx="2"/>
+          <circle cx="30" cy="20" r="2.5"/>
+          <rect x="8" y="18" width="16" height="4" rx="1"/>
+        </svg>
+      </div>
+      {dot}
+    </div>
+  )
+}
+
 export default function RouterManager({ API, onBack }: Props) {
   const [routers, setRouters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -456,9 +502,6 @@ export default function RouterManager({ API, onBack }: Props) {
                         if (rt.value === 'edgerouter_v4') {
                           base.location = 'Nodo 2'
                           base.model = 'EdgeRouter 4'
-                          base.lanSubnet = '192.168.2.0/24'
-                          base.lanInterface = 'ether2'
-                          base.dhcpSharedNetwork = 'LAN'
                           base.routerIp = '172.16.11.254'
                           base.connectionMethod = 'cloudflare_tunnel'
                         }
@@ -609,35 +652,6 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   )}
 
-                  {isEdgeRouter && (
-                    <div className="space-y-3 p-4 bg-violet-50 border border-violet-200 rounded-xl">
-                      <p className="text-sm font-medium text-violet-900">Red del nodo (LAN clientes)</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Subred LAN</label>
-                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                            placeholder="192.168.2.0/24"
-                            value={form.lanSubnet || ''}
-                            onChange={e => setForm({ ...form, lanSubnet: e.target.value })} />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Interfaz LAN</label>
-                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                            placeholder="ether2"
-                            value={form.lanInterface || ''}
-                            onChange={e => setForm({ ...form, lanInterface: e.target.value })} />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Shared network DHCP (EdgeOS)</label>
-                        <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                          placeholder="LAN"
-                          value={form.dhcpSharedNetwork || ''}
-                          onChange={e => setForm({ ...form, dhcpSharedNetwork: e.target.value })} />
-                        <p className="text-xs text-gray-500 mt-1">Nombre del shared-network en EdgeOS donde vive la subred de clientes.</p>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -907,7 +921,7 @@ export default function RouterManager({ API, onBack }: Props) {
                 <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${router.agentConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                      <RouterBrandImage brand={router.brand} routerType={router.credentials?.routerType} connected={router.agentConnected} />
                       <div>
                         <h3 className="font-bold text-gray-900">{router.name}</h3>
                         <p className="text-xs text-gray-500">{router.brand} {router.model}</p>

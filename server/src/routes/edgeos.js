@@ -35,6 +35,22 @@ async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
   return cmd;
 }
 
+// GET /api/edgeos/:routerId/bandwidth — estadísticas de interfaces en tiempo real
+edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const router = await getEdgeRouter(parseInt(req.params.routerId), orgId);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+
+    const creds = router.credentials || {};
+    const bwHistory = creds.bandwidthSamples || [];
+    res.json({ samples: bwHistory.slice(-60), interfaces: creds.lastIfaceStats || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/edgeos/:routerId/status
 edgeosRouter.get('/:routerId/status', requireRole('admin', 'technician'), async (req, res) => {
   try {
