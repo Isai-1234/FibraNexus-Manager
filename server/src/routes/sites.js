@@ -50,12 +50,13 @@ sitesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const enrichedEquipment = await enrichEquipmentWithClients(
       allEquipment.map((item) => {
         const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
+        const agentFresh = agent != null && Date.now() - new Date(agent.lastSeen).getTime() < 120_000;
         return {
           ...attachSnmpDisplay(item),
           isStale: isPollStale(item.lastSeen),
           connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
           agentConnected: item.type === 'router' && (
-            connectedAgents.has(item.id.toString()) ||
+            agentFresh ||
             (item.credentials?.lastHeartbeat
               ? Date.now() - new Date(item.credentials.lastHeartbeat).getTime() < 120_000
               : item.status === 'online')
