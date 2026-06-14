@@ -297,10 +297,18 @@ export async function agentHeartbeatHandler(req, res) {
 
     // Retornar comandos listos (pendientes o con retry vencido)
     const now = Date.now();
-    const pending = (creds.pendingCmds || []).filter(c =>
+    const allPendingCmds = creds.pendingCmds || [];
+    const pending = allPendingCmds.filter(c =>
       c.status === 'pending' && (!c.nextRetryAt || new Date(c.nextRetryAt).getTime() <= now),
     );
     const toSend = pending.slice(0, 3).map(c => ({ id: c.id, script: c.script }));
+
+    console.log(`[heartbeat] router=${router.id} (${router.name}) cola_total=${allPendingCmds.length} listos=${pending.length} enviando=${toSend.length}`);
+    if (toSend.length > 0) {
+      const fullCmds = allPendingCmds.filter(c => toSend.some(s => s.id === c.id));
+      fullCmds.forEach(c => console.log(`[heartbeat] → dispatch id=${c.id} type=${c.type} retries=${c.retries || 0}/${c.maxRetries || 3} meta=${JSON.stringify(c.meta || {})}`));
+    }
+
     res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend });
   } catch (error) {
     res.status(500).json({ error: 'Error en heartbeat: ' + error.message });
@@ -316,6 +324,8 @@ export async function agentCmdResultHandler(req, res) {
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials?.agentToken === agentToken);
     if (!router) return res.status(403).json({ error: 'Token inválido' });
+
+    console.log(`[cmd-result] router=${router.id} (${router.name}) cmdId=${cmdId} success=${success} output="${String(output || '').slice(0, 300)}"`);
 
     const creds = router.credentials || {};
     const allPending = creds.pendingCmds || [];

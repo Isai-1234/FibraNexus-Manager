@@ -173,18 +173,27 @@ export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath })
 
 /** POST batch EdgeOS. Incluye CSRF token. */
 export async function edgeosBatch({ host, port, cookie, csrfToken, payload }) {
-  const res = await edgeosHttpsRequest({
-    host,
-    port,
-    path: '/api/edge/batch.json',
-    method: 'POST',
-    headers: {
-      Cookie: cookie,
-      'Content-Type': 'application/json',
-      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-    },
-    body: payload,
-  });
+  console.log(`[EdgeOS] batch.json → enviando a ${host}:${port} payload_keys=${Object.keys(payload || {}).join(',')}`);
+  let res;
+  try {
+    res = await edgeosHttpsRequest({
+      host,
+      port,
+      path: '/api/edge/batch.json',
+      method: 'POST',
+      headers: {
+        Cookie: cookie,
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+      },
+      body: payload,
+    });
+  } catch (err) {
+    console.error(`[EdgeOS] batch.json ERROR ${host}: ${err.message}`);
+    throw err;
+  }
+
+  console.log(`[EdgeOS] batch.json ← HTTP ${res.statusCode} body="${res.body.slice(0, 300)}"`);
 
   if (res.statusCode !== 200) {
     throw new Error(`EdgeOS batch.json HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);

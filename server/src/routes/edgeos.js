@@ -27,6 +27,7 @@ async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
   if (!current) throw new Error('Router no encontrado');
   const creds = current.credentials || {};
   const pending = [...(creds.pendingCmds || []), cmd];
+  console.log(`[EdgeOS] CMD ENCOLADO router=${routerId} id=${cmd.id} type=${cmd.type} total_cola=${pending.length}`);
   await db.update(equipment).set({
     credentials: { ...creds, pendingCmds: pending, ...extraCredFields },
     updatedAt: new Date(),
