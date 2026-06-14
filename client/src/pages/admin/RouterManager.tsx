@@ -964,12 +964,17 @@ export default function RouterManager({ API, onBack }: Props) {
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
-                    {(router.brand || '').toLowerCase() === 'ubiquiti' && (
-                      <button onClick={() => setEdgeosManagerRouter(router)}
-                        className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-emerald-50 text-emerald-700 border-emerald-200">
-                        Gestionar EdgeOS
-                      </button>
-                    )}
+                    {(() => {
+                      const b = (router.brand || '').toLowerCase()
+                      const rt = (router.credentials?.routerType || '').toLowerCase()
+                      const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
+                      return isEdgeOS ? (
+                        <button onClick={() => setEdgeosManagerRouter(router)}
+                          className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Gestionar EdgeOS
+                        </button>
+                      ) : null
+                    })()}
                   </div>
                   <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.agentConnected ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
                     {router.agentConnected ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
