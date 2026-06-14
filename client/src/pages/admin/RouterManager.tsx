@@ -272,6 +272,14 @@ export default function RouterManager({ API, onBack }: Props) {
 
   async function regenerateToken() {
     if (!editingRouter) return
+    if (credTokenValue) {
+      const ok = window.confirm(
+        '⚠️ ATENCIÓN — Esto invalidará el token actual.\n\n' +
+        'El script que corre en el EdgeRouter quedará rechazado (403) hasta que instales el script nuevo vía SSH.\n\n' +
+        '¿Estás seguro de que quieres reemplazar el token?'
+      )
+      if (!ok) return
+    }
     setTokenRegenerating(true)
     try {
       const res = await api().post(`/routers/${editingRouter.id}/token`)
@@ -1016,11 +1024,21 @@ export default function RouterManager({ API, onBack }: Props) {
                         </button>
                       )}
                       <button onClick={regenerateToken} disabled={tokenRegenerating}
-                        className="px-3 py-2 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
+                        className={`px-3 py-2 text-xs border rounded-lg disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap transition-colors ${
+                          credTokenValue
+                            ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                            : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        }`}>
                         <RefreshCw className={`h-3.5 w-3.5 ${tokenRegenerating ? 'animate-spin' : ''}`} />
-                        {tokenRegenerating ? 'Generando…' : credTokenValue ? 'Regenerar' : 'Generar token'}
+                        {tokenRegenerating ? 'Generando…' : credTokenValue ? 'Regenerar token' : 'Generar token'}
                       </button>
                     </div>
+                    {credTokenValue && (
+                      <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                        Regenerar invalida el script instalado en el router — requiere reinstalar vía SSH
+                      </p>
+                    )}
                   </div>
 
                   {/* Script */}

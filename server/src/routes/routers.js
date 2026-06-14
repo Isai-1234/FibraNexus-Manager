@@ -281,6 +281,10 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     if (routerUser !== undefined) creds.routerUser = routerUser || null;
     if (routerPass !== undefined) creds.routerPass = routerPass || null;
     if (routerPort) creds.routerPort = routerPort;
+    // Blindaje: campos operacionales inmutables vía este endpoint
+    if (router.credentials?.agentToken) creds.agentToken = router.credentials.agentToken;
+    if (router.credentials?.lastHeartbeat) creds.lastHeartbeat = router.credentials.lastHeartbeat;
+    if (router.credentials?.lastRouterInfo) creds.lastRouterInfo = router.credentials.lastRouterInfo;
     const updates = { credentials: creds, updatedAt: new Date() };
     if (location !== undefined) updates.location = location;
     if (name !== undefined) updates.name = name;
