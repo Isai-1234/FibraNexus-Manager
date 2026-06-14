@@ -168,7 +168,8 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
         connectionMethod,
         hasApiCredentials: !!(r.credentials?.routerUser && r.credentials?.routerPass),
         credentials: { ...r.credentials, connectionMethod },
-        agentConnected: connectedAgents.has(r.id.toString()) || r.status === 'online',
+        agentConnected: connectedAgents.has(r.id.toString()) || r.status === 'online'
+          || (r.credentials?.lastHeartbeat && Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000),
         agentLastSeen: agent?.lastSeen || r.lastSeen || null,
         routerInfo: agent?.routerInfo || r.credentials?.lastRouterInfo || null,
       };
@@ -248,7 +249,8 @@ export async function agentHeartbeatHandler(req, res) {
     const updates = { status: 'online', lastSeen: new Date() };
     if (routerInfo?.version) updates.firmware = String(routerInfo.version).slice(0, 50);
 
-    const creds = { ...router.credentials, lastRouterInfo: routerInfo || null };
+    // lastHeartbeat persiste en BD — sobrevive reinicios del servidor
+    const creds = { ...router.credentials, lastRouterInfo: routerInfo || null, lastHeartbeat: new Date().toISOString() };
     if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && routerInfo?.version) {
       creds.connectionMethod = 'cloudflare_tunnel';
     } else if (!creds.connectionMethod) {

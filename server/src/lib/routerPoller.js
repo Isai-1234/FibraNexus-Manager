@@ -47,8 +47,12 @@ export async function pollRouterApi(router) {
 
 export async function persistRouterPollResult(router, result) {
   const creds = { ...(router.credentials || {}), lastRouterInfo: result.routerInfo || null, lastPollError: result.error || null };
+  // No pisar status='online' de un heartbeat reciente con un poll fallido
+  const hasRecentHeartbeat = creds.lastHeartbeat &&
+    Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000;
+  const newStatus = result.online ? 'online' : (hasRecentHeartbeat ? router.status : 'offline');
   const [updated] = await db.update(equipment).set({
-    status: result.online ? 'online' : 'offline',
+    status: newStatus,
     lastSeen: new Date(),
     credentials: creds,
     firmware: result.routerInfo?.version ? String(result.routerInfo.version).slice(0, 50) : router.firmware,

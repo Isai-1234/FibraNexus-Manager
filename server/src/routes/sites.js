@@ -54,7 +54,11 @@ sitesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
           ...attachSnmpDisplay(item),
           isStale: isPollStale(item.lastSeen),
           connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
-          agentConnected: item.type === 'router' && (connectedAgents.has(item.id.toString()) || item.status === 'online'),
+          agentConnected: item.type === 'router' && (
+            connectedAgents.has(item.id.toString()) ||
+            item.status === 'online' ||
+            (item.credentials?.lastHeartbeat && Date.now() - new Date(item.credentials.lastHeartbeat).getTime() < 120_000)
+          ),
           agentLastSeen: agent?.lastSeen || item.lastSeen || null,
         };
       }),
