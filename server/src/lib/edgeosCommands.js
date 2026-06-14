@@ -7,8 +7,13 @@ import crypto from 'crypto';
 /** Parsea IP/CIDR y retorna componentes de red */
 export function parseCidr(ipCidr) {
   const [ip, maskStr] = ipCidr.trim().split('/');
+  if (!ip || maskStr === undefined) throw new Error(`Formato inválido "${ipCidr}" — usa IP/máscara (ej: 192.168.100.1/24)`);
   const maskBits = parseInt(maskStr || '24', 10);
+  if (isNaN(maskBits) || maskBits < 0 || maskBits > 32) throw new Error(`Máscara inválida "/${maskStr}" — debe ser /0 a /32`);
   const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
+    throw new Error(`IP inválida "${ip}" — cada octeto debe ser 0–255`);
+  }
   const ipNum = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
   const mask = maskBits === 32 ? 0xffffffff : (~((0xffffffff >>> maskBits) | 0)) >>> 0;
   const netNum = (ipNum & mask) >>> 0;

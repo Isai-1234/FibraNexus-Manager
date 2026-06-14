@@ -51,8 +51,24 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     return () => clearInterval(interval)
   }, [loadStatus, loadSubscribers])
 
+  function validateIpCidr(value: string): string | null {
+    const [ip, mask] = value.trim().split('/')
+    if (!ip || !mask) return 'Formato inválido — usa IP/máscara (ej: 192.168.100.1/24)'
+    const parts = ip.split('.')
+    if (parts.length !== 4) return 'La IP debe tener 4 octetos (ej: 192.168.100.1)'
+    for (const p of parts) {
+      const n = Number(p)
+      if (isNaN(n) || n < 0 || n > 255 || p === '') return `Octeto inválido "${p}" — debe ser 0–255`
+    }
+    const bits = Number(mask)
+    if (isNaN(bits) || bits < 0 || bits > 32) return `Máscara inválida "/${mask}" — debe ser /0 a /32`
+    return null
+  }
+
   async function createNetwork() {
     if (!netForm.ipCidr) { setNetError('IP/CIDR es obligatorio (ej: 192.168.100.1/24)'); return }
+    const ipErr = validateIpCidr(netForm.ipCidr)
+    if (ipErr) { setNetError(ipErr); return }
     setNetError('')
     setNetSaving(true)
     try {
@@ -180,13 +196,21 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
             <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" /> Cargando…</div>
           ) : tab === 'networks' ? (
             <div className="space-y-4">
-              {/* Alert si no hay heartbeat */}
-              {!status?.connected && (
+              {/* Alert primera conexión / sin heartbeat */}
+              {!status?.lastHeartbeat ? (
+                <div className="flex gap-2 items-start bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+                  <div>
+                    <p className="font-medium">Esperando primera conexión</p>
+                    <p className="mt-0.5 text-blue-700">Instala el agente en el EdgeRouter usando el script de instalación del panel principal. Una vez conectado, podrás gestionar las redes desde aquí.</p>
+                  </div>
+                </div>
+              ) : !status?.connected ? (
                 <div className="flex gap-2 items-start bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>El EdgeRouter no está enviando heartbeat. Los comandos se encolarán y se ejecutarán cuando recupere la conexión.</span>
                 </div>
-              )}
+              ) : null}
 
               {/* Redes existentes */}
               {(status?.networks || []).length > 0 && (
@@ -215,8 +239,8 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 </div>
               )}
 
-              {/* Formulario nueva red */}
-              <div className="border rounded-xl overflow-hidden">
+              {/* Formulario nueva red — solo si ya conectó al menos una vez */}
+              {!status?.lastHeartbeat ? null : <div className="border rounded-xl overflow-hidden">
                 <button onClick={() => setShowNewNet(v => !v)}
                   className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-sm font-medium text-gray-700">
                   <span className="flex items-center gap-2"><Plus className="h-4 w-4 text-emerald-600" /> Nueva red / interfaz</span>
@@ -284,7 +308,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                     <p className="text-xs text-gray-400">El comando se enviará al EdgeRouter en el próximo heartbeat (≤30 s).</p>
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* Cola de comandos */}
               {(status?.pendingCmds?.length > 0 || status?.cmdHistory?.length > 0) && (
