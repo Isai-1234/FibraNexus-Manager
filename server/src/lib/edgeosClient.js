@@ -36,10 +36,20 @@ function parseCookies(setCookieHeader) {
   return raw.map(c => c.split(';')[0]).join('; ');
 }
 
-/** Low-level HTTPS request para EdgeOS. rejectUnauthorized=false para cert auto-firmado. */
-function edgeosHttpsRequest({ host, port, path, method, headers = {}, body, timeout = 15000 }) {
+/**
+ * Low-level HTTPS request para EdgeOS.
+ * - rejectUnauthorized=false: acepta cert auto-firmado
+ * - settled flag: evita double-reject cuando timeout dispara req.destroy()
+ *   que a su vez emite 'error' en el socket
+ * - res.on('error'): silencia errores del response stream post-destroy
+ */
+function edgeosHttpsRequest({ host, port, path, method, headers = {}, body, timeout = 10000 }) {
   const payload = body != null ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+
     const req = https.request({
       hostname: host,
       port,
@@ -52,12 +62,19 @@ function edgeosHttpsRequest({ host, port, path, method, headers = {}, body, time
       rejectUnauthorized: false,
       timeout,
     }, (res) => {
+      // Silenciar errores en el response stream (ej: cuando req.destroy() se llama mid-response)
+      res.on('error', () => {});
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
+      res.on('end', () => done(resolve, { statusCode: res.statusCode, headers: res.headers, body: data }));
     });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout conectando al EdgeRouter')); });
+
+    req.on('error', (err) => done(reject, err));
+    req.on('timeout', () => {
+      req.destroy();
+      done(reject, new Error(`Timeout (${timeout / 1000}s) conectando al EdgeRouter ${host}`));
+    });
+
     if (payload) req.write(payload);
     req.end();
   });
@@ -65,51 +82,73 @@ function edgeosHttpsRequest({ host, port, path, method, headers = {}, body, time
 
 /**
  * Login EdgeOS.
- * EdgeOS espera form-urlencoded, NO JSON.
- * Devuelve { cookie, csrfToken } para usar en peticiones posteriores.
+ *
+ * La API EdgeOS (/api/edge/login) acepta JSON.
+ * La respuesta incluye Set-Cookie: PHPSESSID y, en el body JSON,
+ * el campo "X-CSRF-TOKEN" necesario para todas las peticiones posteriores.
+ *
+ * Si el JSON falla (firmware muy antiguo), reintenta con form-urlencoded.
+ *
+ * Devuelve { cookie, csrfToken }.
  */
 export async function edgeosLogin({ host, port, user, pass }) {
-  const body = `username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`;
-
-  const res = await edgeosHttpsRequest({
+  // Intento 1: JSON (comportamiento estándar EdgeOS ≥ v1.9)
+  let res = await edgeosHttpsRequest({
     host,
     port,
     path: '/api/edge/login',
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    headers: { 'Content-Type': 'application/json' },
+    body: { username: user, password: pass },
   });
 
-  console.log(`[EdgeOS] login ${host}:${port} → HTTP ${res.statusCode} cookies=${!!res.headers['set-cookie']}`);
+  // Intento 2: form-urlencoded (fallback para firmware más antiguo)
+  if (res.statusCode === 400 || res.statusCode === 415 || res.statusCode === 405) {
+    console.log(`[EdgeOS] login JSON → HTTP ${res.statusCode}, reintentando con form-urlencoded`);
+    res = await edgeosHttpsRequest({
+      host,
+      port,
+      path: '/api/edge/login',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`,
+    });
+  }
+
+  console.log(`[EdgeOS] login ${host} → HTTP ${res.statusCode} cookie=${!!res.headers['set-cookie']} body=${res.body.slice(0, 120)}`);
 
   if (res.statusCode !== 200) {
-    throw new Error(`EdgeOS login HTTP ${res.statusCode}: ${res.body.slice(0, 300)}`);
+    throw new Error(`EdgeOS login falló HTTP ${res.statusCode} — verifica usuario/contraseña y hostname del túnel`);
   }
 
   const cookie = parseCookies(res.headers['set-cookie']);
-  if (!cookie) throw new Error(`EdgeOS no devolvió cookie de sesión. Body: ${res.body.slice(0, 300)}`);
+  if (!cookie) {
+    throw new Error(`EdgeOS no devolvió cookie de sesión (HTTP 200 pero sin Set-Cookie). Body: ${res.body.slice(0, 200)}`);
+  }
 
-  // El body del login contiene el X-CSRF-TOKEN necesario para requests siguientes
+  // CSRF token viene en el body JSON del login
   let csrfToken = null;
   try {
     const json = JSON.parse(res.body);
-    csrfToken = json['X-CSRF-TOKEN'] || json['csrf_token'] || null;
-    if (json.success !== '1' && json.success !== true && Number(json.success) !== 1) {
-      console.warn(`[EdgeOS] login body indica fallo: ${res.body.slice(0, 200)}`);
+    csrfToken = json['X-CSRF-TOKEN'] || json['csrf_token'] || json['csrfToken'] || null;
+    if (json.success !== undefined && json.success !== '1' && json.success !== true && Number(json.success) !== 1) {
+      throw new Error(`EdgeOS login rechazado: ${res.body.slice(0, 200)}`);
     }
-  } catch { /* body no-JSON — continuar con cookie obtenida */ }
+  } catch (err) {
+    if (err.message.startsWith('EdgeOS login rechazado')) throw err;
+    // body no-JSON: continuar con cookie obtenida
+  }
 
-  console.log(`[EdgeOS] login OK host=${host} csrf=${csrfToken ? 'present' : 'absent'}`);
+  console.log(`[EdgeOS] login OK ${host} csrf=${csrfToken ? 'present' : 'absent'}`);
   return { cookie, csrfToken };
 }
 
-/** GET de datos EdgeOS. Incluye CSRF token si está disponible. */
+/** GET de datos EdgeOS. Incluye CSRF token en header si está disponible. */
 export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath }) {
-  const query = encodeURIComponent(dataPath);
   const res = await edgeosHttpsRequest({
     host,
     port,
-    path: `/api/edge/data.json?data=${query}`,
+    path: `/api/edge/data.json?data=${encodeURIComponent(dataPath)}`,
     method: 'GET',
     headers: {
       Cookie: cookie,
@@ -120,21 +159,20 @@ export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath })
   console.log(`[EdgeOS] data.json?data=${dataPath} → HTTP ${res.statusCode}`);
 
   if (res.statusCode === 403) {
-    throw new Error('EdgeOS rechazó la petición (403) — posible falta de X-CSRF-Token o sesión expirada');
+    throw new Error('EdgeOS rechazó data.json (403) — X-CSRF-Token inválido o sesión expirada');
   }
   if (res.statusCode !== 200) {
-    throw new Error(`EdgeOS data HTTP ${res.statusCode}: ${res.body.slice(0, 300)}`);
+    throw new Error(`EdgeOS data.json HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
   }
   try {
     return JSON.parse(res.body);
   } catch {
-    throw new Error(`EdgeOS devolvió respuesta no-JSON (${res.body.slice(0, 100)})`);
+    throw new Error(`EdgeOS devolvió respuesta no-JSON en data.json: ${res.body.slice(0, 100)}`);
   }
 }
 
 /** POST batch EdgeOS. Incluye CSRF token. */
 export async function edgeosBatch({ host, port, cookie, csrfToken, payload }) {
-  const body = JSON.stringify(payload);
   const res = await edgeosHttpsRequest({
     host,
     port,
@@ -145,11 +183,11 @@ export async function edgeosBatch({ host, port, cookie, csrfToken, payload }) {
       'Content-Type': 'application/json',
       ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
-    body,
+    body: payload,
   });
 
   if (res.statusCode !== 200) {
-    throw new Error(`EdgeOS batch HTTP ${res.statusCode}: ${res.body.slice(0, 300)}`);
+    throw new Error(`EdgeOS batch.json HTTP ${res.statusCode}: ${res.body.slice(0, 200)}`);
   }
   try {
     return JSON.parse(res.body);
@@ -159,7 +197,8 @@ export async function edgeosBatch({ host, port, cookie, csrfToken, payload }) {
 }
 
 function normalizeStatus(data) {
-  const status = data?.status || data?.data?.status || data?.data || {};
+  // EdgeOS devuelve status en distintos paths según versión del firmware
+  const status = data?.status || data?.data?.status || data?.data || data || {};
   const uptimeSec = Number(status.uptime || status['system-uptime'] || 0);
   const uptime = uptimeSec > 0 ? formatUptime(uptimeSec) : (status.uptime || '—');
   return {
@@ -182,7 +221,7 @@ function formatUptime(seconds) {
 
 export async function testEdgeRouterConnection(router) {
   const host = resolveHost(router);
-  if (!host) throw new Error('Router sin host configurado');
+  if (!host) throw new Error('Router sin host configurado (tunnelHostname o ipAddress)');
   const port = resolvePort(router);
   const { user, pass } = getRouterCredentials(router);
 
@@ -191,11 +230,7 @@ export async function testEdgeRouterConnection(router) {
   const info = normalizeStatus(data);
 
   const creds = router.credentials || {};
-  return {
-    ...info,
-    lanSubnet: creds.lanSubnet || null,
-    lanInterface: creds.lanInterface || null,
-  };
+  return { ...info, lanSubnet: creds.lanSubnet || null, lanInterface: creds.lanInterface || null };
 }
 
 export async function testEdgeRouterConnectionRaw({ host, port = '443', user, pass }) {
@@ -215,19 +250,22 @@ export async function upsertDhcpStaticMapping(router, { name, mac, ip, descripti
   const mappingName = String(name || `fn-${ip.replace(/\./g, '-')}`).replace(/[^a-zA-Z0-9_-]/g, '_');
 
   const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass });
-  const payload = {
-    SET: {
-      service: {
-        'dhcp-server': {
-          'shared-network-name': {
-            [sharedNetwork]: {
-              subnet: {
-                [subnet]: {
-                  'static-mapping': {
-                    [mappingName]: {
-                      'mac-address': mac,
-                      'ip-address': ip,
-                      ...(description ? { description } : {}),
+  await edgeosBatch({
+    host, port, cookie, csrfToken,
+    payload: {
+      SET: {
+        service: {
+          'dhcp-server': {
+            'shared-network-name': {
+              [sharedNetwork]: {
+                subnet: {
+                  [subnet]: {
+                    'static-mapping': {
+                      [mappingName]: {
+                        'mac-address': mac,
+                        'ip-address': ip,
+                        ...(description ? { description } : {}),
+                      },
                     },
                   },
                 },
@@ -237,8 +275,7 @@ export async function upsertDhcpStaticMapping(router, { name, mac, ip, descripti
         },
       },
     },
-  };
-  await edgeosBatch({ host, port, cookie, csrfToken, payload });
+  });
   return { action: 'upserted', mappingName, ip, mac };
 }
 
@@ -251,23 +288,21 @@ export async function removeDhcpStaticMapping(router, mappingName) {
   const sharedNetwork = creds.dhcpSharedNetwork || 'LAN';
 
   const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass });
-  const payload = {
-    DELETE: {
-      service: {
-        'dhcp-server': {
-          'shared-network-name': {
-            [sharedNetwork]: {
-              subnet: {
-                [subnet]: {
-                  'static-mapping': mappingName,
-                },
+  await edgeosBatch({
+    host, port, cookie, csrfToken,
+    payload: {
+      DELETE: {
+        service: {
+          'dhcp-server': {
+            'shared-network-name': {
+              [sharedNetwork]: {
+                subnet: { [subnet]: { 'static-mapping': mappingName } },
               },
             },
           },
         },
       },
     },
-  };
-  await edgeosBatch({ host, port, cookie, csrfToken, payload });
+  });
   return { action: 'removed', mappingName };
 }
