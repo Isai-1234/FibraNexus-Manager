@@ -57,6 +57,7 @@ edgeosRouter.get('/:routerId/status', requireRole('admin', 'technician'), async 
       networks: creds.edgeosNetworks || [],
       pendingCmds: (creds.pendingCmds || []).map(c => ({
         id: c.id, type: c.type, status: c.status, meta: c.meta, createdAt: c.createdAt,
+        retries: c.retries || 0, maxRetries: c.maxRetries || 3, nextRetryAt: c.nextRetryAt || null,
       })),
       cmdHistory: (creds.cmdHistory || []).slice(-20).reverse(),
     });
@@ -199,6 +200,64 @@ edgeosRouter.post('/:routerId/provision/:serviceId', requireRole('admin'), async
     await db.update(clientServices).set({ networkMeta: meta, updatedAt: new Date() }).where(eq(clientServices.id, serviceId));
 
     res.json({ cmd: { id: cmd.id, classId, status: 'pending' }, message: `Queue encolada — EdgeRouter aplicará en ≤30 s` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/edgeos/:routerId/queue — cancelar todos los comandos pendientes
+edgeosRouter.delete('/:routerId/queue', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routerId = parseInt(req.params.routerId);
+    const router = await getEdgeRouter(routerId, orgId);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+
+    const creds = router.credentials || {};
+    const pending = creds.pendingCmds || [];
+    const now = new Date().toISOString();
+    const cancelled = pending.map(c => ({ ...c, status: 'cancelled', cancelledAt: now }));
+    const history = [...(creds.cmdHistory || []), ...cancelled].slice(-50);
+
+    await db.update(equipment).set({
+      credentials: { ...creds, pendingCmds: [], cmdHistory: history },
+      updatedAt: new Date(),
+    }).where(eq(equipment.id, routerId));
+
+    console.log(`[EdgeOS] QUEUE CLEARED router=${routerId} cancelled=${cancelled.length}`);
+    res.json({ cancelled: cancelled.length, message: 'Cola vaciada' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/edgeos/:routerId/queue/:cmdId — cancelar un comando pendiente
+edgeosRouter.delete('/:routerId/queue/:cmdId', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routerId = parseInt(req.params.routerId);
+    const router = await getEdgeRouter(routerId, orgId);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+
+    const { cmdId } = req.params;
+    const creds = router.credentials || {};
+    const pending = creds.pendingCmds || [];
+    const target = pending.find(c => c.id === cmdId);
+    if (!target) return res.status(404).json({ error: 'Comando no encontrado en la cola' });
+
+    const remaining = pending.filter(c => c.id !== cmdId);
+    const cancelled = { ...target, status: 'cancelled', cancelledAt: new Date().toISOString() };
+    const history = [...(creds.cmdHistory || []), cancelled].slice(-50);
+
+    await db.update(equipment).set({
+      credentials: { ...creds, pendingCmds: remaining, cmdHistory: history },
+      updatedAt: new Date(),
+    }).where(eq(equipment.id, routerId));
+
+    console.log(`[EdgeOS] CMD CANCELLED router=${routerId} id=${cmdId} type=${target.type}`);
+    res.json({ cancelled: cmdId, message: 'Comando cancelado' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

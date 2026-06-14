@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Plus, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, Activity, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Plus, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, Activity, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
 import axios from 'axios'
 
 interface Props {
@@ -84,6 +84,27 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
       await loadStatus()
     } catch (e: any) {
       alert(e.response?.data?.error || 'Error al eliminar red')
+    } finally { setActionLoading('') }
+  }
+
+  async function cancelCmd(cmdId: string) {
+    setActionLoading(`cancel-${cmdId}`)
+    try {
+      await api().delete(`/edgeos/${router.id}/queue/${cmdId}`)
+      await loadStatus()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al cancelar comando')
+    } finally { setActionLoading('') }
+  }
+
+  async function clearQueue() {
+    if (!confirm('¿Cancelar todos los comandos pendientes?')) return
+    setActionLoading('clear-queue')
+    try {
+      await api().delete(`/edgeos/${router.id}/queue`)
+      await loadStatus()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al limpiar cola')
     } finally { setActionLoading('') }
   }
 
@@ -268,7 +289,19 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
               {/* Cola de comandos */}
               {(status?.pendingCmds?.length > 0 || status?.cmdHistory?.length > 0) && (
                 <div>
-                  <h3 className="text-xs font-semibold uppercase text-gray-400 mb-2 mt-2">Actividad de comandos</h3>
+                  <div className="flex items-center justify-between mb-2 mt-2">
+                    <h3 className="text-xs font-semibold uppercase text-gray-400">Actividad de comandos</h3>
+                    {status.pendingCmds?.length > 0 && (
+                      <button
+                        onClick={clearQueue}
+                        disabled={actionLoading === 'clear-queue'}
+                        className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                        title="Cancelar todos los comandos pendientes">
+                        <XCircle className="h-3.5 w-3.5" />
+                        {actionLoading === 'clear-queue' ? 'Limpiando…' : 'Limpiar cola'}
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-1.5">
                     {status.pendingCmds?.map((c: any) => {
                       const isRetry = (c.retries || 0) > 0
@@ -278,21 +311,30 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                           <Clock className={`h-3.5 w-3.5 shrink-0 ${isRetry ? 'text-orange-500' : 'text-amber-500'}`} />
                           <span className={`font-medium ${isRetry ? 'text-orange-800' : 'text-amber-800'}`}>{c.type}</span>
                           {isRetry && <span className="text-orange-500">intento {c.retries}/{c.maxRetries}</span>}
-                          <span className={`ml-auto ${isRetry ? 'text-orange-600' : 'text-amber-600'}`}>
+                          <span className={`${isRetry ? 'text-orange-600' : 'text-amber-600'}`}>
                             {nextRetry ? `reintento ${nextRetry.toLocaleTimeString('es-CL')}` : 'pendiente'}
                           </span>
+                          <button
+                            onClick={() => cancelCmd(c.id)}
+                            disabled={actionLoading === `cancel-${c.id}`}
+                            className="ml-auto text-gray-400 hover:text-red-500 disabled:opacity-50"
+                            title="Cancelar este comando">
+                            {actionLoading === `cancel-${c.id}` ? '…' : <XCircle className="h-3.5 w-3.5" />}
+                          </button>
                         </div>
                       )
                     })}
                     {status.cmdHistory?.slice(0, 10).map((c: any) => (
                       <div key={c.id}>
                         <button onClick={() => setExpandedCmd(expandedCmd === c.id ? null : c.id)}
-                          className={`w-full flex items-center gap-2 text-xs rounded-lg px-3 py-2 border text-left transition ${c.status === 'done' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                          className={`w-full flex items-center gap-2 text-xs rounded-lg px-3 py-2 border text-left transition ${c.status === 'done' ? 'bg-green-50 border-green-100' : c.status === 'cancelled' ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-100'}`}>
                           {c.status === 'done'
                             ? <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                            : <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
-                          <span className={`font-medium ${c.status === 'done' ? 'text-green-800' : 'text-red-800'}`}>{c.type}</span>
-                          <span className="text-gray-400 ml-auto">{c.executedAt ? new Date(c.executedAt).toLocaleTimeString('es-CL') : ''}</span>
+                            : c.status === 'cancelled'
+                              ? <XCircle className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                              : <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+                          <span className={`font-medium ${c.status === 'done' ? 'text-green-800' : c.status === 'cancelled' ? 'text-gray-500 line-through' : 'text-red-800'}`}>{c.type}</span>
+                          <span className="text-gray-400 ml-auto">{c.status === 'cancelled' ? 'cancelado' : c.executedAt ? new Date(c.executedAt).toLocaleTimeString('es-CL') : ''}</span>
                           {expandedCmd === c.id ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
                         </button>
                         {expandedCmd === c.id && c.output && (
