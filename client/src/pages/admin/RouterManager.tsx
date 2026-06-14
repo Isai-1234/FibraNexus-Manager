@@ -914,17 +914,13 @@ export default function RouterManager({ API, onBack }: Props) {
                 </div>
               )}
 
-              {/* Script SSH — EdgeRouter (routerType empieza con edgerouter, O brand Ubiquiti sin routerType UniFi) */}
+              {/* Script SSH — siempre visible, aplica a routers Ubiquiti EdgeRouter */}
               {(
-                String(editingRouter?.credentials?.routerType || '').toLowerCase().startsWith('edgerouter') ||
-                (String(editingRouter?.brand || '').toLowerCase() === 'ubiquiti' &&
-                  String(editingRouter?.credentials?.routerType || '').toLowerCase() !== 'ubiquiti')
-              ) && (
                 <div className="border-t pt-3 mt-1">
                   <div className="flex justify-between items-center mb-2">
                     <div>
                       <p className="text-sm font-medium text-gray-800">Script heartbeat SSH</p>
-                      <p className="text-xs text-gray-500">Pégalo en el EdgeRouter para que aparezca "Conectado"</p>
+                      <p className="text-xs text-gray-500">Solo para routers Ubiquiti EdgeRouter — pegar en SSH para activar monitoreo</p>
                     </div>
                     <button
                       onClick={loadEdgeosScript}
