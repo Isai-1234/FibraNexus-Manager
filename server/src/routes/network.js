@@ -225,11 +225,11 @@ networkRouter.post('/routers/:id/dhcp/lease', requireRole('admin'), async (req, 
   }
 });
 
-async function getSiteRouter(eq, orgId) {
-  if (!eq.siteId) return null;
+async function getSiteRouter(eqRow, orgId) {
+  if (!eqRow.siteId) return null;
   const [router] = await db.select().from(equipment)
     .where(and(
-      eq(equipment.siteId, eq.siteId),
+      eq(equipment.siteId, eqRow.siteId),
       eq(equipment.type, 'router'),
       orgFilter(equipment, orgId),
     ))
@@ -287,12 +287,12 @@ networkRouter.post('/equipment/snmp/poll-all', requireRole('admin', 'technician'
 
     for (const r of results) {
       if (r.skipped || r.error) continue;
-      const eq = items.find((e) => e.id === r.id);
-      if (!eq) continue;
+      const eqRow = items.find((e) => e.id === r.id);
+      if (!eqRow) continue;
       await db.update(equipment).set({
         status: r.online ? 'online' : 'offline',
         lastSeen: new Date(),
-        credentials: { ...(eq.credentials || {}), lastSnmp: r },
+        credentials: { ...(eqRow.credentials || {}), lastSnmp: r },
         updatedAt: new Date(),
       }).where(eq(equipment.id, r.id));
     }
