@@ -345,13 +345,15 @@ export async function agentCmdResultHandler(req, res) {
     const allPending = creds.pendingCmds || [];
     const done = allPending.find(c => c.id === cmdId);
 
+    if (!done) {
+      console.warn(`[cmd-result] cmdId=${cmdId} desconocido o ya procesado — ignorando`);
+      return res.json({ ok: true, ignored: true });
+    }
+
     let newPending;
     let historyEntry = null;
 
-    if (!done) {
-      // Comando ya procesado o desconocido — no tocar lista
-      newPending = allPending;
-    } else if (success) {
+    if (success) {
       // Éxito → sacar de pendientes, mover a historial
       newPending = allPending.filter(c => c.id !== cmdId);
       historyEntry = { ...done, status: 'done', output: String(output || '').slice(0, 300), executedAt: new Date().toISOString() };
