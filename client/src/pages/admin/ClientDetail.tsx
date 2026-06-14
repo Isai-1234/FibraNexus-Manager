@@ -464,6 +464,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       macAddress: eq.macAddress || '',
       snmpCommunity: eq.snmpCommunity || '',
       siteId: eq.siteId || '',
+      connectionMode: eq.credentials?.connectionMode || 'static',
+      pppoeUsername: eq.credentials?.pppoeUsername || '',
     })
     setIpSuggestHint('')
   }
@@ -862,6 +864,29 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                     <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
                       value={equipForm.snmpCommunity || ''} onChange={e => setEquipForm({ ...equipForm, snmpCommunity: e.target.value })} />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Modo de conexión IP</label>
+                    <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                      value={equipForm.connectionMode || 'static'}
+                      onChange={e => setEquipForm({ ...equipForm, connectionMode: e.target.value })}>
+                      <option value="static">Estática (default)</option>
+                      <option value="dhcp">DHCP dinámico (por MAC)</option>
+                      <option value="pppoe">PPPoE (por usuario)</option>
+                    </select>
+                  </div>
+                  {equipForm.connectionMode === 'pppoe' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Usuario PPPoE</label>
+                      <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                        placeholder="cliente01@isp"
+                        value={equipForm.pppoeUsername || ''} onChange={e => setEquipForm({ ...equipForm, pppoeUsername: e.target.value })} />
+                    </div>
+                  )}
+                  {(equipForm.connectionMode === 'dhcp' || equipForm.connectionMode === 'pppoe') && (
+                    <p className="text-xs text-blue-700 bg-blue-50 rounded px-3 py-2">
+                      IP dinámica — el sistema la resuelve automáticamente desde el router MikroTik del nodo cada 90 s.
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -917,11 +942,39 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 <p className="text-xs text-gray-500 mt-1">Se completa al salir del campo IP si hay lease DHCP en el router.</p>
               </div>
               {editEquipForm.type === 'cpe' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">SNMP</label>
-                  <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
-                    value={editEquipForm.snmpCommunity || ''} onChange={e => setEditEquipForm({ ...editEquipForm, snmpCommunity: e.target.value })} />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SNMP</label>
+                    <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                      value={editEquipForm.snmpCommunity || ''} onChange={e => setEditEquipForm({ ...editEquipForm, snmpCommunity: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Modo de conexión IP</label>
+                    <select className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                      value={editEquipForm.connectionMode || 'static'}
+                      onChange={e => setEditEquipForm({ ...editEquipForm, connectionMode: e.target.value })}>
+                      <option value="static">Estática (default)</option>
+                      <option value="dhcp">DHCP dinámico (por MAC)</option>
+                      <option value="pppoe">PPPoE (por usuario)</option>
+                    </select>
+                  </div>
+                  {editEquipForm.connectionMode === 'pppoe' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Usuario PPPoE</label>
+                      <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                        placeholder="cliente01@isp"
+                        value={editEquipForm.pppoeUsername || ''} onChange={e => setEditEquipForm({ ...editEquipForm, pppoeUsername: e.target.value })} />
+                    </div>
+                  )}
+                  {editingEquip?.credentials?.resolvedIp && (
+                    <div className="text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2">
+                      IP resuelta: <span className="font-mono font-semibold">{editingEquip.credentials.resolvedIp}</span>
+                      {editingEquip.credentials.resolvedAt && (
+                        <span className="text-gray-500 ml-2">({new Date(editingEquip.credentials.resolvedAt).toLocaleTimeString('es-CL')})</span>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t">
@@ -1222,10 +1275,24 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                           </span>
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
-                          <div><span className="text-gray-400">IP:</span> <span className="font-mono">{eq.ipAddress || '—'}</span></div>
+                          <div>
+                            <span className="text-gray-400">IP:</span>{' '}
+                            <span className="font-mono">{eq.ipAddress || '—'}</span>
+                            {eq.credentials?.resolvedIp && eq.credentials.connectionMode !== 'static' && (
+                              <span className="ml-1 text-emerald-600 font-mono">→ {eq.credentials.resolvedIp}</span>
+                            )}
+                          </div>
                           <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>
                           <div className="col-span-2"><span className="text-gray-400">Nodo:</span> {eq.siteName || 'Sin nodo'} {eq.siteCity ? `· ${eq.siteCity}` : ''}</div>
                           {eq.snmpCommunity && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> {eq.snmpCommunity}</div>}
+                          {eq.credentials?.connectionMode && eq.credentials.connectionMode !== 'static' && (
+                            <div className="col-span-2">
+                              <span className="text-gray-400">Modo:</span>{' '}
+                              <span className={`font-medium ${eq.credentials.connectionMode === 'dhcp' ? 'text-blue-600' : 'text-purple-600'}`}>
+                                {eq.credentials.connectionMode === 'dhcp' ? 'DHCP dinámico' : `PPPoE · ${eq.credentials.pppoeUsername || '—'}`}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2 mt-4">
                           <button onClick={() => openEditEquip(eq)}

@@ -64,6 +64,11 @@ export const jobTasks = {
     const { syncServiceQueueMetadata } = await import('../networkProvision.js');
     return syncServiceQueueMetadata(serviceId, orgId);
   },
+
+  'ip-resolve-org': async ({ orgId }) => {
+    const { syncOrgLeases } = await import('../ipResolver.js');
+    return syncOrgLeases(orgId);
+  },
 };
 
 export async function runTask(jobName, payload) {

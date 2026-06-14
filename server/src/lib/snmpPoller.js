@@ -247,7 +247,8 @@ async function fetchUbntWireless(host, community, router, pollMethod) {
 }
 
 export async function pollDeviceSnmp(equipment, router = null) {
-  const host = equipment.ipAddress?.trim().split('/')[0];
+  const { getEffectiveHost } = await import('./ipResolver.js');
+  const host = getEffectiveHost(equipment);
   const community = equipment.snmpCommunity?.trim() || 'public';
   if (!host) throw new Error('Equipo sin IP para SNMP');
 

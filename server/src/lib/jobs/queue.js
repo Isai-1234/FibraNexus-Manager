@@ -7,6 +7,7 @@ export const JobNames = {
   SNMP_POLL_ONE: 'snmp-poll-one',
   SNMP_POLL_BATCH: 'snmp-poll-batch',
   SNMP_POLL_ORG: 'snmp-poll-org',
+  IP_RESOLVE_ORG: 'ip-resolve-org',
   BILLING_ORG: 'billing-org',
   ROUTER_POLL_ORG: 'router-poll-org',
   SUSPEND_SERVICE: 'suspend-service',

@@ -13,6 +13,10 @@ export function startScheduler() {
   // Primera pasada SNMP ~15s después del arranque (fire-and-forget)
   setTimeout(() => triggerSnmpRound('initial'), 15000);
 
+  // Resolución de IPs dinámicas (DHCP/PPPoE): primera pasada 20s post-arranque, luego cada 90s
+  setTimeout(() => triggerIpResolveRound('initial'), 20000);
+  setInterval(() => triggerIpResolveRound('scheduled'), 90 * 1000);
+
   setInterval(async () => {
     const hour = new Date().getHours();
     if (hour === lastSchedulerHour) return;
@@ -56,6 +60,23 @@ export function startScheduler() {
 
   // SNMP: antenas/CPE — cada 3 minutos, fire-and-forget para no bloquear el event loop
   setInterval(() => triggerSnmpRound('scheduled'), 3 * 60 * 1000);
+}
+
+async function triggerIpResolveRound(label) {
+  try {
+    const { db } = await import('../db/index.js');
+    const { organizations } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const { dispatch, JobNames } = await import('./jobs/queue.js');
+    const orgs = await db.select({ id: organizations.id }).from(organizations)
+      .where(eq(organizations.isActive, true));
+    for (const org of orgs) {
+      dispatch(JobNames.IP_RESOLVE_ORG, { orgId: org.id })
+        .catch((err) => console.error('[scheduler:ip-resolve] org=%d error: %s', org.id, err.message));
+    }
+  } catch (err) {
+    console.error('[scheduler:ip-resolve:%s] error: %s', label, err.message);
+  }
 }
 
 async function triggerSnmpRound(label) {

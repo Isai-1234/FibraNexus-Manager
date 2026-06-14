@@ -189,7 +189,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId } = req.body;
+    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId, connectionMode, pppoeUsername } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
 
     if (siteId) {
@@ -214,6 +214,10 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       macAddress,
     });
 
+    const initCreds = {};
+    if (connectionMode && connectionMode !== 'static') initCreds.connectionMode = connectionMode;
+    if (pppoeUsername) initCreds.pppoeUsername = pppoeUsername;
+
     const [created] = await db.insert(equipment).values({
       organizationId: orgId,
       siteId: parsedSiteId,
@@ -226,6 +230,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       snmpCommunity: snmpCommunity || null,
       notes: notes || null,
       status: 'offline',
+      credentials: Object.keys(initCreds).length ? initCreds : null,
     }).returning();
 
     if (clientId) {
@@ -252,6 +257,7 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
 
     const {
       name, brand, model, ipAddress, macAddress, snmpCommunity, notes, clientId, siteId,
+      connectionMode, pppoeUsername,
     } = req.body;
 
     const patch = { updatedAt: new Date() };
@@ -274,6 +280,25 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     if (snmpCommunity !== undefined) patch.snmpCommunity = snmpCommunity || null;
     if (notes !== undefined) patch.notes = notes || null;
     if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
+
+    if (connectionMode !== undefined || pppoeUsername !== undefined) {
+      const currentCreds = existing.credentials || {};
+      const mergedCreds = { ...currentCreds };
+      if (connectionMode !== undefined) {
+        if (connectionMode && connectionMode !== 'static') {
+          mergedCreds.connectionMode = connectionMode;
+        } else {
+          delete mergedCreds.connectionMode;
+          delete mergedCreds.resolvedIp;
+          delete mergedCreds.resolvedAt;
+        }
+      }
+      if (pppoeUsername !== undefined) {
+        if (pppoeUsername) mergedCreds.pppoeUsername = pppoeUsername;
+        else delete mergedCreds.pppoeUsername;
+      }
+      patch.credentials = mergedCreds;
+    }
 
     const [updated] = await db.update(equipment).set(patch)
       .where(eq(equipment.id, equipmentId)).returning();
