@@ -211,9 +211,10 @@ export default function RouterManager({ API, onBack }: Props) {
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
-  function openCredentials(router: any) {
+  async function openCredentials(router: any) {
     const isUbiquitiRouter = (router.brand || '').toLowerCase() === 'ubiquiti'
     setCredTab(isUbiquitiRouter ? 'heartbeat' : 'api')
+    // Leer el token desde la lista (optimista). Luego verificar contra BD.
     setCredTokenValue(router.credentials?.agentToken || '')
     setEditingRouter(router)
     setCredForm({
@@ -224,6 +225,12 @@ export default function RouterManager({ API, onBack }: Props) {
       connectionMethod: resolveConnectionMethod(router),
     })
     setCredTestResult(null)
+    // Sincronizar el token con BD (force=false → nunca modifica nada)
+    // Esto corrige el caso donde la lista tenía el token en caché pero BD tiene otro
+    try {
+      const res = await api().post(`/routers/${router.id}/token`, { force: false })
+      setCredTokenValue(res.data.agentToken)
+    } catch { /* silencioso: el campo ya tiene el valor de la lista */ }
   }
 
   async function saveCredentials() {
@@ -270,23 +277,37 @@ export default function RouterManager({ API, onBack }: Props) {
     setCredTesting(false)
   }
 
-  async function regenerateToken() {
+  async function fetchOrCreateToken() {
     if (!editingRouter) return
-    if (credTokenValue) {
-      const ok = window.confirm(
-        '⚠️ ATENCIÓN — Esto invalidará el token actual.\n\n' +
-        'El script que corre en el EdgeRouter quedará rechazado (403) hasta que instales el script nuevo vía SSH.\n\n' +
-        '¿Estás seguro de que quieres reemplazar el token?'
-      )
-      if (!ok) return
-    }
     setTokenRegenerating(true)
     try {
-      const res = await api().post(`/routers/${editingRouter.id}/token`)
+      // force=false → el servidor devuelve el token existente sin modificar nada
+      const res = await api().post(`/routers/${editingRouter.id}/token`, { force: false })
       setCredTokenValue(res.data.agentToken)
       setEditingRouter({ ...editingRouter, credentials: { ...editingRouter.credentials, agentToken: res.data.agentToken } })
     } catch (e: any) {
-      alert('Error al generar token: ' + (e.response?.data?.error || e.message))
+      alert('Error al obtener token: ' + (e.response?.data?.error || e.message))
+    }
+    setTokenRegenerating(false)
+  }
+
+  async function forceRegenerateToken() {
+    if (!editingRouter) return
+    const ok = window.confirm(
+      '⚠️ ATENCIÓN — Esta acción es irreversible.\n\n' +
+      'Se generará un token NUEVO. El EdgeRouter perderá la conexión inmediatamente ' +
+      'y deberás instalar el script actualizado vía SSH para restaurarla.\n\n' +
+      '¿Confirmas que quieres reemplazar el token?'
+    )
+    if (!ok) return
+    setTokenRegenerating(true)
+    try {
+      // force=true → el servidor genera UUID nuevo (único caso donde cambia el token)
+      const res = await api().post(`/routers/${editingRouter.id}/token`, { force: true })
+      setCredTokenValue(res.data.agentToken)
+      setEditingRouter({ ...editingRouter, credentials: { ...editingRouter.credentials, agentToken: res.data.agentToken } })
+    } catch (e: any) {
+      alert('Error al regenerar token: ' + (e.response?.data?.error || e.message))
     }
     setTokenRegenerating(false)
   }
@@ -1013,30 +1034,40 @@ export default function RouterManager({ API, onBack }: Props) {
                   <div>
                     <label className="text-sm font-medium text-gray-700">Token de agente</label>
                     <p className="text-xs text-gray-400 mt-0.5 mb-2">UUID que identifica este router — se incrusta automáticamente en el script</p>
+                    {/* Token field */}
                     <div className="flex gap-2">
                       <input readOnly
-                        value={credTokenValue || 'Sin token — genera uno primero'}
-                        className={`flex-1 font-mono text-xs rounded-lg px-3 py-2 border min-w-0 ${credTokenValue ? 'bg-gray-50 text-gray-800 border-gray-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`} />
+                        value={credTokenValue || '—'}
+                        className="flex-1 font-mono text-xs rounded-lg px-3 py-2 border bg-gray-50 text-gray-800 border-gray-200 min-w-0" />
                       {credTokenValue && (
                         <button onClick={() => copyText(credTokenValue, 'agent-token')}
                           className="p-2 border rounded-lg hover:bg-gray-50 flex-shrink-0" title="Copiar token">
                           {copied === 'agent-token' ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-gray-500" />}
                         </button>
                       )}
-                      <button onClick={regenerateToken} disabled={tokenRegenerating}
-                        className={`px-3 py-2 text-xs border rounded-lg disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap transition-colors ${
-                          credTokenValue
-                            ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                            : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                        }`}>
-                        <RefreshCw className={`h-3.5 w-3.5 ${tokenRegenerating ? 'animate-spin' : ''}`} />
-                        {tokenRegenerating ? 'Generando…' : credTokenValue ? 'Regenerar token' : 'Generar token'}
-                      </button>
+                    </div>
+
+                    {/* Botones de acción del token */}
+                    <div className="flex gap-2 mt-2">
+                      {!credTokenValue && (
+                        <button onClick={fetchOrCreateToken} disabled={tokenRegenerating}
+                          className="flex-1 py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                          <RefreshCw className={`h-3.5 w-3.5 ${tokenRegenerating ? 'animate-spin' : ''}`} />
+                          {tokenRegenerating ? 'Obteniendo…' : 'Obtener token'}
+                        </button>
+                      )}
+                      {credTokenValue && (
+                        <button onClick={forceRegenerateToken} disabled={tokenRegenerating}
+                          className="flex-1 py-2 text-xs bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {tokenRegenerating ? 'Procesando…' : 'Regenerar token (peligro)'}
+                        </button>
+                      )}
                     </div>
                     {credTokenValue && (
-                      <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-                        Regenerar invalida el script instalado en el router — requiere reinstalar vía SSH
+                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 text-red-400 flex-shrink-0" />
+                        Regenerar invalida el script del router — requirirá reinstalar vía SSH
                       </p>
                     )}
                   </div>

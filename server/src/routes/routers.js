@@ -390,6 +390,9 @@ routersRouter.post('/test-connection', requireRole('admin'), async (req, res) =>
   }
 });
 
+// Endpoint idempotente: devuelve el token existente si lo hay.
+// Solo genera uno nuevo si: (a) el router no tiene token, o (b) force=true enviado explícitamente.
+// force=true requiere confirmación del usuario en el frontend antes de llamarse.
 routersRouter.post('/:id/token', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -399,12 +402,34 @@ routersRouter.post('/:id/token', requireRole('admin'), async (req, res) => {
       and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
     ).limit(1);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+
+    const existingToken = router.credentials?.agentToken;
+    const force = req.body?.force === true;
+
+    // Sin token existente → generar uno (primera vez)
+    if (!existingToken) {
+      const newToken = crypto.randomUUID();
+      const updatedCreds = { ...(router.credentials || {}), agentToken: newToken };
+      await db.update(equipment)
+        .set({ credentials: updatedCreds, updatedAt: new Date() })
+        .where(eq(equipment.id, router.id));
+      console.log(`[token] router ${routerId} token generado (nuevo)`);
+      return res.json({ agentToken: newToken, created: true });
+    }
+
+    // Token existente + sin force → devolver el mismo, NUNCA sobreescribir
+    if (!force) {
+      return res.json({ agentToken: existingToken, created: false });
+    }
+
+    // Token existente + force=true (usuario confirmó explícitamente en UI) → regenerar
     const newToken = crypto.randomUUID();
     const updatedCreds = { ...(router.credentials || {}), agentToken: newToken };
     await db.update(equipment)
       .set({ credentials: updatedCreds, updatedAt: new Date() })
       .where(eq(equipment.id, router.id));
-    res.json({ agentToken: newToken });
+    console.log(`[token] router ${routerId} token REGENERADO por solicitud explícita`);
+    res.json({ agentToken: newToken, created: true });
   } catch (error) {
     res.status(500).json({ error: 'Error generando token: ' + error.message });
   }
