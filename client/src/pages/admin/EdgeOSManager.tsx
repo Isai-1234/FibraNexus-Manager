@@ -11,11 +11,6 @@ interface Props {
   onClose: () => void
 }
 
-function fmtBps(bps: number): string {
-  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`
-  if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`
-  return `${bps} bps`
-}
 
 function QueueBadge({ q, pendingCmds }: { q: any; pendingCmds: any[] }) {
   if (!q) return (
@@ -51,7 +46,6 @@ function QueueBadge({ q, pendingCmds }: { q: any; pendingCmds: any[] }) {
 export default function EdgeOSManager({ API, router, onClose }: Props) {
   const [tab, setTab] = useState<'networks' | 'subscribers'>('networks')
   const [status, setStatus] = useState<any>(null)
-  const [bandwidth, setBandwidth] = useState<any>(null)
   const [subscribers, setSubscribers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [subLoading, setSubLoading] = useState(false)
@@ -85,23 +79,12 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     finally { setSubLoading(false) }
   }, [api, router.id])
 
-  const loadBandwidth = useCallback(async () => {
-    try {
-      const res = await api().get(`/edgeos/${router.id}/bandwidth`)
-      setBandwidth(res.data)
-    } catch (e: any) {
-      setBandwidth({ connected: false, error: e.message || 'Error de red', interfaces: [] })
-    }
-  }, [api, router.id])
-
   useEffect(() => {
     loadStatus()
     loadSubscribers()
-    loadBandwidth()
     const statusInterval = setInterval(loadStatus, 15000)
-    const bwInterval = setInterval(loadBandwidth, 5000)
-    return () => { clearInterval(statusInterval); clearInterval(bwInterval) }
-  }, [loadStatus, loadSubscribers, loadBandwidth])
+    return () => { clearInterval(statusInterval) }
+  }, [loadStatus, loadSubscribers])
 
   // Sincronizar iface seleccionada con la LAN del router
   useEffect(() => {
@@ -276,73 +259,6 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                   <span>El EdgeRouter no está enviando heartbeat. Los comandos se encolarán y se ejecutarán cuando recupere la conexión.</span>
                 </div>
               ) : null}
-
-              {/* Ancho de banda en tiempo real */}
-              {status?.connected && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-xs font-semibold uppercase text-gray-400">Tráfico en tiempo real</h3>
-                    {bandwidth === null ? (
-                      <span className="text-[10px] text-gray-400">cargando…</span>
-                    ) : bandwidth?.connected && bandwidth?.source !== 'none' ? (
-                      bandwidth?.source === 'api' ? (
-                        <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> heartbeat
-                        </span>
-                      )
-                    ) : bandwidth && !bandwidth.connected ? (
-                      <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">sin datos</span>
-                    ) : null}
-                  </div>
-                  {bandwidth === null ? (
-                    <div className="space-y-1.5">
-                      <div className="h-14 bg-gray-100 rounded-lg animate-pulse" />
-                      <div className="h-14 bg-gray-100 rounded-lg animate-pulse" />
-                    </div>
-                  ) : bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) > 0 ? (
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {(bandwidth.interfaces as any[]).map((iface: any) => {
-                        const total = iface.rxBps + iface.txBps
-                        const netInfo = (status?.networks || []).find((n: any) => n.iface === iface.iface)
-                        return (
-                          <div key={iface.iface} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold text-gray-700 font-mono">{iface.iface}</span>
-                                <span className={`w-1.5 h-1.5 rounded-full ${iface.up ? 'bg-green-400' : 'bg-gray-300'}`} />
-                              </div>
-                              {netInfo && <span className="text-[10px] text-gray-400 font-mono">{netInfo.ipCidr}</span>}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs">
-                              <span className="text-blue-600">↓ {fmtBps(iface.rxBps)}</span>
-                              <span className="text-orange-500">↑ {fmtBps(iface.txBps)}</span>
-                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
-                                {total > 0 ? (
-                                  <>
-                                    <div className="h-full bg-blue-400" style={{ width: `${Math.min(100, iface.rxBps / total * 100)}%` }} />
-                                    <div className="h-full bg-orange-400" style={{ width: `${Math.min(100, iface.txBps / total * 100)}%` }} />
-                                  </>
-                                ) : <div className="h-full bg-gray-300 w-full" />}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) === 0 ? (
-                    <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-xs text-amber-800">
-                      <p className="font-medium mb-1">Sin datos de tráfico</p>
-                      <p className="text-amber-700">El script instalado en el EdgeRouter no envía estadísticas de interfaces. Reinstálalo desde <strong>Configurar API → Heartbeat SSH</strong> para activar el monitoreo de ancho de banda.</p>
-                    </div>
-                  ) : bandwidth && !bandwidth.connected ? (
-                    <p className="text-xs text-red-400 italic">{bandwidth.error || 'Sin datos de tráfico'}</p>
-                  ) : null}
-                </div>
-              )}
 
               {/* Redes configuradas */}
               {(status?.networks || []).length > 0 && (
