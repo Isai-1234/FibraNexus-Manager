@@ -33,6 +33,7 @@ export function buildNetworkScript({ iface, ipCidr, description = '', dhcp = tru
   const ps = poolStart || net.poolStart;
   const pe = poolEnd || net.poolEnd;
   const lines = [
+    'source /opt/vyatta/etc/functions/script-template',
     'configure',
     `set interfaces ethernet ${iface} address ${ipCidr}`,
   ];
@@ -56,6 +57,7 @@ export function buildNetworkScript({ iface, ipCidr, description = '', dhcp = tru
 export function buildDeleteNetworkScript({ iface }) {
   const sharedName = `FN-${iface.replace(/\//g, '-').toUpperCase()}`;
   return [
+    'source /opt/vyatta/etc/functions/script-template',
     'configure',
     `delete interfaces ethernet ${iface} address`,
     `delete service dhcp-server shared-network-name ${sharedName}`,
@@ -75,6 +77,7 @@ export function buildAddQueueScript({ iface, serviceId, clientIp, downloadMbps, 
   const matchId = `fn-s${serviceId}`;
   const desc = `FN-S${serviceId} ${clientName}`.slice(0, 64).replace(/'/g, '');
   return [
+    'source /opt/vyatta/etc/functions/script-template',
     'configure',
     // --- Download shaper (router → cliente) ---
     `set traffic-policy shaper ${dlPolicy} bandwidth 1000mbit`,
@@ -102,6 +105,7 @@ export function buildRemoveQueueScript({ iface, serviceId }) {
   const dlPolicy = `FN-DL-${iface}`;
   const ulPolicy = `FN-UL-${iface}`;
   return [
+    'source /opt/vyatta/etc/functions/script-template',
     'configure',
     `delete traffic-policy shaper ${dlPolicy} class ${classId}`,
     `delete traffic-policy limiter ${ulPolicy} class ${classId}`,
