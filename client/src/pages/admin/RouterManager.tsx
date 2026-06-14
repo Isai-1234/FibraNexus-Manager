@@ -322,7 +322,7 @@ export default function RouterManager({ API, onBack }: Props) {
       `TOKEN="${token}"`,
       `SERVER="${url}"`,
       `CMD_RESULT="${cmdResultUrl}"`,
-      'PIDFILE="/var/run/fibranexus.pid"',
+      'PIDFILE="/tmp/fibranexus.pid"',
       'if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then exit 0; fi',
       'echo $$ > "$PIDFILE"',
       'trap "rm -f $PIDFILE" EXIT',
@@ -382,10 +382,9 @@ export default function RouterManager({ API, onBack }: Props) {
       'sudo chmod +x /config/scripts/post-config.d/fibranexus-start.sh',
       '',
       '# Iniciar daemon ahora',
-      'kill $(cat /var/run/fibranexus.pid 2>/dev/null) 2>/dev/null; rm -f /var/run/fibranexus.pid',
-      '/bin/bash /config/scripts/fibranexus/heartbeat.sh &',
-      'disown',
-      'echo "Agente FibraNexus iniciado — verifica el dashboard en ~30 segundos."',
+      'kill $(cat /tmp/fibranexus.pid 2>/dev/null) 2>/dev/null; rm -f /tmp/fibranexus.pid',
+      'nohup /bin/bash /config/scripts/fibranexus/heartbeat.sh >/dev/null 2>&1 &',
+      'echo "Agente FibraNexus iniciado (PID $!) — verifica el dashboard en ~30 segundos."',
     ].join('\n')
   }
 
