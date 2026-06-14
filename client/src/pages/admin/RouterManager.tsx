@@ -792,7 +792,7 @@ export default function RouterManager({ API, onBack }: Props) {
                 <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${router.status === 'online' ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                      <div className={`w-3 h-3 rounded-full ${router.agentConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
                       <div>
                         <h3 className="font-bold text-gray-900">{router.name}</h3>
                         <p className="text-xs text-gray-500">{router.brand} {router.model}</p>
@@ -801,10 +801,10 @@ export default function RouterManager({ API, onBack }: Props) {
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                   </div>
 
-                  {router.status === 'online' && info && (
+                  {router.agentConnected && info && (
                     <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
                       <div className="text-center">
-                        <p className="text-[10px] uppercase text-gray-400 font-semibold">{router.credentials?.routerType === 'edgerouter_v4' ? 'EdgeOS' : 'RouterOS'}</p>
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">{router.brand === 'Ubiquiti' ? 'EdgeOS' : 'RouterOS'}</p>
                         <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
                       </div>
                       <div className="text-center border-x border-slate-200">
@@ -861,8 +861,8 @@ export default function RouterManager({ API, onBack }: Props) {
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
                   </div>
-                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.status === 'online' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
-                    {router.status === 'online' ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
+                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.agentConnected ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
+                    {router.agentConnected ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
                     {router.lastSeen && <span className="ml-auto text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(router.lastSeen).toLocaleTimeString('es-CL')}</span>}
                   </div>
                 </div>

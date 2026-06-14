@@ -27,9 +27,8 @@ export function isApiPollableRouter(router) {
 }
 
 export function isRouterPollStale(router, staleMs = STALE_MS) {
-  const creds = router.credentials || {};
-  const type = creds.routerType || '';
-  if (String(type).startsWith('mikrotik') && router.lastSeen && router.status === 'online') {
+  // Cualquier router online con heartbeat reciente → no pollear (evita que un poll fallido pise el heartbeat)
+  if (router.status === 'online' && router.lastSeen) {
     const age = Date.now() - new Date(router.lastSeen).getTime();
     if (age < 90_000) return false;
   }
