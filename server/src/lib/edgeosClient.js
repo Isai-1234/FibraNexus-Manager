@@ -7,16 +7,20 @@ export function isEdgeRouterType(routerType) {
   return EDGEROUTER_TYPES.includes(String(routerType || ''));
 }
 
-function resolveHost(router) {
+export function resolveHost(router) {
   const creds = router.credentials || {};
   const method = inferConnectionMethod(router);
+  let host;
   if (method === 'cloudflare_tunnel' && creds.tunnelHostname) {
-    return creds.tunnelHostname;
+    host = creds.tunnelHostname;
+  } else {
+    host = router.ipAddress || '';
   }
-  return router.ipAddress;
+  // Limpiar prefijo https?:// y trailing slash
+  return host.replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
 }
 
-function resolvePort(router) {
+export function resolvePort(router) {
   const creds = router.credentials || {};
   return String(creds.routerPort || '443');
 }

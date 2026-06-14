@@ -50,8 +50,10 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
   const loadBandwidth = useCallback(async () => {
     try {
       const res = await api().get(`/edgeos/${router.id}/bandwidth`)
-      if (res.data?.connected) setBandwidth(res.data)
-    } catch { /* silent */ }
+      setBandwidth(res.data)
+    } catch (e: any) {
+      setBandwidth({ connected: false, error: e.message || 'Error de red', interfaces: [] })
+    }
   }, [api, router.id])
 
   useEffect(() => {
@@ -184,38 +186,59 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
               ) : null}
 
               {/* Ancho de banda en tiempo real */}
-              {bandwidth?.connected && bandwidth.interfaces?.length > 0 && (
+              {status?.connected && bandwidth !== null && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-xs font-semibold uppercase text-gray-400">Tráfico en tiempo real</h3>
-                    <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
-                    </span>
+                    {bandwidth?.connected ? (
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">error API</span>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {bandwidth.interfaces.filter((i: any) => i.up !== false).map((iface: any) => {
-                      const total = iface.rxBps + iface.txBps
-                      const netInfo = (status?.networks || []).find((n: any) => n.iface === iface.iface)
-                      return (
-                        <div key={iface.iface} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-semibold text-gray-700 font-mono">{iface.iface}</span>
-                            {netInfo && <span className="text-[10px] text-gray-400 font-mono">{netInfo.ipCidr}</span>}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs">
-                            <span className="text-blue-600">↓ {fmtBps(iface.rxBps)}</span>
-                            <span className="text-orange-500">↑ {fmtBps(iface.txBps)}</span>
-                            {total > 0 && (
-                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
-                                <div className="h-full bg-blue-400 rounded-l" style={{ width: `${Math.min(100, iface.rxBps / total * 100)}%` }} />
-                                <div className="h-full bg-orange-400 rounded-r" style={{ width: `${Math.min(100, iface.txBps / total * 100)}%` }} />
+                  {bandwidth?.error && (
+                    <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2 font-mono break-all">
+                      {bandwidth.error}
+                    </div>
+                  )}
+                  {bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) > 0 && (
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {(bandwidth.interfaces as any[]).map((iface: any) => {
+                        const total = iface.rxBps + iface.txBps
+                        const netInfo = (status?.networks || []).find((n: any) => n.iface === iface.iface)
+                        return (
+                          <div key={iface.iface} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-gray-700 font-mono">{iface.iface}</span>
+                                <span className={`w-1.5 h-1.5 rounded-full ${iface.up ? 'bg-green-400' : 'bg-gray-300'}`} />
                               </div>
-                            )}
+                              {netInfo && <span className="text-[10px] text-gray-400 font-mono">{netInfo.ipCidr}</span>}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs">
+                              <span className="text-blue-600">↓ {fmtBps(iface.rxBps)}</span>
+                              <span className="text-orange-500">↑ {fmtBps(iface.txBps)}</span>
+                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
+                                {total > 0 ? (
+                                  <>
+                                    <div className="h-full bg-blue-400" style={{ width: `${Math.min(100, iface.rxBps / total * 100)}%` }} />
+                                    <div className="h-full bg-orange-400" style={{ width: `${Math.min(100, iface.txBps / total * 100)}%` }} />
+                                  </>
+                                ) : (
+                                  <div className="h-full bg-gray-300 w-full" />
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) === 0 && (
+                    <p className="text-xs text-gray-400 italic">No se encontraron interfaces en la respuesta API</p>
+                  )}
                 </div>
               )}
 

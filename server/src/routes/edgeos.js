@@ -12,19 +12,20 @@ import {
   makePendingCmd,
   parseCidr,
 } from '../lib/edgeosCommands.js';
-import { edgeosLogin, edgeosDataGet, getRouterCredentials } from '../lib/edgeosClient.js';
+import { edgeosLogin, edgeosDataGet, getRouterCredentials, resolveHost, resolvePort } from '../lib/edgeosClient.js';
 
 // Caché de sesiones EdgeOS en memoria (evita login por cada poll)
 const sessionCache = new Map(); // routerId → { cookie, csrfToken, host, port, createdAt }
 
 async function getEdgeosSession(router) {
-  const creds = router.credentials || {};
-  const host = creds.tunnelHostname || router.ipAddress;
-  const port = String(creds.routerPort || '443');
+  const host = resolveHost(router);
+  const port = resolvePort(router);
+  if (!host) throw new Error('Router sin host configurado (tunnelHostname o ipAddress)');
   const cached = sessionCache.get(router.id);
   if (cached && cached.host === host && Date.now() - cached.createdAt < 18 * 60 * 1000) {
     return cached;
   }
+  console.log(`[EdgeOS] login sesión → host=${host} port=${port}`);
   const { user, pass } = getRouterCredentials(router);
   const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass });
   const session = { cookie, csrfToken, host, port, createdAt: Date.now() };
@@ -71,23 +72,29 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     const session = await getEdgeosSession(router);
     const data = await edgeosDataGet({ ...session, dataPath: 'interfaces' });
 
-    const raw = data?.data?.interfaces || data?.interfaces || {};
+    // Diferentes versiones de firmware usan paths distintos
+    const raw = data?.data?.interfaces || data?.GET?.interfaces || data?.interfaces || {};
+    console.log(`[EdgeOS] bandwidth raw keys=${Object.keys(raw).join(',') || 'EMPTY'} data_keys=${Object.keys(data || {}).join(',')}`);
+
     const interfaces = Object.entries(raw).map(([name, info]) => {
-      const stats = info?.stats || {};
+      // EdgeOS usa "stats" o "stat" según versión firmware
+      const stats = info?.stats || info?.stat || {};
       return {
         iface: name,
-        up: info?.up ?? true,
-        rxBps: Math.round(stats.rx_bps || 0),
-        txBps: Math.round(stats.tx_bps || 0),
-        rxBytes: stats.rx_bytes || 0,
-        txBytes: stats.tx_bytes || 0,
+        up: info?.up ?? info?.l1up ?? true,
+        rxBps: Math.round(Number(stats.rx_bps) || 0),
+        txBps: Math.round(Number(stats.tx_bps) || 0),
+        rxBytes: Number(stats.rx_bytes) || 0,
+        txBytes: Number(stats.tx_bytes) || 0,
       };
-    }).filter(i => !['lo'].includes(i.iface));
+    }).filter(i => i.iface !== 'lo');
 
+    console.log(`[EdgeOS] bandwidth interfaces=${JSON.stringify(interfaces.map(i => ({ iface: i.iface, rxBps: i.rxBps, txBps: i.txBps })))}`);
     res.json({ connected: true, ts: Date.now(), interfaces });
   } catch (err) {
     // Si la sesión expiró, limpiar caché para forzar re-login
     sessionCache.delete(parseInt(req.params.routerId));
+    console.error(`[EdgeOS] bandwidth ERROR router=${req.params.routerId}: ${err.message}`);
     res.json({ connected: false, error: err.message, interfaces: [] });
   }
 });
