@@ -95,27 +95,23 @@ function edgeosHttpsRequest({ host, port, path, method, headers = {}, body, time
  *
  * Devuelve { cookie, csrfToken }.
  */
-export async function edgeosLogin({ host, port, user, pass }) {
+export async function edgeosLogin({ host, port, user, pass, timeout = 10000 }) {
   // Intento 1: JSON (comportamiento estándar EdgeOS ≥ v1.9)
   let res = await edgeosHttpsRequest({
-    host,
-    port,
-    path: '/api/edge/login',
-    method: 'POST',
+    host, port, path: '/api/edge/login', method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: { username: user, password: pass },
+    timeout,
   });
 
   // Intento 2: form-urlencoded (fallback para firmware más antiguo)
   if (res.statusCode === 400 || res.statusCode === 415 || res.statusCode === 405) {
     console.log(`[EdgeOS] login JSON → HTTP ${res.statusCode}, reintentando con form-urlencoded`);
     res = await edgeosHttpsRequest({
-      host,
-      port,
-      path: '/api/edge/login',
-      method: 'POST',
+      host, port, path: '/api/edge/login', method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`,
+      timeout,
     });
   }
 
@@ -148,7 +144,7 @@ export async function edgeosLogin({ host, port, user, pass }) {
 }
 
 /** GET de datos EdgeOS. Incluye CSRF token en header si está disponible. */
-export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath }) {
+export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath, timeout = 10000 }) {
   const res = await edgeosHttpsRequest({
     host,
     port,
@@ -158,6 +154,7 @@ export async function edgeosDataGet({ host, port, cookie, csrfToken, dataPath })
       Cookie: cookie,
       ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
+    timeout,
   });
 
   console.log(`[EdgeOS] data.json?data=${dataPath} → HTTP ${res.statusCode}`);

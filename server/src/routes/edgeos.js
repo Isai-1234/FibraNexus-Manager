@@ -17,7 +17,7 @@ import { edgeosLogin, edgeosDataGet, getRouterCredentials, resolveHost, resolveP
 // Caché de sesiones EdgeOS en memoria (evita login por cada poll)
 const sessionCache = new Map(); // routerId → { cookie, csrfToken, host, port, createdAt }
 
-async function getEdgeosSession(router) {
+async function getEdgeosSession(router, { timeout = 10000 } = {}) {
   const host = resolveHost(router);
   const port = resolvePort(router);
   if (!host) throw new Error('Router sin host configurado (tunnelHostname o ipAddress)');
@@ -27,7 +27,7 @@ async function getEdgeosSession(router) {
   }
   console.log(`[EdgeOS] login sesión → host=${host} port=${port}`);
   const { user, pass } = getRouterCredentials(router);
-  const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass });
+  const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass, timeout });
   const session = { cookie, csrfToken, host, port, createdAt: Date.now() };
   sessionCache.set(router.id, session);
   return session;
@@ -55,7 +55,9 @@ async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
   return cmd;
 }
 
-// GET /api/edgeos/:routerId/bandwidth — ancho de banda en tiempo real via API EdgeOS
+// GET /api/edgeos/:routerId/bandwidth — ancho de banda en tiempo real
+// Fuente 1: heartbeat (siempre disponible, ~28s de resolución)
+// Fuente 2: API EdgeOS directa (requiere túnel Cloudflare al EdgeRouter, 5s timeout)
 edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -69,31 +71,44 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
       : false;
     if (!isConnected) return res.json({ connected: false, interfaces: [] });
 
-    const session = await getEdgeosSession(router);
-    const data = await edgeosDataGet({ ...session, dataPath: 'interfaces' });
+    // --- Fuente 1: datos del heartbeat (bandwidthSamples) ---
+    const latestSample = (creds.bandwidthSamples || []).slice(-1)[0];
+    const heartbeatIfaces = latestSample?.ifaces
+      ? latestSample.ifaces
+          .filter(i => i.iface && i.iface !== 'lo')
+          .map(i => ({ iface: i.iface, up: true, rxBps: Math.max(0, i.rxBps || 0), txBps: Math.max(0, i.txBps || 0), rxBytes: 0, txBytes: 0 }))
+      : null;
 
-    // Diferentes versiones de firmware usan paths distintos
-    const raw = data?.data?.interfaces || data?.GET?.interfaces || data?.interfaces || {};
-    console.log(`[EdgeOS] bandwidth raw keys=${Object.keys(raw).join(',') || 'EMPTY'} data_keys=${Object.keys(data || {}).join(',')}`);
+    // --- Fuente 2: API EdgeOS directa (opcional, falla silenciosa) ---
+    let apiIfaces = null;
+    try {
+      const session = await getEdgeosSession(router, { timeout: 5000 });
+      const data = await edgeosDataGet({ ...session, dataPath: 'interfaces', timeout: 5000 });
+      const raw = data?.data?.interfaces || data?.GET?.interfaces || data?.interfaces || {};
+      if (Object.keys(raw).length > 0) {
+        apiIfaces = Object.entries(raw).map(([name, info]) => {
+          const stats = info?.stats || info?.stat || {};
+          return {
+            iface: name, up: info?.up ?? info?.l1up ?? true,
+            rxBps: Math.round(Number(stats.rx_bps) || 0),
+            txBps: Math.round(Number(stats.tx_bps) || 0),
+            rxBytes: Number(stats.rx_bytes) || 0,
+            txBytes: Number(stats.tx_bytes) || 0,
+          };
+        }).filter(i => i.iface !== 'lo');
+        console.log(`[EdgeOS] bandwidth via API: ${apiIfaces.length} ifaces`);
+      }
+    } catch (apiErr) {
+      // La API EdgeOS no está accesible vía túnel — usar heartbeat como fallback
+      console.log(`[EdgeOS] bandwidth API no disponible (${apiErr.message.slice(0, 60)}) — usando heartbeat`);
+      sessionCache.delete(parseInt(req.params.routerId));
+    }
 
-    const interfaces = Object.entries(raw).map(([name, info]) => {
-      // EdgeOS usa "stats" o "stat" según versión firmware
-      const stats = info?.stats || info?.stat || {};
-      return {
-        iface: name,
-        up: info?.up ?? info?.l1up ?? true,
-        rxBps: Math.round(Number(stats.rx_bps) || 0),
-        txBps: Math.round(Number(stats.tx_bps) || 0),
-        rxBytes: Number(stats.rx_bytes) || 0,
-        txBytes: Number(stats.tx_bytes) || 0,
-      };
-    }).filter(i => i.iface !== 'lo');
+    const interfaces = apiIfaces || heartbeatIfaces || [];
+    const source = apiIfaces ? 'api' : heartbeatIfaces ? 'heartbeat' : 'none';
 
-    console.log(`[EdgeOS] bandwidth interfaces=${JSON.stringify(interfaces.map(i => ({ iface: i.iface, rxBps: i.rxBps, txBps: i.txBps })))}`);
-    res.json({ connected: true, ts: Date.now(), interfaces });
+    res.json({ connected: true, ts: Date.now(), interfaces, source });
   } catch (err) {
-    // Si la sesión expiró, limpiar caché para forzar re-login
-    sessionCache.delete(parseInt(req.params.routerId));
     console.error(`[EdgeOS] bandwidth ERROR router=${req.params.routerId}: ${err.message}`);
     res.json({ connected: false, error: err.message, interfaces: [] });
   }

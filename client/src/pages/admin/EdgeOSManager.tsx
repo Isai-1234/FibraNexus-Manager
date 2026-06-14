@@ -262,19 +262,20 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-xs font-semibold uppercase text-gray-400">Tráfico en tiempo real</h3>
-                    {bandwidth?.connected ? (
-                      <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">error API</span>
-                    )}
+                    {bandwidth?.connected && bandwidth?.source !== 'none' ? (
+                      bandwidth?.source === 'api' ? (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> heartbeat
+                        </span>
+                      )
+                    ) : bandwidth && !bandwidth.connected ? (
+                      <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">sin datos</span>
+                    ) : null}
                   </div>
-                  {bandwidth?.error && (
-                    <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2 font-mono break-all">
-                      {bandwidth.error}
-                    </div>
-                  )}
                   {bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) > 0 && (
                     <div className="grid grid-cols-1 gap-1.5">
                       {(bandwidth.interfaces as any[]).map((iface: any) => {

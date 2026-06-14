@@ -56,7 +56,7 @@ export default function BandwidthSparkline({ routerId, API, className = '', poll
         const txBps = (d.interfaces as any[]).reduce((s: number, i: any) => s + (Number(i.txBps) || 0), 0)
         setSamples(prev => [...prev.slice(-(MAX_PTS - 1)), { ts: Date.now(), rxBps, txBps }])
         setState('live')
-        setErrMsg('')
+        setErrMsg(d.source === 'heartbeat' ? 'hb' : '')
       } else {
         setState(d?.error ? 'error' : 'idle')
         if (d?.error) setErrMsg(d.error)
@@ -101,10 +101,15 @@ export default function BandwidthSparkline({ routerId, API, className = '', poll
     <div className={className}>
       <div className="flex items-center justify-between mb-0.5">
         <span className="text-[10px] font-semibold text-blue-500">↓ {fmt(last.rxBps)}</span>
-        <span className="flex items-center gap-0.5 text-[9px] text-emerald-500 font-semibold">
-          <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse inline-block" />
-          live
-        </span>
+        {errMsg === 'hb' ? (
+          <span className="flex items-center gap-0.5 text-[9px] text-blue-500 font-semibold">
+            <span className="w-1 h-1 rounded-full bg-blue-400 inline-block" /> hb
+          </span>
+        ) : (
+          <span className="flex items-center gap-0.5 text-[9px] text-emerald-500 font-semibold">
+            <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse inline-block" /> live
+          </span>
+        )}
         <span className="text-[10px] font-semibold text-orange-500">{fmt(last.txBps)} ↑</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" height={H} preserveAspectRatio="none">
