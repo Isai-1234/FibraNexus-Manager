@@ -13,6 +13,7 @@ import {
   parseCidr,
 } from '../lib/edgeosCommands.js';
 import { edgeosLogin, edgeosDataGet, getRouterCredentials, resolveHost, resolvePort } from '../lib/edgeosClient.js';
+import { mikrotikRequest } from '../lib/mikrotikClient.js';
 
 // Caché de sesiones EdgeOS en memoria (evita login por cada poll)
 const sessionCache = new Map(); // routerId → { cookie, csrfToken, host, port, createdAt }
@@ -56,8 +57,9 @@ async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
 }
 
 // GET /api/edgeos/:routerId/bandwidth — ancho de banda en tiempo real
-// Fuente 1: heartbeat (siempre disponible, ~28s de resolución)
-// Fuente 2: API EdgeOS directa (requiere túnel Cloudflare al EdgeRouter, 5s timeout)
+// Fuente 1: heartbeat (siempre disponible, ~28s de resolución) — prioridad si es fresco (<35s)
+// Fuente 2: RouterOS REST API para MikroTik (calcula BPS desde bytes acumulados)
+// Fuente 3: EdgeOS API directa con timeout corto (2s) como último recurso
 edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -66,50 +68,103 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
 
     const creds = router.credentials || {};
+    // Conectado si: heartbeat reciente (<2min) O polled recientemente y online
     const isConnected = creds.lastHeartbeat
       ? Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000
-      : false;
+      : (router.status === 'online' && router.lastSeen
+          ? Date.now() - new Date(router.lastSeen).getTime() < 120_000
+          : false);
     if (!isConnected) return res.json({ connected: false, interfaces: [] });
+
+    const routerType = creds.routerType || '';
+    const isMikrotik = routerType.startsWith('mikrotik');
+    const isEdgeRouter = routerType.startsWith('edgerouter') || (router.brand || '').toLowerCase() === 'ubiquiti';
+    // WAN filtering: EdgeRouter → solo eth0 (o wanInterface configurada)
+    const wanIface = creds.wanInterface || (isEdgeRouter ? 'eth0' : null);
 
     // --- Fuente 1: datos del heartbeat (bandwidthSamples) ---
     const latestSample = (creds.bandwidthSamples || []).slice(-1)[0];
+    const heartbeatAge = latestSample ? Date.now() - latestSample.ts : Infinity;
     const heartbeatIfaces = latestSample?.ifaces
       ? latestSample.ifaces
-          .filter(i => i.iface && i.iface !== 'lo')
+          .filter(i => {
+            if (!i.iface || i.iface === 'lo') return false;
+            return wanIface ? i.iface === wanIface : true;
+          })
           .map(i => ({ iface: i.iface, up: true, rxBps: Math.max(0, i.rxBps || 0), txBps: Math.max(0, i.txBps || 0), rxBytes: 0, txBytes: 0 }))
       : null;
 
-    // --- Fuente 2: API EdgeOS directa (opcional, falla silenciosa) ---
-    let apiIfaces = null;
-    try {
-      const session = await getEdgeosSession(router, { timeout: 5000 });
-      const data = await edgeosDataGet({ ...session, dataPath: 'interfaces', timeout: 5000 });
-      const raw = data?.data?.interfaces || data?.GET?.interfaces || data?.interfaces || {};
-      if (Object.keys(raw).length > 0) {
-        apiIfaces = Object.entries(raw).map(([name, info]) => {
-          const stats = info?.stats || info?.stat || {};
-          return {
-            iface: name, up: info?.up ?? info?.l1up ?? true,
-            rxBps: Math.round(Number(stats.rx_bps) || 0),
-            txBps: Math.round(Number(stats.tx_bps) || 0),
-            rxBytes: Number(stats.rx_bytes) || 0,
-            txBytes: Number(stats.tx_bytes) || 0,
-          };
-        }).filter(i => i.iface !== 'lo');
-        console.log(`[EdgeOS] bandwidth via API: ${apiIfaces.length} ifaces`);
-      }
-    } catch (apiErr) {
-      // La API EdgeOS no está accesible vía túnel — usar heartbeat como fallback
-      console.log(`[EdgeOS] bandwidth API no disponible (${apiErr.message.slice(0, 60)}) — usando heartbeat`);
-      sessionCache.delete(parseInt(req.params.routerId));
+    // Heartbeat fresco (<35s) → respuesta inmediata, sin tocar la API del router
+    if (heartbeatIfaces && heartbeatAge < 35_000) {
+      return res.json({ connected: true, ts: Date.now(), interfaces: heartbeatIfaces, source: 'heartbeat' });
     }
 
-    // [] es truthy en JS — usar length para decidir qué fuente es válida
-    const useApi = Array.isArray(apiIfaces) && apiIfaces.length > 0;
-    const interfaces = useApi ? apiIfaces : (heartbeatIfaces || []);
-    const source = useApi ? 'api' : (heartbeatIfaces ? 'heartbeat' : 'none');
+    // --- Fuente 2: RouterOS REST API para MikroTik ---
+    if (isMikrotik && creds.routerUser && creds.routerPass) {
+      try {
+        const rawIfaces = await mikrotikRequest(router, 'GET', '/interface');
+        const now = Date.now();
+        const dtSec = latestSample ? Math.max(1, (now - latestSample.ts) / 1000) : 30;
 
-    res.json({ connected: true, ts: Date.now(), interfaces, source });
+        const newIfaces = (Array.isArray(rawIfaces) ? rawIfaces : [])
+          .filter(i => i.name && i.name !== 'lo' && i.type !== 'bridge')
+          .map(i => {
+            const rx = Number(i['rx-byte']) || 0;
+            const tx = Number(i['tx-byte']) || 0;
+            const prev = (latestSample?.ifaces || []).find(p => p.iface === i.name);
+            const rxBps = (prev && prev.rxRaw != null) ? Math.max(0, Math.round((rx - prev.rxRaw) / dtSec)) : 0;
+            const txBps = (prev && prev.txRaw != null) ? Math.max(0, Math.round((tx - prev.txRaw) / dtSec)) : 0;
+            return { iface: i.name, rxBps, txBps, rxRaw: rx, txRaw: tx, up: i.running !== false && i.running !== 'false' };
+          });
+
+        // Persistir muestra para próximo cálculo de BPS (fire-and-forget)
+        const newSample = { ts: now, ifaces: newIfaces };
+        const newSamples = [...(creds.bandwidthSamples || []).slice(-59), newSample];
+        db.update(equipment).set({ credentials: { ...creds, bandwidthSamples: newSamples } })
+          .where(eq(equipment.id, router.id)).catch(() => {});
+
+        const result = newIfaces
+          .filter(i => wanIface ? i.iface === wanIface : true)
+          .map(({ iface, rxBps, txBps, up }) => ({ iface, rxBps, txBps, rxBytes: 0, txBytes: 0, up }));
+
+        return res.json({ connected: true, ts: now, interfaces: result, source: 'api' });
+      } catch (mikErr) {
+        console.log(`[Bandwidth] MikroTik API no disponible (${mikErr.message.slice(0, 60)}) — usando heartbeat`);
+      }
+    }
+
+    // --- Fuente 3: EdgeOS API directa con timeout corto para no bloquear ---
+    if (isEdgeRouter) {
+      try {
+        const session = await getEdgeosSession(router, { timeout: 2000 });
+        const data = await edgeosDataGet({ ...session, dataPath: 'interfaces', timeout: 2000 });
+        const raw = data?.data?.interfaces || data?.GET?.interfaces || data?.interfaces || {};
+        if (Object.keys(raw).length > 0) {
+          const apiIfaces = Object.entries(raw).map(([name, info]) => {
+            const stats = info?.stats || info?.stat || {};
+            return {
+              iface: name, up: info?.up ?? info?.l1up ?? true,
+              rxBps: Math.round(Number(stats.rx_bps) || 0),
+              txBps: Math.round(Number(stats.tx_bps) || 0),
+              rxBytes: Number(stats.rx_bytes) || 0,
+              txBytes: Number(stats.tx_bytes) || 0,
+            };
+          }).filter(i => {
+            if (i.iface === 'lo') return false;
+            return wanIface ? i.iface === wanIface : true;
+          });
+          if (apiIfaces.length > 0) {
+            console.log(`[EdgeOS] bandwidth via API: ${apiIfaces.length} ifaces (filtro WAN: ${wanIface || 'ninguno'})`);
+            return res.json({ connected: true, ts: Date.now(), interfaces: apiIfaces, source: 'api' });
+          }
+        }
+      } catch (apiErr) {
+        console.log(`[EdgeOS] bandwidth API no disponible (${apiErr.message.slice(0, 60)}) — usando heartbeat`);
+        sessionCache.delete(parseInt(req.params.routerId));
+      }
+    }
+
+    res.json({ connected: true, ts: Date.now(), interfaces: heartbeatIfaces || [], source: heartbeatIfaces ? 'heartbeat' : 'none' });
   } catch (err) {
     console.error(`[EdgeOS] bandwidth ERROR router=${req.params.routerId}: ${err.message}`);
     res.json({ connected: false, error: err.message, interfaces: [] });

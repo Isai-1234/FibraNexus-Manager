@@ -407,9 +407,15 @@ export default function RouterManager({ API, onBack }: Props) {
       '  VER=$(cat /opt/vyatta/etc/version 2>/dev/null | awk \'{print $2}\' || echo "EdgeOS")',
       '  UPTIME=$(awk \'{printf "%ds", int($1)}\' /proc/uptime 2>/dev/null || echo "0s")',
       '  CPU=$(awk \'/^cpu /{u=$2+$4; t=$2+$3+$4+$5; if(t>0)printf "%d", u*100/t; else print 0}\' /proc/stat 2>/dev/null || echo "0")',
+      '  MEM_AVAIL=$(awk \'/MemAvailable:/{print $2; exit}\' /proc/meminfo 2>/dev/null || echo 0)',
+      '  MEM_TOTAL=$(awk \'/MemTotal:/{print $2; exit}\' /proc/meminfo 2>/dev/null || echo 1)',
+      '  RAM_PCT=0; [ "$MEM_TOTAL" -gt 0 ] && RAM_PCT=$(( 100 * (MEM_TOTAL - MEM_AVAIL) / MEM_TOTAL ))',
+      '  TEMP_RAW=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0)',
+      '  TEMP_C=$(( TEMP_RAW / 1000 ))',
+      '  IFACE_STATS=$(awk \'NR>2 && $1!~/lo:/ {gsub(/:/, "", $1); printf "%s,%s,%s;", $1, $2, $10}\' /proc/net/dev 2>/dev/null || echo "")',
       '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
       '    -H "Content-Type: application/json" \\',
-      '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"$UPTIME\\",\\"cpuLoad\\":$CPU}}" 2>/dev/null)',
+      '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"$UPTIME\\",\\"cpuLoad\\":$CPU,\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\"}" 2>/dev/null)',
       '  if [ -n "$RESPONSE" ]; then',
       '    echo "$RESPONSE" > /tmp/fn_hb.json',
       '    [ -z "$FNPY" ] || FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" "$FNPY" /tmp/fn_agent.py',
@@ -931,60 +937,44 @@ export default function RouterManager({ API, onBack }: Props) {
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                   </div>
 
-                  {router.agentConnected && (() => {
+                  {router.agentConnected && info && (() => {
                     const b = (router.brand || '').toLowerCase()
                     const rt = (router.credentials?.routerType || '').toLowerCase()
                     const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-                    // Si es EdgeOS pero no hay info todavía, mostrar solo sparkline
-                    if (isEdgeOS && !info) {
-                      return (
-                        <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                          <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
-                        </div>
-                      )
-                    }
-                    if (!info) return null
                     const hasTemp = info.tempC != null && Number(info.tempC) > 0
                     const hasRam = info.ramUsage != null
                     if (isEdgeOS) {
                       return (
                         <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                          <div className="flex gap-3">
-                            {/* Stats columna izquierda */}
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 flex-1 content-start">
-                              <div>
-                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">EdgeOS</p>
-                                <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
-                              </div>
-                              <div>
-                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Uptime</p>
-                                <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
-                              </div>
-                              <div>
-                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">CPU</p>
-                                <p className={`text-xs font-semibold ${Number(info.cpuLoad) > 80 ? 'text-red-600' : Number(info.cpuLoad) > 50 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                  {info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                            <div>
+                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">EdgeOS</p>
+                              <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Uptime</p>
+                              <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">CPU</p>
+                              <p className={`text-xs font-semibold ${Number(info.cpuLoad) > 80 ? 'text-red-600' : Number(info.cpuLoad) > 50 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                {info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">RAM</p>
+                              <p className={`text-xs font-semibold ${hasRam && Number(info.ramUsage) > 85 ? 'text-red-600' : hasRam && Number(info.ramUsage) > 60 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                {hasRam ? `${info.ramUsage}%` : '—'}
+                              </p>
+                            </div>
+                            {hasTemp && (
+                              <div className="col-span-2">
+                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Temp</p>
+                                <p className={`text-xs font-semibold ${Number(info.tempC) > 75 ? 'text-red-600' : Number(info.tempC) > 55 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                  {info.tempC}°C
                                 </p>
                               </div>
-                              <div>
-                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">RAM</p>
-                                <p className={`text-xs font-semibold ${hasRam && Number(info.ramUsage) > 85 ? 'text-red-600' : hasRam && Number(info.ramUsage) > 60 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                  {hasRam ? `${info.ramUsage}%` : '—'}
-                                </p>
-                              </div>
-                              {hasTemp && (
-                                <div className="col-span-2">
-                                  <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Temp</p>
-                                  <p className={`text-xs font-semibold ${Number(info.tempC) > 75 ? 'text-red-600' : Number(info.tempC) > 55 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                    {info.tempC}°C
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                            {/* Sparkline columna derecha */}
-                            <div className="w-28 shrink-0 flex flex-col justify-center">
-                              <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
-                            </div>
+                            )}
                           </div>
                         </div>
                       )
@@ -1065,6 +1055,13 @@ export default function RouterManager({ API, onBack }: Props) {
                     {router.agentConnected ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
                     {router.lastSeen && <span className="ml-auto text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(router.lastSeen).toLocaleTimeString('es-CL')}</span>}
                   </div>
+
+                  {/* Sparkline de ancho de banda — al fondo de la tarjeta */}
+                  {router.agentConnected && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
+                    </div>
+                  )}
                 </div>
               )
             })}
