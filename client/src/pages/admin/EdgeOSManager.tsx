@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock,
-  Wifi, Users, ChevronDown, ChevronUp, XCircle, Zap, PlayCircle,
+  Wifi, Users, ChevronDown, ChevronUp, XCircle, Zap, PlayCircle, Plus,
 } from 'lucide-react'
 import axios from 'axios'
 
@@ -59,6 +59,10 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
   const [actionLoading, setActionLoading] = useState<string>('')
   const [selectedIface, setSelectedIface] = useState<string>('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [showNetForm, setShowNetForm] = useState(false)
+  const [netForm, setNetForm] = useState({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '' })
+  const [netSaving, setNetSaving] = useState(false)
+  const [netError, setNetError] = useState('')
 
   const api = useCallback(() =>
     axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } }),
@@ -106,6 +110,22 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
       setSelectedIface(def)
     }
   }, [status, router.credentials, selectedIface])
+
+  async function createNetwork() {
+    const cidr = netForm.ipCidr.trim()
+    if (!cidr) { setNetError('IP/CIDR es requerido (ej: 192.168.3.1/24)'); return }
+    if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(cidr)) { setNetError('Formato inválido — usa IP/prefijo, ej: 192.168.3.1/24'); return }
+    setNetSaving(true)
+    setNetError('')
+    try {
+      await api().post(`/edgeos/${router.id}/network`, netForm)
+      setShowNetForm(false)
+      setNetForm({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '' })
+      await loadStatus()
+    } catch (e: any) {
+      setNetError(e.response?.data?.error || 'Error al crear red')
+    } finally { setNetSaving(false) }
+  }
 
   async function deleteNetwork(iface: string) {
     if (!confirm(`¿Eliminar interfaz ${iface} y su DHCP del EdgeRouter?`)) return
@@ -258,11 +278,13 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
               ) : null}
 
               {/* Ancho de banda en tiempo real */}
-              {status?.connected && bandwidth !== null && (
+              {status?.connected && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-xs font-semibold uppercase text-gray-400">Tráfico en tiempo real</h3>
-                    {bandwidth?.connected && bandwidth?.source !== 'none' ? (
+                    {bandwidth === null ? (
+                      <span className="text-[10px] text-gray-400">cargando…</span>
+                    ) : bandwidth?.connected && bandwidth?.source !== 'none' ? (
                       bandwidth?.source === 'api' ? (
                         <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
@@ -276,7 +298,12 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                       <span className="text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">sin datos</span>
                     ) : null}
                   </div>
-                  {bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) > 0 && (
+                  {bandwidth === null ? (
+                    <div className="space-y-1.5">
+                      <div className="h-14 bg-gray-100 rounded-lg animate-pulse" />
+                      <div className="h-14 bg-gray-100 rounded-lg animate-pulse" />
+                    </div>
+                  ) : bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) > 0 ? (
                     <div className="grid grid-cols-1 gap-1.5">
                       {(bandwidth.interfaces as any[]).map((iface: any) => {
                         const total = iface.rxBps + iface.txBps
@@ -306,10 +333,11 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                         )
                       })}
                     </div>
-                  )}
-                  {bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) === 0 && (
-                    <p className="text-xs text-gray-400 italic">No se encontraron interfaces en la respuesta API</p>
-                  )}
+                  ) : bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) === 0 ? (
+                    <p className="text-xs text-gray-400 italic">No se encontraron interfaces en la respuesta</p>
+                  ) : bandwidth && !bandwidth.connected ? (
+                    <p className="text-xs text-red-400 italic">{bandwidth.error || 'Sin datos de tráfico'}</p>
+                  ) : null}
                 </div>
               )}
 
@@ -339,6 +367,106 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                   </div>
                 </div>
               )}
+
+              {/* Nueva red / interfaz */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold uppercase text-gray-400">Agregar interfaz</h3>
+                  <button
+                    onClick={() => { setShowNetForm(v => !v); setNetError('') }}
+                    className="flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 font-medium">
+                    <Plus className="h-3.5 w-3.5" /> {showNetForm ? 'Cancelar' : 'Nueva red'}
+                  </button>
+                </div>
+                {showNetForm && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 space-y-3">
+                    {/* Fila 1: iface + ip/cidr */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Interfaz</label>
+                        <select
+                          value={netForm.iface}
+                          onChange={e => setNetForm(f => ({ ...f, iface: e.target.value }))}
+                          className="w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
+                          {['eth0','eth1','eth2','eth3','eth4','switch0','vtun0','pppoe0'].map(i => (
+                            <option key={i} value={i}>{i}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">IP / Prefijo</label>
+                        <input
+                          type="text"
+                          placeholder="192.168.3.1/24"
+                          value={netForm.ipCidr}
+                          onChange={e => setNetForm(f => ({ ...f, ipCidr: e.target.value }))}
+                          className="w-full text-xs border rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                    </div>
+                    {/* Descripción */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Descripción (opcional)</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Red clientes zona norte"
+                        value={netForm.description}
+                        onChange={e => setNetForm(f => ({ ...f, description: e.target.value }))}
+                        className="w-full text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    {/* DHCP toggle */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNetForm(f => ({ ...f, dhcp: !f.dhcp }))}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${netForm.dhcp ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${netForm.dhcp ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </button>
+                      <span className="text-xs font-medium text-gray-700">Habilitar servidor DHCP</span>
+                    </div>
+                    {/* Pool DHCP (solo si dhcp=true) */}
+                    {netForm.dhcp && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool inicio</label>
+                          <input
+                            type="text"
+                            placeholder="192.168.3.10"
+                            value={netForm.poolStart}
+                            onChange={e => setNetForm(f => ({ ...f, poolStart: e.target.value }))}
+                            className="w-full text-xs border rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool fin</label>
+                          <input
+                            type="text"
+                            placeholder="192.168.3.254"
+                            value={netForm.poolEnd}
+                            onChange={e => setNetForm(f => ({ ...f, poolEnd: e.target.value }))}
+                            className="w-full text-xs border rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
+                      </div>
+                    )}
+                    {netError && (
+                      <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">{netError}</p>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => { setShowNetForm(false); setNetError('') }}
+                        className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100">
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={createNetwork}
+                        disabled={netSaving}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition">
+                        {netSaving
+                          ? <><RefreshCw className="h-3 w-3 animate-spin" /> Creando…</>
+                          : <><Plus className="h-3 w-3" /> Crear red</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Cola de comandos */}
               {(status?.pendingCmds?.length > 0 || status?.cmdHistory?.length > 0) && (
