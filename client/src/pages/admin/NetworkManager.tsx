@@ -8,6 +8,7 @@ import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
 import EdgeOSManager from './EdgeOSManager'
+import BandwidthSparkline from '../../components/BandwidthSparkline'
 
 interface Props { API: string; onBack: () => void }
 
@@ -456,8 +457,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                         )}
                       </div>
                     ) : siteEquipment.map((eq: any) => (
-                      <div key={eq.id} className="p-4 flex items-center gap-3 hover:bg-gray-50">
-                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${statusDot(eq)}`} />
+                      <div key={eq.id} className="p-4 flex items-start gap-3 hover:bg-gray-50">
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 ${statusDot(eq)}`} />
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{eq.name}</p>
                           <p className="text-xs text-gray-500">{eq.type} · {eq.brand} {eq.model} · {eq.ipAddress || 'sin IP'}</p>
@@ -469,9 +470,17 @@ export default function NetworkManager({ API, onBack }: Props) {
                           {eq.type === 'cpe' && !eq.clientName && (
                             <p className="text-xs text-amber-600 mt-0.5">Sin abonado asignado</p>
                           )}
+                          {eq.type === 'router' && isEdgeRouter(eq) && eq.agentConnected && (
+                            <BandwidthSparkline
+                              routerId={eq.id}
+                              API={API}
+                              className="mt-2 w-full max-w-[220px]"
+                              pollMs={4000}
+                            />
+                          )}
                         </div>
                         {eq.type === 'router' && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 shrink-0">
                             {isEdgeRouter(eq) ? (
                               <button onClick={() => setEdgeosManagerRouter(eq)}
                                 className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 flex items-center gap-1">

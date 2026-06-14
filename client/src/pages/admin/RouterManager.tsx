@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud } from 'lucide-react'
 import axios from 'axios'
 import EdgeOSManager from './EdgeOSManager'
+import BandwidthSparkline from '../../components/BandwidthSparkline'
 
 interface Props { API: string; onBack: () => void }
 
@@ -984,6 +985,18 @@ export default function RouterManager({ API, onBack }: Props) {
                       )}
                     </div>
                   </div>
+                  {(() => {
+                    const b = (router.brand || '').toLowerCase()
+                    const rt = (router.credentials?.routerType || '').toLowerCase()
+                    const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
+                    return isEdgeOS && router.agentConnected ? (
+                      <BandwidthSparkline
+                        routerId={router.id}
+                        API={API}
+                        className="mb-3 px-1"
+                      />
+                    ) : null
+                  })()}
                   <div className="flex gap-2 mb-3">
                     <button onClick={() => openCredentials(router)}
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
