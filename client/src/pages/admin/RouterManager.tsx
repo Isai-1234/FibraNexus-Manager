@@ -914,10 +914,11 @@ export default function RouterManager({ API, onBack }: Props) {
                 </div>
               )}
 
-              {/* Script SSH — EdgeRouter (detectado por routerType o brand Ubiquiti ≠ UniFi) */}
+              {/* Script SSH — EdgeRouter (routerType empieza con edgerouter, O brand Ubiquiti sin routerType UniFi) */}
               {(
                 String(editingRouter?.credentials?.routerType || '').toLowerCase().startsWith('edgerouter') ||
-                (editingRouter?.brand === 'Ubiquiti' && editingRouter?.credentials?.routerType !== 'ubiquiti')
+                (String(editingRouter?.brand || '').toLowerCase() === 'ubiquiti' &&
+                  String(editingRouter?.credentials?.routerType || '').toLowerCase() !== 'ubiquiti')
               ) && (
                 <div className="border-t pt-3 mt-1">
                   <div className="flex justify-between items-center mb-2">
