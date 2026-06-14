@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User
+  Layers, Antenna, Network, Search, Pencil, User, Settings
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
+import EdgeOSManager from './EdgeOSManager'
 
 interface Props { API: string; onBack: () => void }
 
@@ -84,6 +85,7 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [clients, setClients] = useState<any[]>([])
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
+  const [edgeosManagerRouter, setEdgeosManagerRouter] = useState<any>(null)
 
   function api() {
     return axios.create({
@@ -312,8 +314,14 @@ export default function NetworkManager({ API, onBack }: Props) {
     }
   }
 
+  function isEdgeRouter(eq: any) {
+    const b = (eq.brand || '').toLowerCase()
+    const rt = (eq.credentials?.routerType || '').toLowerCase()
+    return b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
+  }
+
   const siteEquipment = selectedSite?.equipment || []
-  const siteRouters = siteEquipment.filter((e: any) => e.type === 'router')
+  const siteRouters = siteEquipment.filter((e: any) => e.type === 'router' && !isEdgeRouter(e))
   const siteCpe = siteEquipment.filter((e: any) => e.type === 'cpe')
   const linkableRouters = routers.filter((r) => r.siteId !== selectedSite?.id)
   const unassignedRouters = unassigned.filter((e) => e.type === 'router')
@@ -464,14 +472,23 @@ export default function NetworkManager({ API, onBack }: Props) {
                         </div>
                         {eq.type === 'router' && (
                           <div className="flex gap-1">
-                            <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
-                              className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-                              <Eye className="h-3 w-3" /> Abonados
-                            </button>
-                            <button onClick={() => loadRouterNetwork(eq, 'infra')}
-                              className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
-                              <Server className="h-3 w-3" /> DHCP/SNMP
-                            </button>
+                            {isEdgeRouter(eq) ? (
+                              <button onClick={() => setEdgeosManagerRouter(eq)}
+                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 flex items-center gap-1">
+                                <Settings className="h-3 w-3" /> Gestionar EdgeOS
+                              </button>
+                            ) : (
+                              <>
+                                <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                                  className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                                  <Eye className="h-3 w-3" /> Abonados
+                                </button>
+                                <button onClick={() => loadRouterNetwork(eq, 'infra')}
+                                  className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
+                                  <Server className="h-3 w-3" /> DHCP/SNMP
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                         {eq.type === 'cpe' && (
@@ -932,6 +949,14 @@ export default function NetworkManager({ API, onBack }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {edgeosManagerRouter && (
+        <EdgeOSManager
+          API={API}
+          router={edgeosManagerRouter}
+          onClose={() => setEdgeosManagerRouter(null)}
+        />
       )}
     </div>
   )
