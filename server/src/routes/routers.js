@@ -340,8 +340,15 @@ routersRouter.get('/:id/edgeos-script', requireRole('admin'), async (req, res) =
       and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
     ).limit(1);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
-    const token = router.credentials?.agentToken;
-    if (!token) return res.status(400).json({ error: 'Router sin token de agente' });
+
+    // Si el router fue creado antes de que se generara agentToken, lo creamos ahora y lo persistimos
+    let token = router.credentials?.agentToken;
+    if (!token) {
+      token = crypto.randomUUID();
+      const updatedCreds = { ...(router.credentials || {}), agentToken: token };
+      await db.update(equipment).set({ credentials: updatedCreds, updatedAt: new Date() })
+        .where(eq(equipment.id, router.id));
+    }
 
     const serverUrl = `${serverBaseUrl()}/api/routers/agent/heartbeat`;
     const heartbeatScript = buildEdgeosHeartbeatScript(token, serverUrl);
