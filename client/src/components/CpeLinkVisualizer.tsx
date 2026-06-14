@@ -20,13 +20,13 @@ const LINK_LAYOUT = {
   /** true = SVG en assets/link/; false = dibujo integrado fallback */
   useAssetFiles: true,
   cpeBox: {
-    x: 4, y: 52, w: 202, h: 140,
+    x: 4, y: 5, w: 202, h: 185,
     align: 'xMaxYMax',
     srcAspect: 526 / 474,   // Litebeam CPE — 526×474
-    hornRel: { x: 0.96, y: 0.47 },
+    hornRel: { x: 0.95, y: 0.45 },
   } satisfies ImgBox,
   towerBox: {
-    x: 368, y: 0, w: 208, h: 185,
+    x: 368, y: 0, w: 208, h: 190,
     align: 'xMinYMax',
     srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
     hornRel: { x: 0.38, y: 0.28 },
