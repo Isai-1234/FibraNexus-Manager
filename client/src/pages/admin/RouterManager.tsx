@@ -914,8 +914,11 @@ export default function RouterManager({ API, onBack }: Props) {
                 </div>
               )}
 
-              {/* Script SSH — solo para EdgeRouter */}
-              {editingRouter?.credentials?.routerType === 'edgerouter_v4' && (
+              {/* Script SSH — EdgeRouter (detectado por routerType o brand Ubiquiti ≠ UniFi) */}
+              {(
+                String(editingRouter?.credentials?.routerType || '').toLowerCase().startsWith('edgerouter') ||
+                (editingRouter?.brand === 'Ubiquiti' && editingRouter?.credentials?.routerType !== 'ubiquiti')
+              ) && (
                 <div className="border-t pt-3 mt-1">
                   <div className="flex justify-between items-center mb-2">
                     <div>
