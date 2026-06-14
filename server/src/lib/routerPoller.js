@@ -11,9 +11,10 @@ export function isApiPollableRouter(router) {
   if (router.type !== 'router') return false;
   const creds = router.credentials || {};
   if (!creds.routerUser || !creds.routerPass) return false;
+  // Dispositivo con agentToken → modo heartbeat únicamente, jamás pollear por API
+  if (creds.agentToken) return false;
   const type = creds.routerType || '';
   if (isEdgeRouterType(type)) {
-    // Sin tunnel configurado → modo heartbeat únicamente, no pollear por API
     const method = inferConnectionMethod(router);
     if (method === 'cloudflare_tunnel') return !!creds.tunnelHostname;
     if (method === 'direct') return !!router.ipAddress;

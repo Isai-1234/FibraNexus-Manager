@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud } from 'lucide-react'
 import axios from 'axios'
+import EdgeOSManager from './EdgeOSManager'
 
 interface Props { API: string; onBack: () => void }
 
@@ -139,6 +140,7 @@ export default function RouterManager({ API, onBack }: Props) {
   const [credTab, setCredTab] = useState<'api' | 'heartbeat'>('api')
   const [credTokenValue, setCredTokenValue] = useState('')
   const [tokenRegenerating, setTokenRegenerating] = useState(false)
+  const [edgeosManagerRouter, setEdgeosManagerRouter] = useState<any>(null)
 
   function api() {
     return axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } })
@@ -314,10 +316,12 @@ export default function RouterManager({ API, onBack }: Props) {
 
   function buildEdgeosInstallScript(token: string): string {
     const url = 'https://app.fibranexus.cl/api/routers/agent/heartbeat'
+    const cmdResultUrl = 'https://app.fibranexus.cl/api/routers/agent/cmd-result'
     const hb = [
       '#!/bin/bash',
       `TOKEN="${token}"`,
       `SERVER="${url}"`,
+      `CMD_RESULT="${cmdResultUrl}"`,
       "VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo \"EdgeOS\")",
       "UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo \"0\")",
       "CPULINE1=$(grep '^cpu ' /proc/stat)",
@@ -329,9 +333,31 @@ export default function RouterManager({ API, onBack }: Props) {
       'T2=0; for v in "${C2[@]:1}"; do T2=$((T2+v)); done',
       'DT=$((T2-T1)); DI=$((C2[4]-C1[4]))',
       'CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))',
-      'curl -sf --max-time 8 -X POST "$SERVER" \\',
+      '# Enviar heartbeat y guardar respuesta',
+      'RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
       '  -H "Content-Type: application/json" \\',
-      '  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}" >/dev/null 2>&1',
+      '  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}")',
+      '# Ejecutar comandos pendientes de FibraNexus',
+      'echo "$RESPONSE" > /tmp/fn_hb.json',
+      'FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" python3 << \'PYEOF\'',
+      'import os, json, subprocess, urllib.request',
+      'try:',
+      '    with open("/tmp/fn_hb.json") as f: d = json.loads(f.read())',
+      '    cmds = d.get("pendingCommands", [])',
+      '    if not cmds: raise SystemExit(0)',
+      '    cmd = cmds[0]',
+      '    cmd_id, script = cmd.get("id",""), cmd.get("script","")',
+      '    if not cmd_id or not script: raise SystemExit(0)',
+      '    with open("/tmp/fn_cmd.sh","w") as f: f.write(script)',
+      '    p = subprocess.run(["/bin/vbash","/tmp/fn_cmd.sh"], capture_output=True, text=True, timeout=60)',
+      '    out = (p.stdout+p.stderr)[:300].strip()',
+      '    token = os.environ.get("FN_TOKEN",""); url = os.environ.get("FN_CMD_URL","")',
+      '    body = json.dumps({"agentToken":token,"cmdId":cmd_id,"success":p.returncode==0,"output":out}).encode()',
+      '    req = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json"})',
+      '    urllib.request.urlopen(req, timeout=8)',
+      'except SystemExit: pass',
+      'except Exception: pass',
+      'PYEOF',
     ].join('\n')
     return [
       '# === FibraNexus — Instalar monitor en EdgeRouter (pegar en SSH) ===',
@@ -938,6 +964,12 @@ export default function RouterManager({ API, onBack }: Props) {
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
+                    {(router.brand || '').toLowerCase() === 'ubiquiti' && (
+                      <button onClick={() => setEdgeosManagerRouter(router)}
+                        className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-emerald-50 text-emerald-700 border-emerald-200">
+                        Gestionar EdgeOS
+                      </button>
+                    )}
                   </div>
                   <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.agentConnected ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
                     {router.agentConnected ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
@@ -1114,6 +1146,14 @@ export default function RouterManager({ API, onBack }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {edgeosManagerRouter && (
+        <EdgeOSManager
+          API={API}
+          router={edgeosManagerRouter}
+          onClose={() => setEdgeosManagerRouter(null)}
+        />
       )}
     </div>
   )

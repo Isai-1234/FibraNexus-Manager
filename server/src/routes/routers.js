@@ -75,23 +75,51 @@ ${boot}
 }
 
 function buildEdgeosHeartbeatScript(token, serverUrl) {
-  return `#!/bin/bash
-TOKEN="${token}"
-SERVER="${serverUrl}"
-VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo "EdgeOS")
-UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
-CPULINE1=$(grep '^cpu ' /proc/stat)
-sleep 1
-CPULINE2=$(grep '^cpu ' /proc/stat)
-read -ra C1 <<< "$CPULINE1"
-read -ra C2 <<< "$CPULINE2"
-T1=0; for v in "\${C1[@]:1}"; do T1=$((T1+v)); done
-T2=0; for v in "\${C2[@]:1}"; do T2=$((T2+v)); done
-DT=$((T2-T1)); DI=$((C2[4]-C1[4]))
-CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))
-curl -sf --max-time 8 -X POST "$SERVER" \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"\${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}" >/dev/null 2>&1`;
+  const cmdResultUrl = serverUrl.replace('/agent/heartbeat', '/agent/cmd-result');
+  return [
+    '#!/bin/bash',
+    `TOKEN="${token}"`,
+    `SERVER="${serverUrl}"`,
+    `CMD_RESULT="${cmdResultUrl}"`,
+    "VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo \"EdgeOS\")",
+    "UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo \"0\")",
+    "CPULINE1=$(grep '^cpu ' /proc/stat)",
+    'sleep 1',
+    "CPULINE2=$(grep '^cpu ' /proc/stat)",
+    'read -ra C1 <<< "$CPULINE1"',
+    'read -ra C2 <<< "$CPULINE2"',
+    'T1=0; for v in "${C1[@]:1}"; do T1=$((T1+v)); done',
+    'T2=0; for v in "${C2[@]:1}"; do T2=$((T2+v)); done',
+    'DT=$((T2-T1)); DI=$((C2[4]-C1[4]))',
+    'CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))',
+    '',
+    '# Enviar heartbeat y guardar respuesta',
+    'RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
+    '  -H "Content-Type: application/json" \\',
+    '  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}")',
+    '',
+    '# Ejecutar comandos pendientes de FibraNexus (python3 disponible en EdgeOS)',
+    'echo "$RESPONSE" > /tmp/fn_hb.json',
+    'FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" python3 << \'PYEOF\'',
+    'import os, json, subprocess, urllib.request',
+    'try:',
+    '    with open("/tmp/fn_hb.json") as f: d = json.loads(f.read())',
+    '    cmds = d.get("pendingCommands", [])',
+    '    if not cmds: raise SystemExit(0)',
+    '    cmd = cmds[0]',
+    '    cmd_id, script = cmd.get("id",""), cmd.get("script","")',
+    '    if not cmd_id or not script: raise SystemExit(0)',
+    '    with open("/tmp/fn_cmd.sh","w") as f: f.write(script)',
+    '    p = subprocess.run(["/bin/vbash","/tmp/fn_cmd.sh"], capture_output=True, text=True, timeout=60)',
+    '    out = (p.stdout+p.stderr)[:300].strip()',
+    '    token = os.environ.get("FN_TOKEN",""); url = os.environ.get("FN_CMD_URL","")',
+    '    body = json.dumps({"agentToken":token,"cmdId":cmd_id,"success":p.returncode==0,"output":out}).encode()',
+    '    req = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json"})',
+    '    urllib.request.urlopen(req, timeout=8)',
+    'except SystemExit: pass',
+    'except Exception: pass',
+    'PYEOF',
+  ].join('\n');
 }
 
 function buildEdgeosInstallScript(heartbeatScript) {
@@ -258,9 +286,89 @@ export async function agentHeartbeatHandler(req, res) {
     }
     await db.update(equipment).set({ ...updates, credentials: creds }).where(eq(equipment.id, router.id));
     connectedAgents.set(router.id.toString(), { routerId: router.id, lastSeen: new Date(), routerInfo });
-    res.json({ status: 'ok', routerId: router.id, routerName: router.name });
+
+    // Retornar comandos listos (pendientes o con retry vencido)
+    const now = Date.now();
+    const pending = (creds.pendingCmds || []).filter(c =>
+      c.status === 'pending' && (!c.nextRetryAt || new Date(c.nextRetryAt).getTime() <= now),
+    );
+    const toSend = pending.slice(0, 3).map(c => ({ id: c.id, script: c.script }));
+    res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend });
   } catch (error) {
     res.status(500).json({ error: 'Error en heartbeat: ' + error.message });
+  }
+}
+
+// EdgeRouter reporta resultado de un comando ejecutado (sin auth JWT, identificado por agentToken)
+export async function agentCmdResultHandler(req, res) {
+  try {
+    const { agentToken, cmdId, success, output } = req.body;
+    if (!agentToken || !cmdId) return res.status(400).json({ error: 'agentToken y cmdId requeridos' });
+
+    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
+    const router = allRouters.find(r => r.credentials?.agentToken === agentToken);
+    if (!router) return res.status(403).json({ error: 'Token inválido' });
+
+    const creds = router.credentials || {};
+    const allPending = creds.pendingCmds || [];
+    const done = allPending.find(c => c.id === cmdId);
+
+    let newPending;
+    let historyEntry = null;
+
+    if (!done) {
+      // Comando ya procesado o desconocido — no tocar lista
+      newPending = allPending;
+    } else if (success) {
+      // Éxito → sacar de pendientes, mover a historial
+      newPending = allPending.filter(c => c.id !== cmdId);
+      historyEntry = { ...done, status: 'done', output: String(output || '').slice(0, 300), executedAt: new Date().toISOString() };
+    } else {
+      // Fallo → reintentar con backoff exponencial
+      const retries = (done.retries || 0) + 1;
+      const maxRetries = done.maxRetries ?? 3;
+      if (retries >= maxRetries) {
+        // Agotados los reintentos → historial con status 'error'
+        newPending = allPending.filter(c => c.id !== cmdId);
+        historyEntry = { ...done, status: 'error', retries, output: String(output || '').slice(0, 300), executedAt: new Date().toISOString() };
+        console.warn(`[cmd-result] cmd ${cmdId} type=${done.type} falló ${retries}/${maxRetries} veces — descartado`);
+      } else {
+        // Programar reintento: 60s * 2^(retries-1) → 60s, 120s, 240s
+        const delayMs = 60_000 * Math.pow(2, retries - 1);
+        const nextRetryAt = new Date(Date.now() + delayMs).toISOString();
+        newPending = allPending.map(c => c.id === cmdId
+          ? { ...c, retries, maxRetries, nextRetryAt, lastError: String(output || '').slice(0, 150) }
+          : c,
+        );
+        console.log(`[cmd-result] cmd ${cmdId} type=${done.type} fallo ${retries}/${maxRetries} — reintento en ${delayMs / 1000}s`);
+      }
+    }
+
+    const history = [...(creds.cmdHistory || []).slice(-49), ...(historyEntry ? [historyEntry] : [])];
+
+    await db.update(equipment).set({
+      credentials: { ...creds, pendingCmds: newPending, cmdHistory: history },
+      updatedAt: new Date(),
+    }).where(eq(equipment.id, router.id));
+
+    // Actualizar estado de queue en clientServices si aplica
+    if (done?.meta?.serviceId) {
+      const { clientServices } = await import('../db/schema.js');
+      const [svc] = await db.select().from(clientServices).where(eq(clientServices.id, done.meta.serviceId)).limit(1);
+      if (svc?.networkMeta?.edgeosQueue?.cmdId === cmdId) {
+        const queueUpdate = done.type === 'queue_remove'
+          ? null
+          : { ...svc.networkMeta.edgeosQueue, status: success ? 'active' : 'error', appliedAt: new Date().toISOString() };
+        await db.update(clientServices).set({
+          networkMeta: { ...svc.networkMeta, edgeosQueue: queueUpdate },
+          updatedAt: new Date(),
+        }).where(eq(clientServices.id, done.meta.serviceId));
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 }
 

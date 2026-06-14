@@ -1,0 +1,355 @@
+import { useState, useEffect, useCallback } from 'react'
+import { X, Plus, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, Activity, ChevronDown, ChevronUp } from 'lucide-react'
+import axios from 'axios'
+
+interface Props {
+  API: string
+  router: any
+  onClose: () => void
+}
+
+const INTERFACES = ['eth0', 'eth1', 'eth2', 'eth3', 'eth4', 'switch0']
+
+export default function EdgeOSManager({ API, router, onClose }: Props) {
+  const [tab, setTab] = useState<'networks' | 'subscribers'>('networks')
+  const [status, setStatus] = useState<any>(null)
+  const [subscribers, setSubscribers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [subLoading, setSubLoading] = useState(false)
+  const [netForm, setNetForm] = useState({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '', dns: '8.8.8.8,8.8.4.4' })
+  const [netSaving, setNetSaving] = useState(false)
+  const [netError, setNetError] = useState('')
+  const [showNewNet, setShowNewNet] = useState(false)
+  const [expandedCmd, setExpandedCmd] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState<string>('')
+
+  const api = useCallback(() =>
+    axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } }),
+  [API])
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await api().get(`/edgeos/${router.id}/status`)
+      setStatus(res.data)
+    } catch { /* silent */ }
+    finally { setLoading(false) }
+  }, [api, router.id])
+
+  const loadSubscribers = useCallback(async () => {
+    setSubLoading(true)
+    try {
+      const res = await api().get(`/edgeos/${router.id}/subscribers`)
+      setSubscribers(res.data)
+    } catch { /* silent */ }
+    finally { setSubLoading(false) }
+  }, [api, router.id])
+
+  useEffect(() => {
+    loadStatus()
+    loadSubscribers()
+    const interval = setInterval(loadStatus, 15000)
+    return () => clearInterval(interval)
+  }, [loadStatus, loadSubscribers])
+
+  async function createNetwork() {
+    if (!netForm.ipCidr) { setNetError('IP/CIDR es obligatorio (ej: 192.168.100.1/24)'); return }
+    setNetError('')
+    setNetSaving(true)
+    try {
+      const dns = netForm.dns.split(',').map(s => s.trim()).filter(Boolean)
+      await api().post(`/edgeos/${router.id}/network`, {
+        iface: netForm.iface,
+        ipCidr: netForm.ipCidr.trim(),
+        description: netForm.description,
+        dhcp: netForm.dhcp,
+        poolStart: netForm.poolStart || undefined,
+        poolEnd: netForm.poolEnd || undefined,
+        dnsServers: dns.length ? dns : undefined,
+      })
+      setShowNewNet(false)
+      setNetForm({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '', dns: '8.8.8.8,8.8.4.4' })
+      await loadStatus()
+    } catch (e: any) {
+      setNetError(e.response?.data?.error || 'Error al crear red')
+    } finally {
+      setNetSaving(false)
+    }
+  }
+
+  async function deleteNetwork(iface: string) {
+    if (!confirm(`¿Eliminar interfaz ${iface} y su DHCP del EdgeRouter?`)) return
+    setActionLoading(`del-net-${iface}`)
+    try {
+      await api().delete(`/edgeos/${router.id}/network/${iface}`)
+      await loadStatus()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al eliminar red')
+    } finally { setActionLoading('') }
+  }
+
+  async function provisionSubscriber(serviceId: number, iface: string) {
+    setActionLoading(`prov-${serviceId}`)
+    try {
+      await api().post(`/edgeos/${router.id}/provision/${serviceId}`, { iface })
+      await loadSubscribers()
+      await loadStatus()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al provisionar')
+    } finally { setActionLoading('') }
+  }
+
+  async function deprovisionSubscriber(serviceId: number) {
+    if (!confirm('¿Eliminar queue de este abonado del EdgeRouter?')) return
+    setActionLoading(`deprov-${serviceId}`)
+    try {
+      await api().delete(`/edgeos/${router.id}/provision/${serviceId}`)
+      await loadSubscribers()
+      await loadStatus()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al eliminar queue')
+    } finally { setActionLoading('') }
+  }
+
+  function queueStatusBadge(q: any) {
+    if (!q) return <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Sin queue</span>
+    const colors: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', active: 'bg-green-100 text-green-700', error: 'bg-red-100 text-red-700' }
+    return <span className={`text-xs px-2 py-0.5 rounded-full ${colors[q.status] || 'bg-gray-100 text-gray-500'}`}>{q.status}</span>
+  }
+
+  const lanIface = status?.lanInterface || router.credentials?.lanInterface || 'eth2'
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex justify-between items-center px-6 py-4 border-b shrink-0">
+          <div className="flex items-center gap-3">
+            <div className={`w-2.5 h-2.5 rounded-full ${status?.connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+            <div>
+              <h2 className="font-bold text-gray-900">EdgeOS — {router.name}</h2>
+              <p className="text-xs text-gray-400">{status?.connected ? 'Conectado' : 'Sin conexión'}{status?.lastHeartbeat ? ` · último heartbeat ${new Date(status.lastHeartbeat).toLocaleTimeString('es-CL')}` : ''}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={loadStatus} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b px-6 shrink-0">
+          <button onClick={() => setTab('networks')}
+            className={`pb-3 pt-2 px-1 mr-6 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${tab === 'networks' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <Wifi className="h-3.5 w-3.5" /> Redes ({status?.networks?.length ?? 0})
+          </button>
+          <button onClick={() => setTab('subscribers')}
+            className={`pb-3 pt-2 px-1 mr-6 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${tab === 'subscribers' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            <Users className="h-3.5 w-3.5" /> Abonados ({subscribers.length})
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="h-5 w-5 animate-spin mr-2" /> Cargando…</div>
+          ) : tab === 'networks' ? (
+            <div className="space-y-4">
+              {/* Alert si no hay heartbeat */}
+              {!status?.connected && (
+                <div className="flex gap-2 items-start bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>El EdgeRouter no está enviando heartbeat. Los comandos se encolarán y se ejecutarán cuando recupere la conexión.</span>
+                </div>
+              )}
+
+              {/* Redes existentes */}
+              {(status?.networks || []).length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase text-gray-400 mb-2">Interfaces configuradas</h3>
+                  <div className="space-y-2">
+                    {status.networks.map((net: any) => (
+                      <div key={net.iface} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{net.iface} — <span className="font-mono">{net.ipCidr}</span></p>
+                            {net.description && <p className="text-xs text-gray-400">{net.description}</p>}
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {net.dhcp ? `DHCP ${net.poolStart}–${net.poolEnd}` : 'Sin DHCP'}
+                            </p>
+                          </div>
+                        </div>
+                        <button onClick={() => deleteNetwork(net.iface)} disabled={actionLoading === `del-net-${net.iface}`}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Formulario nueva red */}
+              <div className="border rounded-xl overflow-hidden">
+                <button onClick={() => setShowNewNet(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-sm font-medium text-gray-700">
+                  <span className="flex items-center gap-2"><Plus className="h-4 w-4 text-emerald-600" /> Nueva red / interfaz</span>
+                  {showNewNet ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                </button>
+                {showNewNet && (
+                  <div className="p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Interfaz</label>
+                        <select value={netForm.iface} onChange={e => setNetForm(f => ({ ...f, iface: e.target.value }))}
+                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                          {INTERFACES.map(i => <option key={i}>{i}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">IP / Máscara (CIDR)</label>
+                        <input value={netForm.ipCidr} onChange={e => setNetForm(f => ({ ...f, ipCidr: e.target.value }))}
+                          placeholder="192.168.100.1/24"
+                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Descripción (opcional)</label>
+                      <input value={netForm.description} onChange={e => setNetForm(f => ({ ...f, description: e.target.value }))}
+                        placeholder="Clientes zona norte"
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" id="dhcpToggle" checked={netForm.dhcp} onChange={e => setNetForm(f => ({ ...f, dhcp: e.target.checked }))}
+                        className="rounded" />
+                      <label htmlFor="dhcpToggle" className="text-sm text-gray-700">Activar servidor DHCP en esta interfaz</label>
+                    </div>
+                    {netForm.dhcp && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool inicio (opcional)</label>
+                          <input value={netForm.poolStart} onChange={e => setNetForm(f => ({ ...f, poolStart: e.target.value }))}
+                            placeholder="auto"
+                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool fin (opcional)</label>
+                          <input value={netForm.poolEnd} onChange={e => setNetForm(f => ({ ...f, poolEnd: e.target.value }))}
+                            placeholder="auto"
+                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Servidores DNS (separados por coma)</label>
+                          <input value={netForm.dns} onChange={e => setNetForm(f => ({ ...f, dns: e.target.value }))}
+                            placeholder="8.8.8.8,8.8.4.4"
+                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
+                        </div>
+                      </div>
+                    )}
+                    {netError && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{netError}</p>}
+                    <div className="flex gap-2 pt-1">
+                      <button onClick={createNetwork} disabled={netSaving}
+                        className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition">
+                        {netSaving ? 'Encolando…' : 'Guardar red'}
+                      </button>
+                      <button onClick={() => { setShowNewNet(false); setNetError('') }}
+                        className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancelar</button>
+                    </div>
+                    <p className="text-xs text-gray-400">El comando se enviará al EdgeRouter en el próximo heartbeat (≤30 s).</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Cola de comandos */}
+              {(status?.pendingCmds?.length > 0 || status?.cmdHistory?.length > 0) && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase text-gray-400 mb-2 mt-2">Actividad de comandos</h3>
+                  <div className="space-y-1.5">
+                    {status.pendingCmds?.map((c: any) => {
+                      const isRetry = (c.retries || 0) > 0
+                      const nextRetry = c.nextRetryAt ? new Date(c.nextRetryAt) : null
+                      return (
+                        <div key={c.id} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 border ${isRetry ? 'bg-orange-50 border-orange-100' : 'bg-amber-50 border-amber-100'}`}>
+                          <Clock className={`h-3.5 w-3.5 shrink-0 ${isRetry ? 'text-orange-500' : 'text-amber-500'}`} />
+                          <span className={`font-medium ${isRetry ? 'text-orange-800' : 'text-amber-800'}`}>{c.type}</span>
+                          {isRetry && <span className="text-orange-500">intento {c.retries}/{c.maxRetries}</span>}
+                          <span className={`ml-auto ${isRetry ? 'text-orange-600' : 'text-amber-600'}`}>
+                            {nextRetry ? `reintento ${nextRetry.toLocaleTimeString('es-CL')}` : 'pendiente'}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {status.cmdHistory?.slice(0, 10).map((c: any) => (
+                      <div key={c.id}>
+                        <button onClick={() => setExpandedCmd(expandedCmd === c.id ? null : c.id)}
+                          className={`w-full flex items-center gap-2 text-xs rounded-lg px-3 py-2 border text-left transition ${c.status === 'done' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                          {c.status === 'done'
+                            ? <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                            : <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+                          <span className={`font-medium ${c.status === 'done' ? 'text-green-800' : 'text-red-800'}`}>{c.type}</span>
+                          <span className="text-gray-400 ml-auto">{c.executedAt ? new Date(c.executedAt).toLocaleTimeString('es-CL') : ''}</span>
+                          {expandedCmd === c.id ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                        </button>
+                        {expandedCmd === c.id && c.output && (
+                          <pre className="text-xs bg-gray-900 text-green-300 rounded-b-lg px-3 py-2 font-mono whitespace-pre-wrap border-x border-b border-gray-700">{c.output}</pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Subscribers tab */
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">Abonados asignados a este nodo. Usa "Aplicar queue" para crear una política de tráfico en el EdgeRouter según el plan contratado.</p>
+              {subLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-400"><RefreshCw className="h-4 w-4 animate-spin mr-2" /> Cargando…</div>
+              ) : subscribers.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 text-sm">No hay abonados asignados a este nodo.</div>
+              ) : (
+                <div className="space-y-2">
+                  {subscribers.map((s: any) => (
+                    <div key={s.serviceId} className="flex items-center justify-between bg-white border rounded-xl px-4 py-3 hover:border-emerald-200 transition">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{s.fullName}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="font-mono text-xs text-gray-500">{s.ipAddress || <span className="text-red-500">Sin IP</span>}</span>
+                          <span className="text-gray-300">·</span>
+                          <span className="text-xs text-gray-500">{s.planName}</span>
+                          <span className="text-gray-300">·</span>
+                          <span className="text-xs text-emerald-600 font-medium">↓{s.downloadSpeed}M ↑{s.uploadSpeed}M</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-3">
+                        {queueStatusBadge(s.edgeosQueue)}
+                        {s.edgeosQueue ? (
+                          <button onClick={() => deprovisionSubscriber(s.serviceId)} disabled={!s.ipAddress || actionLoading === `deprov-${s.serviceId}`}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-40"
+                            title="Eliminar queue">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button onClick={() => provisionSubscriber(s.serviceId, lanIface)} disabled={!s.ipAddress || actionLoading === `prov-${s.serviceId}`}
+                            className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition"
+                            title={!s.ipAddress ? 'Asigna una IP al abonado primero' : 'Crear queue en EdgeRouter'}>
+                            {actionLoading === `prov-${s.serviceId}` ? '…' : 'Aplicar queue'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
