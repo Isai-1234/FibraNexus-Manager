@@ -130,6 +130,7 @@ export default function RouterManager({ API, onBack }: Props) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
   const [mikrotikScript, setMikrotikScript] = useState<any>(null)
+  const [edgeosScript, setEdgeosScript] = useState<any>(null)
   const [editingRouter, setEditingRouter] = useState<any>(null)
   const [credForm, setCredForm] = useState<any>({})
   const [credSaving, setCredSaving] = useState(false)
@@ -165,6 +166,12 @@ export default function RouterManager({ API, onBack }: Props) {
         try {
           const scriptRes = await api().get(`/routers/${res.data.id}/mikrotik-script`)
           setMikrotikScript(scriptRes.data)
+        } catch { }
+      }
+      if (form.routerType === 'edgerouter_v4' && res.data.id) {
+        try {
+          const scriptRes = await api().get(`/routers/${res.data.id}/edgeos-script`)
+          setEdgeosScript(scriptRes.data)
         } catch { }
       }
       setStep(4)
@@ -276,6 +283,7 @@ export default function RouterManager({ API, onBack }: Props) {
     setNewRouter(null)
     setTestResult(null)
     setMikrotikScript(null)
+    setEdgeosScript(null)
   }
 
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
@@ -625,23 +633,56 @@ export default function RouterManager({ API, onBack }: Props) {
                         </ol>
                       </div>
                     </div>
-                  ) : form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter ? (
+                  ) : isEdgeRouter ? (
                     <div className="space-y-4">
-                      <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
-                        <p className="font-semibold text-sky-900 text-sm mb-2">☁️ Un paso en Cloudflare (2 minutos)</p>
-                        <p className="text-xs text-sky-800 mb-3">El cloudflared sigue en tu MikroTik. Solo publica el EdgeRouter con un hostname nuevo:</p>
-                        <ol className="space-y-2 text-xs text-gray-700">
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
-                        </ol>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                        <div className="flex justify-between"><span>Hostname:</span><span className="font-mono text-xs">{form.tunnelHostname}</span></div>
-                        <div className="flex justify-between mt-1"><span>IP local EdgeRouter:</span><span className="font-mono text-xs">{form.routerIp}</span></div>
-                      </div>
+                      {/* Heartbeat bash — conexión inmediata vía SSH */}
+                      {edgeosScript && (
+                        <div className="space-y-3">
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                            <p className="font-semibold text-emerald-900 text-sm mb-1">Paso 1: Activar heartbeat (SSH — 1 minuto)</p>
+                            <p className="text-xs text-emerald-700">Pega el script en SSH del EdgeRouter. El router enviará su estado cada 30s y aparecerá como "Conectado".</p>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Script de instalación (pegar en SSH del EdgeRouter)</label>
+                            <div className="bg-gray-900 rounded-lg p-3 relative max-h-64 overflow-y-auto">
+                              <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{edgeosScript.installScript}</code>
+                              <button onClick={() => copyText(edgeosScript.installScript, 'edgeos-script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded sticky">
+                                {copied === 'edgeos-script' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs font-medium text-gray-600 mb-1.5 flex items-center gap-1.5"><Terminal className="h-3.5 w-3.5" /> Pasos</p>
+                            <ol className="space-y-1">
+                              {edgeosScript.installInstructions.map((instr: string, i: number) => (
+                                <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                  <span className="font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{i + 1}</span>
+                                  {instr}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Cloudflare — opcional, para gestión API completa */}
+                      {form.connectionMethod === 'cloudflare_tunnel' && (
+                        <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+                          <p className="font-semibold text-sky-900 text-sm mb-1">Paso 2 (opcional): Cloudflare para gestión completa</p>
+                          <p className="text-xs text-sky-700 mb-3">Necesario para provisionar PPPoE/DHCP/colas desde FibraNexus. El heartbeat ya activa el estado sin esto.</p>
+                          <ol className="space-y-1.5 text-xs text-gray-700">
+                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Tunnels → el mismo túnel del MikroTik</li>
+                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2.fibranexus.cl'}</strong></li>
+                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="bg-white px-1 rounded font-mono">https://{form.routerIp || '192.168.2.1'}:443</code></li>
+                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> Avanzado → habilitar <strong>No TLS Verify</strong> (cert auto-firmado)</li>
+                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa "Probar conexión" en FibraNexus</li>
+                          </ol>
+                          <div className="mt-2 bg-white/60 rounded p-2 text-xs space-y-0.5">
+                            <div className="flex justify-between"><span className="text-gray-500">Hostname:</span><span className="font-mono">{form.tunnelHostname}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">IP EdgeRouter:</span><span className="font-mono">{form.routerIp}</span></div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : form.connectionMethod === 'agent' ? (
                     <>

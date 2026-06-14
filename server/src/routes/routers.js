@@ -74,6 +74,49 @@ ${boot}
 :put "FibraNexus: scheduler y boot OK"`;
 }
 
+function buildEdgeosHeartbeatScript(token, serverUrl) {
+  return `#!/bin/bash
+TOKEN="${token}"
+SERVER="${serverUrl}"
+VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo "EdgeOS")
+UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+CPULINE1=$(grep '^cpu ' /proc/stat)
+sleep 1
+CPULINE2=$(grep '^cpu ' /proc/stat)
+read -ra C1 <<< "$CPULINE1"
+read -ra C2 <<< "$CPULINE2"
+T1=0; for v in "\${C1[@]:1}"; do T1=$((T1+v)); done
+T2=0; for v in "\${C2[@]:1}"; do T2=$((T2+v)); done
+DT=$((T2-T1)); DI=$((C2[4]-C1[4]))
+CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))
+curl -sf --max-time 8 -X POST "$SERVER" \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"\${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}" >/dev/null 2>&1`;
+}
+
+function buildEdgeosInstallScript(heartbeatScript) {
+  return `# === FibraNexus — Instalar monitor en EdgeRouter (pegar en SSH, ejecutar una vez) ===
+sudo mkdir -p /config/scripts/fibranexus
+
+sudo tee /config/scripts/fibranexus/heartbeat.sh > /dev/null << 'FNHB'
+${heartbeatScript}
+FNHB
+
+sudo chmod +x /config/scripts/fibranexus/heartbeat.sh
+
+# Registrar en Vyatta task-scheduler (persiste tras reinicios)
+WRAPPER=/opt/vyatta/sbin/vyatta-cfg-cmd-wrapper
+$WRAPPER begin
+$WRAPPER set system task-scheduler task fibranexus executable path /config/scripts/fibranexus/heartbeat.sh
+$WRAPPER set system task-scheduler task fibranexus interval 30s
+$WRAPPER commit && $WRAPPER save
+$WRAPPER end
+
+echo "Ejecutando primer heartbeat..."
+sudo /config/scripts/fibranexus/heartbeat.sh
+echo "Listo — verifica el dashboard en ~30 segundos."`;
+}
+
 function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connectionMethod }) {
   const heartbeat = buildHeartbeatScript(token, routerId);
   const lines = [
@@ -285,6 +328,38 @@ routersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     res.json({ message: 'Router eliminado y token revocado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar router' });
+  }
+});
+
+routersRouter.get('/:id/edgeos-script', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const routerId = parseInt(req.params.id);
+    const [router] = await db.select().from(equipment).where(
+      and(eq(equipment.id, routerId), orgFilter(equipment, orgId)),
+    ).limit(1);
+    if (!router) return res.status(404).json({ error: 'Router no encontrado' });
+    const token = router.credentials?.agentToken;
+    if (!token) return res.status(400).json({ error: 'Router sin token de agente' });
+
+    const serverUrl = `${serverBaseUrl()}/api/routers/agent/heartbeat`;
+    const heartbeatScript = buildEdgeosHeartbeatScript(token, serverUrl);
+    const installScript = buildEdgeosInstallScript(heartbeatScript);
+
+    res.json({
+      heartbeatScript,
+      installScript,
+      installInstructions: [
+        'Conéctate al EdgeRouter por SSH: ssh admin@IP_DEL_EDGEROUTER',
+        'Pega el script de instalación completo en la terminal SSH y presiona Enter',
+        'El router enviará heartbeat cada 30s — aparecerá como "Conectado" en ~30 segundos',
+        'Para verificar manualmente: sudo /config/scripts/fibranexus/heartbeat.sh',
+        'El scheduler Vyatta garantiza la persistencia tras reinicios',
+      ],
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error generando script: ' + error.message });
   }
 });
 
