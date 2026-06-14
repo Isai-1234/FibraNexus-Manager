@@ -79,8 +79,8 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     const routerType = creds.routerType || '';
     const isMikrotik = routerType.startsWith('mikrotik');
     const isEdgeRouter = routerType.startsWith('edgerouter') || (router.brand || '').toLowerCase() === 'ubiquiti';
-    // WAN filtering: EdgeRouter → solo eth0 (o wanInterface configurada)
-    const wanIface = creds.wanInterface || (isEdgeRouter ? 'eth0' : null);
+    // WAN filtering: solo si está configurada explícitamente en credentials.wanInterface
+    const wanIface = creds.wanInterface || null;
 
     // --- Fuente 1: datos del heartbeat (bandwidthSamples) ---
     const latestSample = (creds.bandwidthSamples || []).slice(-1)[0];

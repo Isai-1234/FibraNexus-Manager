@@ -334,7 +334,10 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                       })}
                     </div>
                   ) : bandwidth?.connected && (bandwidth.interfaces?.length ?? 0) === 0 ? (
-                    <p className="text-xs text-gray-400 italic">No se encontraron interfaces en la respuesta</p>
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-xs text-amber-800">
+                      <p className="font-medium mb-1">Sin datos de tráfico</p>
+                      <p className="text-amber-700">El script instalado en el EdgeRouter no envía estadísticas de interfaces. Reinstálalo desde <strong>Configurar API → Heartbeat SSH</strong> para activar el monitoreo de ancho de banda.</p>
+                    </div>
                   ) : bandwidth && !bandwidth.connected ? (
                     <p className="text-xs text-red-400 italic">{bandwidth.error || 'Sin datos de tráfico'}</p>
                   ) : null}
