@@ -54,7 +54,9 @@ function parseWalkByColumn(walkData) {
   const byCol = {};
   for (const [oid, raw] of Object.entries(walkData)) {
     for (const [key, col] of Object.entries(UBNT_COLS)) {
-      if (oid.includes(`.${col}.`) || oid.endsWith(`.${col}`)) {
+      // Anclar al OID base exacto — evita falsos positivos por '.5.' y '.6.'
+      // que aparecen en el prefijo estándar 1.3.6.1.4.1.41112.1.4.5.1
+      if (oid.startsWith(`${UBNT_WL_STAT}.${col}.`) || oid === `${UBNT_WL_STAT}.${col}`) {
         if (byCol[key] == null) byCol[key] = raw;
       }
     }
@@ -205,11 +207,15 @@ async function fetchUbntWireless(host, community, router, pollMethod) {
     };
   }
 
+  console.log(`[SNMP-DEBUG] host=${host} raw_merged=${JSON.stringify(merged)} attempts=${JSON.stringify(attempts)}`);
+
   const signal = normalizeDbm(merged.signal ?? merged.rssi);
   const rssi = normalizeDbm(merged.rssi ?? merged.signal);
   const ccq = normalizeCcq(merged.ccq);
   const noiseFloor = normalizeDbm(merged.noiseFloor);
   const snr = signal != null && noiseFloor != null ? Math.round(signal - noiseFloor) : null;
+
+  console.log(`[SNMP-DEBUG] computed signal=${signal} rssi=${rssi} ccq=${ccq} noiseFloor=${noiseFloor} snr=${snr}`);
 
   const warnings = [];
   if (signal != null && signal < -72) {
