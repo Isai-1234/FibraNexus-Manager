@@ -16,20 +16,20 @@ type ImgBox = {
 
 const LINK_LAYOUT = {
   viewW: 580,
-  viewH: 250,
+  viewH: 200,
   /** true = SVG en assets/link/; false = dibujo integrado fallback */
   useAssetFiles: true,
   cpeBox: {
-    x: 4, y: 108, w: 202, h: 140,
+    x: 4, y: 52, w: 202, h: 140,
     align: 'xMaxYMax',
     srcAspect: 526 / 474,   // Litebeam CPE — 526×474
-    hornRel: { x: 0.90, y: 0.40 },
+    hornRel: { x: 0.96, y: 0.47 },
   } satisfies ImgBox,
   towerBox: {
-    x: 368, y: 6, w: 208, h: 242,
+    x: 368, y: 0, w: 208, h: 185,
     align: 'xMinYMax',
     srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
-    hornRel: { x: 0.35, y: 0.15 },
+    hornRel: { x: 0.38, y: 0.28 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
@@ -653,15 +653,15 @@ export default function CpeLinkVisualizer({
 
       {/* escena enlace */}
       <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center justify-center' : ''}`}>
-        <div className={`relative w-full mx-auto aspect-[580/250] overflow-hidden ${immersive ? 'max-w-[1300px]' : 'max-w-[742px]'}`}>
+        <div className={`relative w-full mx-auto aspect-[580/200] overflow-hidden ${immersive ? 'max-w-[1300px]' : 'max-w-[742px]'}`}>
           <svg
-            viewBox="0 0 580 250"
+            viewBox="0 0 580 200"
             className="absolute inset-0 w-full h-full"
             aria-hidden
           >
             <defs>
               <clipPath id={`${uid}-gridClip`}>
-                <rect x="0" y="158" width="580" height="95" />
+                <rect x="0" y="128" width="580" height="74" />
               </clipPath>
               <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%"   stopColor={theme.primary}   stopOpacity="0.55" />
@@ -687,15 +687,15 @@ export default function CpeLinkVisualizer({
             </defs>
 
             <g className="floor-grid" opacity="0.04" clipPath={`url(#${uid}-gridClip)`}>
-              {Array.from({ length: 12 }, (_, i) => (
-                <line key={`h${i}`} x1="0" y1={140 + i * 8} x2="580" y2={140 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
+              {Array.from({ length: 10 }, (_, i) => (
+                <line key={`h${i}`} x1="0" y1={114 + i * 8} x2="580" y2={114 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
               ))}
               {Array.from({ length: 16 }, (_, i) => (
-                <line key={`v${i}`} x1={i * 38} y1="130" x2={i * 38 - 80} y2="230" stroke="#94a3b8" strokeWidth="0.5" />
+                <line key={`v${i}`} x1={i * 38} y1="108" x2={i * 38 - 80} y2="202" stroke="#94a3b8" strokeWidth="0.5" />
               ))}
             </g>
 
-            <rect x="0" y="130" width="580" height="100" fill={`url(#${uid}-horizon)`} />
+            <rect x="0" y="108" width="580" height="94" fill={`url(#${uid}-horizon)`} />
 
             <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
 
