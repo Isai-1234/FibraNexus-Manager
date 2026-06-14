@@ -931,22 +931,81 @@ export default function RouterManager({ API, onBack }: Props) {
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                   </div>
 
-                  {router.agentConnected && info && (
-                    <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-gray-400 font-semibold">{router.brand === 'Ubiquiti' ? 'EdgeOS' : 'RouterOS'}</p>
-                        <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
+                  {router.agentConnected && (() => {
+                    const b = (router.brand || '').toLowerCase()
+                    const rt = (router.credentials?.routerType || '').toLowerCase()
+                    const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
+                    // Si es EdgeOS pero no hay info todavía, mostrar solo sparkline
+                    if (isEdgeOS && !info) {
+                      return (
+                        <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                          <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
+                        </div>
+                      )
+                    }
+                    if (!info) return null
+                    const hasTemp = info.tempC != null && Number(info.tempC) > 0
+                    const hasRam = info.ramUsage != null
+                    if (isEdgeOS) {
+                      return (
+                        <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                          <div className="flex gap-3">
+                            {/* Stats columna izquierda */}
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 flex-1 content-start">
+                              <div>
+                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">EdgeOS</p>
+                                <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Uptime</p>
+                                <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">CPU</p>
+                                <p className={`text-xs font-semibold ${Number(info.cpuLoad) > 80 ? 'text-red-600' : Number(info.cpuLoad) > 50 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                  {info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">RAM</p>
+                                <p className={`text-xs font-semibold ${hasRam && Number(info.ramUsage) > 85 ? 'text-red-600' : hasRam && Number(info.ramUsage) > 60 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                  {hasRam ? `${info.ramUsage}%` : '—'}
+                                </p>
+                              </div>
+                              {hasTemp && (
+                                <div className="col-span-2">
+                                  <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Temp</p>
+                                  <p className={`text-xs font-semibold ${Number(info.tempC) > 75 ? 'text-red-600' : Number(info.tempC) > 55 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                    {info.tempC}°C
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            {/* Sparkline columna derecha */}
+                            <div className="w-28 shrink-0 flex flex-col justify-center">
+                              <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase text-gray-400 font-semibold">RouterOS</p>
+                          <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
+                        </div>
+                        <div className="text-center border-x border-slate-200">
+                          <p className="text-[10px] uppercase text-gray-400 font-semibold">Uptime</p>
+                          <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase text-gray-400 font-semibold">CPU</p>
+                          <p className="text-xs font-medium text-gray-800">{info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}</p>
+                        </div>
                       </div>
-                      <div className="text-center border-x border-slate-200">
-                        <p className="text-[10px] uppercase text-gray-400 font-semibold">Uptime</p>
-                        <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase text-gray-400 font-semibold">CPU</p>
-                        <p className="text-xs font-medium text-gray-800">{info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}</p>
-                      </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex justify-between items-center">
@@ -985,18 +1044,6 @@ export default function RouterManager({ API, onBack }: Props) {
                       )}
                     </div>
                   </div>
-                  {(() => {
-                    const b = (router.brand || '').toLowerCase()
-                    const rt = (router.credentials?.routerType || '').toLowerCase()
-                    const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-                    return isEdgeOS && router.agentConnected ? (
-                      <BandwidthSparkline
-                        routerId={router.id}
-                        API={API}
-                        className="mb-3 px-1"
-                      />
-                    ) : null
-                  })()}
                   <div className="flex gap-2 mb-3">
                     <button onClick={() => openCredentials(router)}
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">

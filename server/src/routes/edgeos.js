@@ -104,8 +104,10 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
       sessionCache.delete(parseInt(req.params.routerId));
     }
 
-    const interfaces = apiIfaces || heartbeatIfaces || [];
-    const source = apiIfaces ? 'api' : heartbeatIfaces ? 'heartbeat' : 'none';
+    // [] es truthy en JS — usar length para decidir qué fuente es válida
+    const useApi = Array.isArray(apiIfaces) && apiIfaces.length > 0;
+    const interfaces = useApi ? apiIfaces : (heartbeatIfaces || []);
+    const source = useApi ? 'api' : (heartbeatIfaces ? 'heartbeat' : 'none');
 
     res.json({ connected: true, ts: Date.now(), interfaces, source });
   } catch (err) {
