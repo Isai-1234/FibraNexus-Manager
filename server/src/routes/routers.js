@@ -81,27 +81,17 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     `TOKEN="${token}"`,
     `SERVER="${serverUrl}"`,
     `CMD_RESULT="${cmdResultUrl}"`,
-    "VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo \"EdgeOS\")",
-    "UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo \"0\")",
-    "CPULINE1=$(grep '^cpu ' /proc/stat)",
-    'sleep 1',
-    "CPULINE2=$(grep '^cpu ' /proc/stat)",
-    'read -ra C1 <<< "$CPULINE1"',
-    'read -ra C2 <<< "$CPULINE2"',
-    'T1=0; for v in "${C1[@]:1}"; do T1=$((T1+v)); done',
-    'T2=0; for v in "${C2[@]:1}"; do T2=$((T2+v)); done',
-    'DT=$((T2-T1)); DI=$((C2[4]-C1[4]))',
-    'CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))',
+    'PIDFILE="/tmp/fibranexus.pid"',
     '',
-    '# Enviar heartbeat y guardar respuesta',
-    'RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
-    '  -H "Content-Type: application/json" \\',
-    '  -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}")',
+    '# Evitar múltiples instancias',
+    '[ -f "$PIDFILE" ] && kill $(cat "$PIDFILE") 2>/dev/null',
+    'echo $$ > "$PIDFILE"',
     '',
-    '# Ejecutar comandos pendientes de FibraNexus (compatible Python 2.7 y 3.x)',
-    'echo "$RESPONSE" > /tmp/fn_hb.json',
     'FNPY=$(command -v python3 || command -v python || command -v python2 || echo "")',
-    '[ -z "$FNPY" ] || FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" "$FNPY" << \'PYEOF\'',
+    "VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo \"EdgeOS\")",
+    '',
+    '# Escribir agente Python una vez al iniciar (se reutiliza en cada ciclo)',
+    '[ -z "$FNPY" ] || cat > /tmp/fn_agent.py << \'PYEOF\'',
     'import os, json, subprocess',
     'try:',
     '    with open("/tmp/fn_hb.json") as f: d = json.loads(f.read())',
@@ -122,12 +112,36 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     'except SystemExit: pass',
     'except Exception: pass',
     'PYEOF',
+    '',
+    'while true; do',
+    "  UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo \"0\")",
+    "  CPULINE1=$(grep '^cpu ' /proc/stat)",
+    '  sleep 1',
+    "  CPULINE2=$(grep '^cpu ' /proc/stat)",
+    '  read -ra C1 <<< "$CPULINE1"',
+    '  read -ra C2 <<< "$CPULINE2"',
+    '  T1=0; for v in "${C1[@]:1}"; do T1=$((T1+v)); done',
+    '  T2=0; for v in "${C2[@]:1}"; do T2=$((T2+v)); done',
+    '  DT=$((T2-T1)); DI=$((C2[4]-C1[4]))',
+    '  CPU=0; [ $DT -gt 0 ] && CPU=$(( 100*(DT-DI)/DT ))',
+    '',
+    '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
+    '    -H "Content-Type: application/json" \\',
+    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\"}}")',
+    '',
+    '  if [ -n "$RESPONSE" ]; then',
+    '    echo "$RESPONSE" > /tmp/fn_hb.json',
+    '    rm -f /tmp/fn_cmd.sh /tmp/fn_result.json 2>/dev/null',
+    '    [ -z "$FNPY" ] || FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" "$FNPY" /tmp/fn_agent.py',
+    '  fi',
+    '  sleep 27',
+    'done',
   ].join('\n');
 }
 
 function buildEdgeosInstallScript(heartbeatScript) {
   return `# === FibraNexus — Instalar monitor en EdgeRouter (pegar en SSH, ejecutar una vez) ===
-sudo mkdir -p /config/scripts/fibranexus
+sudo mkdir -p /config/scripts/fibranexus /config/scripts/post-config.d
 
 sudo tee /config/scripts/fibranexus/heartbeat.sh > /dev/null << 'FNHB'
 ${heartbeatScript}
@@ -135,17 +149,17 @@ FNHB
 
 sudo chmod +x /config/scripts/fibranexus/heartbeat.sh
 
-# Registrar en Vyatta task-scheduler (persiste tras reinicios)
-WRAPPER=/opt/vyatta/sbin/vyatta-cfg-cmd-wrapper
-$WRAPPER begin
-$WRAPPER set system task-scheduler task fibranexus executable path /config/scripts/fibranexus/heartbeat.sh
-$WRAPPER set system task-scheduler task fibranexus interval 30s
-$WRAPPER commit && $WRAPPER save
-$WRAPPER end
+# Auto-arranque al boot via post-config.d (sin depender de task-scheduler)
+sudo tee /config/scripts/post-config.d/fibranexus-start.sh > /dev/null << 'FNBOOT'
+#!/bin/bash
+/bin/bash /config/scripts/fibranexus/heartbeat.sh &
+FNBOOT
+sudo chmod +x /config/scripts/post-config.d/fibranexus-start.sh
 
-echo "Ejecutando primer heartbeat..."
-sudo /config/scripts/fibranexus/heartbeat.sh
-echo "Listo — verifica el dashboard en ~30 segundos."`;
+# Iniciar daemon (mata instancia anterior si existe)
+sudo kill \$(cat /tmp/fibranexus.pid 2>/dev/null) 2>/dev/null
+sudo nohup /bin/bash /config/scripts/fibranexus/heartbeat.sh >/dev/null 2>&1 &
+echo "FibraNexus iniciado — verifica el dashboard en ~30 segundos."`;
 }
 
 function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connectionMethod }) {
@@ -487,11 +501,11 @@ routersRouter.get('/:id/edgeos-script', requireRole('admin'), async (req, res) =
       heartbeatScript,
       installScript,
       installInstructions: [
-        'Conéctate al EdgeRouter por SSH: ssh admin@IP_DEL_EDGEROUTER',
+        'Conéctate al EdgeRouter por SSH: ssh ubnt@IP_DEL_EDGEROUTER',
         'Pega el script de instalación completo en la terminal SSH y presiona Enter',
-        'El router enviará heartbeat cada 30s — aparecerá como "Conectado" en ~30 segundos',
-        'Para verificar manualmente: sudo /config/scripts/fibranexus/heartbeat.sh',
-        'El scheduler Vyatta garantiza la persistencia tras reinicios',
+        'El router enviará heartbeat cada 28s — aparecerá como "Conectado" en ~30 segundos',
+        'Para verificar estado: sudo kill -0 $(cat /tmp/fibranexus.pid 2>/dev/null) && echo "daemon activo"',
+        'Persiste tras reinicios via /config/scripts/post-config.d/fibranexus-start.sh',
       ],
     });
   } catch (error) {
