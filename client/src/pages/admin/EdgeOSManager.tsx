@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Plus, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, Activity, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
+import { X, Trash2, RefreshCw, CheckCircle, AlertTriangle, Clock, Wifi, Users, ChevronDown, ChevronUp, XCircle } from 'lucide-react'
 import axios from 'axios'
 
 interface Props {
@@ -16,10 +16,6 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
   const [subscribers, setSubscribers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [subLoading, setSubLoading] = useState(false)
-  const [netForm, setNetForm] = useState({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '', dns: '8.8.8.8,8.8.4.4' })
-  const [netSaving, setNetSaving] = useState(false)
-  const [netError, setNetError] = useState('')
-  const [showNewNet, setShowNewNet] = useState(false)
   const [expandedCmd, setExpandedCmd] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string>('')
 
@@ -50,52 +46,6 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     const interval = setInterval(loadStatus, 15000)
     return () => clearInterval(interval)
   }, [loadStatus, loadSubscribers])
-
-  function validateIpCidr(value: string): string | null {
-    const [ip, mask] = value.trim().split('/')
-    if (!ip || !mask) return 'Formato inválido — usa IP/máscara (ej: 192.168.100.1/24)'
-    const parts = ip.split('.')
-    if (parts.length !== 4) return 'La IP debe tener 4 octetos (ej: 192.168.100.1)'
-    for (const p of parts) {
-      const n = Number(p)
-      if (isNaN(n) || n < 0 || n > 255 || p === '') return `Octeto inválido "${p}" — debe ser 0–255`
-    }
-    const bits = Number(mask)
-    if (isNaN(bits) || bits < 0 || bits > 32) return `Máscara inválida "/${mask}" — debe ser /0 a /32`
-    return null
-  }
-
-  async function createNetwork() {
-    if (!netForm.ipCidr) { setNetError('IP/CIDR es obligatorio (ej: 192.168.100.1/24)'); return }
-    const ipErr = validateIpCidr(netForm.ipCidr)
-    if (ipErr) { setNetError(ipErr); return }
-    const existing = (status?.networks || []).find((n: any) => n.iface === netForm.iface)
-    if (existing) {
-      const ok = confirm(`${netForm.iface} ya tiene una red configurada (${existing.ipCidr}).\n¿Reemplazarla con ${netForm.ipCidr.trim()}?`)
-      if (!ok) return
-    }
-    setNetError('')
-    setNetSaving(true)
-    try {
-      const dns = netForm.dns.split(',').map(s => s.trim()).filter(Boolean)
-      await api().post(`/edgeos/${router.id}/network`, {
-        iface: netForm.iface,
-        ipCidr: netForm.ipCidr.trim(),
-        description: netForm.description,
-        dhcp: netForm.dhcp,
-        poolStart: netForm.poolStart || undefined,
-        poolEnd: netForm.poolEnd || undefined,
-        dnsServers: dns.length ? dns : undefined,
-      })
-      setShowNewNet(false)
-      setNetForm({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '', dns: '8.8.8.8,8.8.4.4' })
-      await loadStatus()
-    } catch (e: any) {
-      setNetError(e.response?.data?.error || 'Error al crear red')
-    } finally {
-      setNetSaving(false)
-    }
-  }
 
   async function deleteNetwork(iface: string) {
     if (!confirm(`¿Eliminar interfaz ${iface} y su DHCP del EdgeRouter?`)) return
@@ -244,76 +194,6 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 </div>
               )}
 
-              {/* Formulario nueva red — solo si ya conectó al menos una vez */}
-              {!status?.lastHeartbeat ? null : <div className="border rounded-xl overflow-hidden">
-                <button onClick={() => setShowNewNet(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-sm font-medium text-gray-700">
-                  <span className="flex items-center gap-2"><Plus className="h-4 w-4 text-emerald-600" /> Nueva red / interfaz</span>
-                  {showNewNet ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-                </button>
-                {showNewNet && (
-                  <div className="p-4 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Interfaz</label>
-                        <select value={netForm.iface} onChange={e => setNetForm(f => ({ ...f, iface: e.target.value }))}
-                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                          {INTERFACES.map(i => <option key={i}>{i}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">IP / Máscara (CIDR)</label>
-                        <input value={netForm.ipCidr} onChange={e => setNetForm(f => ({ ...f, ipCidr: e.target.value }))}
-                          placeholder="192.168.100.1/24"
-                          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Descripción (opcional)</label>
-                      <input value={netForm.description} onChange={e => setNetForm(f => ({ ...f, description: e.target.value }))}
-                        placeholder="Clientes zona norte"
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="dhcpToggle" checked={netForm.dhcp} onChange={e => setNetForm(f => ({ ...f, dhcp: e.target.checked }))}
-                        className="rounded" />
-                      <label htmlFor="dhcpToggle" className="text-sm text-gray-700">Activar servidor DHCP en esta interfaz</label>
-                    </div>
-                    {netForm.dhcp && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool inicio (opcional)</label>
-                          <input value={netForm.poolStart} onChange={e => setNetForm(f => ({ ...f, poolStart: e.target.value }))}
-                            placeholder="auto"
-                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Pool fin (opcional)</label>
-                          <input value={netForm.poolEnd} onChange={e => setNetForm(f => ({ ...f, poolEnd: e.target.value }))}
-                            placeholder="auto"
-                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Servidores DNS (separados por coma)</label>
-                          <input value={netForm.dns} onChange={e => setNetForm(f => ({ ...f, dns: e.target.value }))}
-                            placeholder="8.8.8.8,8.8.4.4"
-                            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono" />
-                        </div>
-                      </div>
-                    )}
-                    {netError && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{netError}</p>}
-                    <div className="flex gap-2 pt-1">
-                      <button onClick={createNetwork} disabled={netSaving}
-                        className="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition">
-                        {netSaving ? 'Encolando…' : 'Guardar red'}
-                      </button>
-                      <button onClick={() => { setShowNewNet(false); setNetError('') }}
-                        className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancelar</button>
-                    </div>
-                    <p className="text-xs text-gray-400">El comando se enviará al EdgeRouter en el próximo heartbeat (≤30 s).</p>
-                  </div>
-                )}
-              </div>}
 
               {/* Cola de comandos */}
               {(status?.pendingCmds?.length > 0 || status?.cmdHistory?.length > 0) && (
