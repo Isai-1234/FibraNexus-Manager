@@ -29,7 +29,7 @@ const LINK_LAYOUT = {
     x: 368, y: 6, w: 208, h: 242,
     align: 'xMinYMax',
     srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
-    hornRel: { x: 0.22, y: 0.38 },
+    hornRel: { x: 0.35, y: 0.15 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
