@@ -513,7 +513,7 @@ export default function NetworkManager({ API, onBack }: Props) {
                     <div>
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                         <Wifi className="h-4 w-4 text-green-600" />
-                        {selectedRouter ? selectedRouter.name : 'Router MikroTik'}
+                        {selectedRouter ? selectedRouter.name : 'Abonados del nodo'}
                       </h3>
                       {selectedRouter && (
                         <p className="text-xs text-gray-500 mt-0.5">
@@ -538,8 +538,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                     {!selectedRouter ? (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         {siteRouters.length === 0
-                          ? 'Agrega un router MikroTik a este nodo'
-                          : 'Selecciona un router para ver abonados'}
+                          ? <span>No hay routers MikroTik en este nodo.<br/>Los EdgeRouters se gestionan con el botón <strong className="text-emerald-600">Gestionar EdgeOS</strong>.</span>
+                          : 'Selecciona un router para ver sus abonados'}
                         {siteRouters.length > 0 && (
                           <div className="mt-4 space-y-2">
                             {siteRouters.map((r: any) => (

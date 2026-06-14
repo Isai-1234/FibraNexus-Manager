@@ -50,7 +50,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
   const loadBandwidth = useCallback(async () => {
     try {
       const res = await api().get(`/edgeos/${router.id}/bandwidth`)
-      setBandwidth(res.data)
+      if (res.data?.connected) setBandwidth(res.data)
     } catch { /* silent */ }
   }, [api, router.id])
 
@@ -58,9 +58,9 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     loadStatus()
     loadSubscribers()
     loadBandwidth()
-    const interval = setInterval(loadStatus, 15000)
-    const bwInterval = setInterval(loadBandwidth, 28000)
-    return () => { clearInterval(interval); clearInterval(bwInterval) }
+    const statusInterval = setInterval(loadStatus, 15000)
+    const bwInterval = setInterval(loadBandwidth, 5000)
+    return () => { clearInterval(statusInterval); clearInterval(bwInterval) }
   }, [loadStatus, loadSubscribers, loadBandwidth])
 
   async function deleteNetwork(iface: string) {
@@ -183,39 +183,65 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 </div>
               ) : null}
 
+              {/* Ancho de banda en tiempo real */}
+              {bandwidth?.connected && bandwidth.interfaces?.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-xs font-semibold uppercase text-gray-400">Tráfico en tiempo real</h3>
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" /> live
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {bandwidth.interfaces.filter((i: any) => i.up !== false).map((iface: any) => {
+                      const total = iface.rxBps + iface.txBps
+                      const netInfo = (status?.networks || []).find((n: any) => n.iface === iface.iface)
+                      return (
+                        <div key={iface.iface} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-semibold text-gray-700 font-mono">{iface.iface}</span>
+                            {netInfo && <span className="text-[10px] text-gray-400 font-mono">{netInfo.ipCidr}</span>}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs">
+                            <span className="text-blue-600">↓ {fmtBps(iface.rxBps)}</span>
+                            <span className="text-orange-500">↑ {fmtBps(iface.txBps)}</span>
+                            {total > 0 && (
+                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
+                                <div className="h-full bg-blue-400 rounded-l" style={{ width: `${Math.min(100, iface.rxBps / total * 100)}%` }} />
+                                <div className="h-full bg-orange-400 rounded-r" style={{ width: `${Math.min(100, iface.txBps / total * 100)}%` }} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Redes existentes */}
               {(status?.networks || []).length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold uppercase text-gray-400 mb-2">Interfaces configuradas</h3>
                   <div className="space-y-2">
-                    {status.networks.map((net: any) => {
-                      const lastSample = bandwidth?.samples?.slice(-1)[0]
-                      const ifaceBw = lastSample?.ifaces?.find((i: any) => i.iface === net.iface)
-                      return (
-                        <div key={net.iface} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
-                          <div className="flex items-center gap-3">
-                            <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
-                            <div>
-                              <p className="text-sm font-semibold text-gray-800">{net.iface} — <span className="font-mono">{net.ipCidr}</span></p>
-                              {net.description && <p className="text-xs text-gray-400">{net.description}</p>}
-                              <p className="text-xs text-gray-400 mt-0.5">
-                                {net.dhcp ? `DHCP ${net.poolStart}–${net.poolEnd}` : 'Sin DHCP'}
-                              </p>
-                              {ifaceBw && (
-                                <p className="text-xs text-emerald-600 mt-0.5 flex items-center gap-1">
-                                  <Activity className="h-3 w-3" />
-                                  ↓ {fmtBps(ifaceBw.rxBps)} · ↑ {fmtBps(ifaceBw.txBps)}
-                                </p>
-                              )}
-                            </div>
+                    {status.networks.map((net: any) => (
+                      <div key={net.iface} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{net.iface} — <span className="font-mono">{net.ipCidr}</span></p>
+                            {net.description && <p className="text-xs text-gray-400">{net.description}</p>}
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {net.dhcp ? `DHCP ${net.poolStart}–${net.poolEnd}` : 'Sin DHCP'}
+                            </p>
                           </div>
-                          <button onClick={() => deleteNetwork(net.iface)} disabled={actionLoading === `del-net-${net.iface}`}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
                         </div>
-                      )
-                    })}
+                        <button onClick={() => deleteNetwork(net.iface)} disabled={actionLoading === `del-net-${net.iface}`}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition disabled:opacity-50">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

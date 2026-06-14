@@ -12,6 +12,25 @@ import {
   makePendingCmd,
   parseCidr,
 } from '../lib/edgeosCommands.js';
+import { edgeosLogin, edgeosDataGet, getRouterCredentials } from '../lib/edgeosClient.js';
+
+// Caché de sesiones EdgeOS en memoria (evita login por cada poll)
+const sessionCache = new Map(); // routerId → { cookie, csrfToken, host, port, createdAt }
+
+async function getEdgeosSession(router) {
+  const creds = router.credentials || {};
+  const host = creds.tunnelHostname || router.ipAddress;
+  const port = String(creds.routerPort || '443');
+  const cached = sessionCache.get(router.id);
+  if (cached && cached.host === host && Date.now() - cached.createdAt < 18 * 60 * 1000) {
+    return cached;
+  }
+  const { user, pass } = getRouterCredentials(router);
+  const { cookie, csrfToken } = await edgeosLogin({ host, port, user, pass });
+  const session = { cookie, csrfToken, host, port, createdAt: Date.now() };
+  sessionCache.set(router.id, session);
+  return session;
+}
 
 export const edgeosRouter = Router();
 
@@ -35,7 +54,7 @@ async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
   return cmd;
 }
 
-// GET /api/edgeos/:routerId/bandwidth — estadísticas de interfaces en tiempo real
+// GET /api/edgeos/:routerId/bandwidth — ancho de banda en tiempo real via API EdgeOS
 edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -44,10 +63,32 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
 
     const creds = router.credentials || {};
-    const bwHistory = creds.bandwidthSamples || [];
-    res.json({ samples: bwHistory.slice(-60), interfaces: creds.lastIfaceStats || [] });
+    const isConnected = creds.lastHeartbeat
+      ? Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000
+      : false;
+    if (!isConnected) return res.json({ connected: false, interfaces: [] });
+
+    const session = await getEdgeosSession(router);
+    const data = await edgeosDataGet({ ...session, dataPath: 'interfaces' });
+
+    const raw = data?.data?.interfaces || data?.interfaces || {};
+    const interfaces = Object.entries(raw).map(([name, info]) => {
+      const stats = info?.stats || {};
+      return {
+        iface: name,
+        up: info?.up ?? true,
+        rxBps: Math.round(stats.rx_bps || 0),
+        txBps: Math.round(stats.tx_bps || 0),
+        rxBytes: stats.rx_bytes || 0,
+        txBytes: stats.tx_bytes || 0,
+      };
+    }).filter(i => !['lo'].includes(i.iface));
+
+    res.json({ connected: true, ts: Date.now(), interfaces });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Si la sesión expiró, limpiar caché para forzar re-login
+    sessionCache.delete(parseInt(req.params.routerId));
+    res.json({ connected: false, error: err.message, interfaces: [] });
   }
 });
 
