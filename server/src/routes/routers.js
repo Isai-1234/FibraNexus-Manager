@@ -438,6 +438,29 @@ export async function agentHeartbeatHandler(req, res) {
       }
     }
 
+    // ARP-based status: CPEs cuya MAC está en la tabla ARP del EdgeRouter → online
+    // Funciona sin SNMP — el ARP es suficiente para confirmar presencia en LAN
+    if (router.siteId && Array.isArray(creds.heartbeatArp) && creds.heartbeatArp.length > 0) {
+      const normMac = (m) => String(m || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+      const siteCpes = await db.select().from(equipment).where(
+        and(eq(equipment.siteId, router.siteId), ne(equipment.type, 'router')),
+      );
+      for (const cpe of siteCpes) {
+        if (!cpe.macAddress) continue;
+        const cpeMac = normMac(cpe.macAddress);
+        const arpEntry = creds.heartbeatArp.find(a => normMac(a.mac) === cpeMac);
+        if (!arpEntry) continue;
+        const lastSnmpPatch = { polledAt: new Date().toISOString(), pollMethod: 'edgerouter-arp', online: true };
+        await db.update(equipment).set({
+          status: 'online',
+          lastSeen: new Date(),
+          credentials: { ...(cpe.credentials || {}), lastSnmp: lastSnmpPatch },
+          updatedAt: new Date(),
+        }).where(eq(equipment.id, cpe.id));
+        console.log(`[heartbeat-arp] router=${router.id} equipo=${cpe.id} (${cpe.name}) online via ARP mac=${cpe.macAddress}`);
+      }
+    }
+
     // Construir snmpTargets para el próximo ciclo: CPEs del mismo site con IP + community
     let snmpTargets = '';
     if (router.siteId) {
