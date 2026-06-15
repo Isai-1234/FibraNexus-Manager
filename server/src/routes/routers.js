@@ -140,9 +140,18 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     '  # Stats de interfaces desde /proc/net/dev (bytes acumulados)',
     '  IFACE_STATS=$(awk \'NR>2 && $1!~/lo:/ {gsub(/:/, "", $1); printf "%s,%s,%s;", $1, $2, $10}\' /proc/net/dev 2>/dev/null || echo "")',
     '',
+    '  # Tabla ARP — entradas resueltas (flags != 0x00), formato "ip,mac;"',
+    '  ARP_DATA=$(awk \'NR>1 && $3!="0x0" {print $1","$4}\' /proc/net/arp 2>/dev/null | tr \'\\n\' \';\' | head -c 1500 || echo "")',
+    '',
+    '  # DHCP leases activos — buscar archivo en rutas conocidas de EdgeOS',
+    '  DHCP_DATA=""',
+    '  for f in /var/run/dhcpd.leases /var/run/dhcpd/dhcpd.leases /var/lib/dhcp/dhcpd.leases /var/lib/dhclient/dhcpd.leases; do',
+    '    [ -f "$f" ] && DHCP_DATA=$(awk \'/^lease /{ip=$2} /hardware ethernet /{mac=$3; gsub(/;/,"",mac)} /binding state active/{if(ip&&mac)printf "%s,%s;",ip,mac}\' "$f" 2>/dev/null | head -c 1500) && break',
+    '  done',
+    '',
     '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
     '    -H "Content-Type: application/json" \\',
-    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\"}")',
+    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\"}")',
     '',
     '  if [ -n "$RESPONSE" ]; then',
     '    echo "$RESPONSE" | sudo tee /tmp/fn_hb.json > /dev/null',
@@ -302,7 +311,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
 
 export async function agentHeartbeatHandler(req, res) {
   try {
-    const { agentToken, routerInfo, ifaceStats } = req.body;
+    const { agentToken, routerInfo, ifaceStats, arpData, dhcpData } = req.body;
     if (!agentToken) return res.status(403).json({ error: 'Token de agente requerido' });
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials && r.credentials.agentToken === agentToken);
@@ -329,6 +338,16 @@ export async function agentHeartbeatHandler(req, res) {
       bwSamples = [...bwSamples.slice(-59), sample];
     }
 
+    // Parsear tabla ARP y DHCP leases enviados por el agente ("ip,mac;ip,mac;...")
+    function parseIpMacTable(str) {
+      if (!str) return null;
+      const entries = String(str).split(';').filter(Boolean).map(e => {
+        const [ip, mac] = e.split(',');
+        return ip && mac ? { ip: ip.trim(), mac: mac.trim() } : null;
+      }).filter(Boolean);
+      return entries.length ? entries : null;
+    }
+
     // lastHeartbeat persiste en BD — sobrevive reinicios del servidor
     const creds = {
       ...router.credentials,
@@ -337,6 +356,8 @@ export async function agentHeartbeatHandler(req, res) {
       lastIfaceStats: parsedIfaces.length ? parsedIfaces : (router.credentials?.lastIfaceStats || []),
       lastIfaceTs: parsedIfaces.length ? Date.now() : (router.credentials?.lastIfaceTs || null),
       bandwidthSamples: bwSamples,
+      heartbeatArp: parseIpMacTable(arpData) ?? router.credentials?.heartbeatArp ?? null,
+      heartbeatDhcp: parseIpMacTable(dhcpData) ?? router.credentials?.heartbeatDhcp ?? null,
     };
     if (creds.connectionMethod === 'agent' && String(creds.routerType || '').startsWith('mikrotik') && routerInfo?.version) {
       creds.connectionMethod = 'cloudflare_tunnel';

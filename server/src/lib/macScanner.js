@@ -210,6 +210,24 @@ async function scanEdgeOSForMac(router, targetMac) {
   return { found: false };
 }
 
+// ─── Heartbeat data (EdgeRouter en modo agente — no acepta conexiones entrantes) ─
+function scanHeartbeatTables(router, targetMac) {
+  const creds = router.credentials || {};
+  const tables = [
+    { entries: creds.heartbeatArp,  source: 'arp'  },
+    { entries: creds.heartbeatDhcp, source: 'dhcp' },
+  ];
+  for (const { entries, source } of tables) {
+    if (!Array.isArray(entries)) continue;
+    const hit = entries.find(e => macMatches(e.mac, targetMac));
+    if (hit?.ip) {
+      console.log(`[MacScan] ${router.name} — encontrado en heartbeat.${source}: ${hit.ip}`);
+      return { found: true, ip: hit.ip, source };
+    }
+  }
+  return null;
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────
 export async function scanRouterForMac(router, targetMac) {
   const creds = router.credentials || {};
@@ -217,9 +235,20 @@ export async function scanRouterForMac(router, targetMac) {
   const isMikrotik   = routerType.startsWith('mikrotik')  || (router.brand || '').toLowerCase().includes('mikrotik');
   const isEdgeRouter = isEdgeRouterType(routerType)       || (router.brand || '').toLowerCase().includes('ubiquiti');
 
+  // Para EdgeRouters con agente: usar datos del heartbeat (no requiere conexión entrante)
+  if (isEdgeRouter) {
+    const hbResult = scanHeartbeatTables(router, targetMac);
+    if (hbResult) return hbResult;
+    console.log(`[MacScan] ${router.name} — sin datos heartbeat ARP/DHCP (reinstalar script)`);
+    // Intentar API como fallback (puede fallar si el túnel no permite entrantes)
+    if (creds.routerUser && creds.routerPass) {
+      try { return await scanEdgeOSForMac(router, targetMac); } catch { /* ignore */ }
+    }
+    return { found: false };
+  }
+
   try {
-    if (isMikrotik   && creds.routerUser && creds.routerPass) return await scanMikrotikForMac(router, targetMac);
-    if (isEdgeRouter && creds.routerUser && creds.routerPass) return await scanEdgeOSForMac(router, targetMac);
+    if (isMikrotik && creds.routerUser && creds.routerPass) return await scanMikrotikForMac(router, targetMac);
   } catch (e) {
     console.log(`[MacScan] ${router.name}: ${e.message.slice(0, 80)}`);
   }
