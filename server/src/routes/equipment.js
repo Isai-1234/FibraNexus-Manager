@@ -149,10 +149,12 @@ equipmentRouter.post('/:id/mac-scan', requireRole('admin', 'technician'), async 
     const reachableRouters = allRouters.filter(r => {
       const creds = r.credentials || {};
       if (!creds.routerUser || !creds.routerPass) return false;
-      if (creds.lastHeartbeat) return Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000;
+      // Heartbeat activo en los últimos 5 minutos (o lastSeen online en últimos 10 min)
+      if (creds.lastHeartbeat) return Date.now() - new Date(creds.lastHeartbeat).getTime() < 300_000;
       return r.status === 'online' && r.lastSeen &&
-        Date.now() - new Date(r.lastSeen).getTime() < 300_000;
+        Date.now() - new Date(r.lastSeen).getTime() < 600_000;
     });
+    console.log(`[MacScan] Routers alcanzables: ${reachableRouters.map(r => `${r.name}(${r.credentials?.routerType||r.brand})`).join(', ')}`);
 
     console.log(`[MacScan] Equipo "${equip.name}" MAC=${equip.macAddress} — escaneando ${reachableRouters.length} router(s)`);
 
