@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import crypto from 'crypto';
@@ -74,6 +74,16 @@ ${boot}
 :put "FibraNexus: scheduler y boot OK"`;
 }
 
+function formatUptimeSec(sec) {
+  const s = parseInt(sec) || 0;
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 function buildEdgeosHeartbeatScript(token, serverUrl) {
   const cmdResultUrl = serverUrl.replace('/agent/heartbeat', '/agent/cmd-result');
   return [
@@ -88,7 +98,7 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     'echo $$ > "$PIDFILE"',
     '',
     '# Limpiar archivos temporales al arrancar (evita problemas de permisos entre root/ubnt)',
-    'sudo rm -f /tmp/fn_hb.json /tmp/fn_cmd.sh /tmp/fn_result.json /tmp/fn_agent.py 2>/dev/null',
+    'sudo rm -f /tmp/fn_hb.json /tmp/fn_cmd.sh /tmp/fn_result.json /tmp/fn_agent.py /tmp/fn_snmp.py 2>/dev/null',
     '',
     'FNPY=$(command -v python3 || command -v python || command -v python2 || echo "")',
     "VER=$(cat /etc/version 2>/dev/null | head -1 | tr -d '\\n' || echo \"EdgeOS\")",
@@ -115,6 +125,32 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     'except SystemExit: pass',
     'except Exception: pass',
     'PYEOF',
+    '',
+    '# Script SNMP: poll de CPEs en LAN via snmpget, usa snmpTargets del heartbeat anterior',
+    '[ -z "$FNPY" ] || cat > /tmp/fn_snmp.py << \'SNMPEOF\'',
+    'import json, subprocess, re',
+    'try:',
+    '    with open("/tmp/fn_hb.json") as f: d = json.loads(f.read())',
+    '    tgts = d.get("snmpTargets", "")',
+    '    if not tgts: raise SystemExit(0)',
+    '    res = []',
+    '    for t in str(tgts).split(";"):',
+    '        p = t.strip().split(",")',
+    '        if len(p) < 3: continue',
+    '        ip, comm, eid = p[0], p[1], p[2]',
+    '        r = subprocess.run(["snmpget","-v2c","-c",comm,"-t","3","-r","0",ip,"1.3.6.1.2.1.1.3.0"],',
+    '            capture_output=True, timeout=5)',
+    '        if r.returncode == 0:',
+    '            txt = r.stdout.decode("utf-8","ignore")',
+    '            m = re.search(r"\\((\\d+)\\)", txt)',
+    '            sec = int(m.group(1))//100 if m else 0',
+    '            res.append(eid+",1,"+str(sec))',
+    '        else:',
+    '            res.append(eid+",0,0")',
+    '    print(";".join(res), end="")',
+    'except SystemExit: pass',
+    'except Exception: pass',
+    'SNMPEOF',
     '',
     'while true; do',
     "  UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo \"0\")",
@@ -149,9 +185,13 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     '    [ -f "$f" ] && DHCP_DATA=$(awk \'/^lease /{ip=$2} /hardware ethernet /{mac=$3; gsub(/;/,"",mac)} /binding state active/{if(ip&&mac)printf "%s,%s;",ip,mac}\' "$f" 2>/dev/null | head -c 1500) && break',
     '  done',
     '',
+    '  # SNMP poll de CPEs en LAN (usa snmpTargets del heartbeat anterior)',
+    '  SNMP_DATA=""',
+    '  [ -z "$FNPY" ] || [ ! -f /tmp/fn_snmp.py ] || SNMP_DATA=$("$FNPY" /tmp/fn_snmp.py 2>/dev/null || echo "")',
+    '',
     '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
     '    -H "Content-Type: application/json" \\',
-    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\"}")',
+    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\",\\"snmpData\\":\\"${SNMP_DATA}\\"}")',
     '',
     '  if [ -n "$RESPONSE" ]; then',
     '    echo "$RESPONSE" | sudo tee /tmp/fn_hb.json > /dev/null',
@@ -311,7 +351,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
 
 export async function agentHeartbeatHandler(req, res) {
   try {
-    const { agentToken, routerInfo, ifaceStats, arpData, dhcpData } = req.body;
+    const { agentToken, routerInfo, ifaceStats, arpData, dhcpData, snmpData } = req.body;
     if (!agentToken) return res.status(403).json({ error: 'Token de agente requerido' });
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials && r.credentials.agentToken === agentToken);
@@ -381,7 +421,49 @@ export async function agentHeartbeatHandler(req, res) {
       fullCmds.forEach(c => console.log(`[heartbeat] → dispatch id=${c.id} type=${c.type} retries=${c.retries || 0}/${c.maxRetries || 3} meta=${JSON.stringify(c.meta || {})}`));
     }
 
-    res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend });
+    // Procesar resultados SNMP enviados por el agente: "id,online,uptimeSec;..."
+    if (snmpData) {
+      const entries = String(snmpData).split(';').filter(Boolean);
+      for (const entry of entries) {
+        const [idStr, onlineStr, uptimeStr] = entry.split(',');
+        const equipId = parseInt(idStr);
+        if (!equipId) continue;
+        const online = onlineStr === '1';
+        const lastSnmpPatch = {
+          polledAt: new Date().toISOString(),
+          pollMethod: 'edgerouter-heartbeat',
+          online,
+          uptime: online ? formatUptimeSec(uptimeStr) : null,
+        };
+        const [cpe] = await db.select().from(equipment).where(eq(equipment.id, equipId)).limit(1);
+        if (!cpe) continue;
+        await db.update(equipment).set({
+          status: online ? 'online' : 'offline',
+          ...(online ? { lastSeen: new Date() } : {}),
+          credentials: { ...(cpe.credentials || {}), lastSnmp: lastSnmpPatch },
+          updatedAt: new Date(),
+        }).where(eq(equipment.id, equipId));
+        console.log(`[heartbeat-snmp] router=${router.id} equipo=${equipId} online=${online} uptime=${uptimeStr}s`);
+      }
+    }
+
+    // Construir snmpTargets para el próximo ciclo: CPEs del mismo site con IP + community
+    let snmpTargets = '';
+    if (router.siteId) {
+      const cpes = await db.select({
+        id: equipment.id,
+        ipAddress: equipment.ipAddress,
+        snmpCommunity: equipment.snmpCommunity,
+      }).from(equipment).where(
+        and(eq(equipment.siteId, router.siteId), ne(equipment.type, 'router')),
+      );
+      const pollable = cpes.filter(c => c.ipAddress?.trim() && c.snmpCommunity?.trim());
+      snmpTargets = pollable
+        .map(c => `${c.ipAddress.trim().split('/')[0]},${c.snmpCommunity.trim()},${c.id}`)
+        .join(';');
+    }
+
+    res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend, snmpTargets });
   } catch (error) {
     res.status(500).json({ error: 'Error en heartbeat: ' + error.message });
   }
