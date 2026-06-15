@@ -429,7 +429,7 @@ export default function RouterManager({ API, onBack }: Props) {
       '      [ -z "$IP" ] || [ -z "$EID" ] && continue',
       '      SNMP_OUT=$(snmpget -v2c -c "$COMM" -t 3 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
       '      if [ $? -eq 0 ]; then',
-      '        SEC=$(echo "$SNMP_OUT" | sed -n \'s/.*(\([0-9]*\)).*/\1/p\'); [ -z "$SEC" ] && SEC=0',
+      '        SEC=$(echo "$SNMP_OUT" | sed -n \'s/.*(\([0-9]*\)).*/\\1/p\'); [ -z "$SEC" ] && SEC=0',
       '        SNMP_DATA="${SNMP_DATA}${EID},1,${SEC};"',
       '      else',
       '        SNMP_DATA="${SNMP_DATA}${EID},0,0;"',
