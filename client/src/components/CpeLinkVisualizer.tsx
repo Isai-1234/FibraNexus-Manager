@@ -20,16 +20,18 @@ const LINK_LAYOUT = {
   /** true = SVG en assets/link/; false = dibujo integrado fallback */
   useAssetFiles: true,
   cpeBox: {
-    x: 4, y: 5, w: 202, h: 185,
+    // CPE más pequeño que la torre — proporciones realistas de instalación ISP
+    x: 8, y: 22, w: 142, h: 170,
     align: 'xMaxYMax',
     srcAspect: 526 / 474,   // Litebeam CPE — 526×474
-    hornRel: { x: 0.95, y: 0.45 },
+    // Punta exacta del LNB feed (tubo blanco que sobresale a la derecha)
+    hornRel: { x: 0.92, y: 0.37 },
   } satisfies ImgBox,
   towerBox: {
-    x: 368, y: 0, w: 208, h: 190,
+    x: 368, y: 0, w: 210, h: 196,
     align: 'xMinYMax',
     srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
-    hornRel: { x: 0.38, y: 0.28 },
+    hornRel: { x: 0.27, y: 0.30 },
   } satisfies ImgBox,
   vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
   vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
