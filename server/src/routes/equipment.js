@@ -8,6 +8,7 @@ import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/
 import { attachSnmpDisplay, isPollable, isPollStale } from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
+import { scanRouterForMac } from '../lib/macScanner.js';
 
 export const equipmentRouter = Router();
 
@@ -125,6 +126,92 @@ equipmentRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });
+  }
+});
+
+// POST /api/equipment/:id/mac-scan — busca la MAC del equipo en todos los routers conectados
+equipmentRouter.post('/:id/mac-scan', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const equipId = parseInt(req.params.id, 10);
+
+    const [equip] = await db.select().from(equipment)
+      .where(and(eq(equipment.id, equipId), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!equip) return res.status(404).json({ error: 'Equipo no encontrado' });
+    if (!equip.macAddress) return res.status(400).json({ error: 'El equipo no tiene dirección MAC registrada. Añádela primero desde Editar.' });
+
+    // Todos los routers de la org con credenciales
+    const allRouters = await db.select().from(equipment)
+      .where(and(orgFilter(equipment, orgId), eq(equipment.type, 'router')));
+
+    const reachableRouters = allRouters.filter(r => {
+      const creds = r.credentials || {};
+      if (!creds.routerUser || !creds.routerPass) return false;
+      if (creds.lastHeartbeat) return Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000;
+      return r.status === 'online' && r.lastSeen &&
+        Date.now() - new Date(r.lastSeen).getTime() < 300_000;
+    });
+
+    console.log(`[MacScan] Equipo "${equip.name}" MAC=${equip.macAddress} — escaneando ${reachableRouters.length} router(s)`);
+
+    // Escanear todos en paralelo y tomar el primero que encuentre la MAC
+    const results = await Promise.allSettled(
+      reachableRouters.map(async (router) => {
+        const result = await scanRouterForMac(router, equip.macAddress);
+        if (!result.found) throw new Error('not found');
+        return { ...result, routerId: router.id, routerName: router.name };
+      }),
+    );
+
+    const found = results.find(r => r.status === 'fulfilled');
+    if (found) {
+      const detection = {
+        ...found.value,
+        mac: equip.macAddress,
+        equipmentName: equip.name,
+        detectedAt: new Date().toISOString(),
+      };
+      const creds = equip.credentials || {};
+      await db.update(equipment).set({
+        ipAddress: detection.ip,
+        status: 'online',
+        lastSeen: new Date(),
+        credentials: { ...creds, macDetection: detection },
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipId));
+
+      console.log(`[MacScan] ENCONTRADO: "${equip.name}" → ${detection.ip} en "${detection.routerName}" (${detection.source})`);
+      return res.json({ found: true, ...detection });
+    }
+
+    console.log(`[MacScan] MAC ${equip.macAddress} no encontrada en ${reachableRouters.length} router(s)`);
+    res.json({ found: false, routersScanned: reachableRouters.length, mac: equip.macAddress });
+  } catch (err) {
+    console.error(`[MacScan] ERROR: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/equipment/:id/mac-scan-dismiss — confirma la detección y limpia el badge
+equipmentRouter.post('/:id/mac-scan-dismiss', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const equipId = parseInt(req.params.id, 10);
+    const [equip] = await db.select().from(equipment)
+      .where(and(eq(equipment.id, equipId), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!equip) return res.status(404).json({ error: 'Equipo no encontrado' });
+    const creds = equip.credentials || {};
+    await db.update(equipment).set({
+      credentials: { ...creds, macDetection: null },
+      updatedAt: new Date(),
+    }).where(eq(equipment.id, equipId));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

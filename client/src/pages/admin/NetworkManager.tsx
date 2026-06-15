@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User, Settings
+  Layers, Antenna, Network, Search, Pencil, User, Settings, ScanSearch, XCircle
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
@@ -87,6 +87,8 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
   const [edgeosManagerRouter, setEdgeosManagerRouter] = useState<any>(null)
+  const [macScanLoading, setMacScanLoading] = useState<Record<number, boolean>>({})
+  const [macScanResult, setMacScanResult] = useState<Record<number, any>>({})
 
   function api() {
     return axios.create({
@@ -294,6 +296,27 @@ export default function NetworkManager({ API, onBack }: Props) {
     setLinkRouterId('')
   }
 
+  async function scanForMac(eq: any) {
+    setMacScanLoading(prev => ({ ...prev, [eq.id]: true }))
+    setMacScanResult(prev => ({ ...prev, [eq.id]: null }))
+    try {
+      const res = await api().post(`/equipment/${eq.id}/mac-scan`)
+      setMacScanResult(prev => ({ ...prev, [eq.id]: res.data }))
+      if (res.data.found) await refreshSelectedSite()
+    } catch (e: any) {
+      setMacScanResult(prev => ({ ...prev, [eq.id]: { error: e.response?.data?.error || e.message } }))
+    }
+    setMacScanLoading(prev => ({ ...prev, [eq.id]: false }))
+  }
+
+  async function dismissMacScan(eq: any) {
+    try {
+      await api().post(`/equipment/${eq.id}/mac-scan-dismiss`)
+      setMacScanResult(prev => ({ ...prev, [eq.id]: null }))
+      await refreshSelectedSite()
+    } catch { /* silent */ }
+  }
+
   function openRouterModal() {
     const linkable = routers.filter((r) => r.siteId !== selectedSite?.id)
     setRouterModalTab(linkable.length > 0 ? 'link' : 'create')
@@ -470,6 +493,28 @@ export default function NetworkManager({ API, onBack }: Props) {
                           {eq.type === 'cpe' && !eq.clientName && (
                             <p className="text-xs text-amber-600 mt-0.5">Sin abonado asignado</p>
                           )}
+                          {/* Badge de detección MAC */}
+                          {eq.type === 'cpe' && (eq.credentials?.macDetection || macScanResult[eq.id]) && (() => {
+                            const det = macScanResult[eq.id] || eq.credentials?.macDetection
+                            if (!det || det.error || det.found === false) return null
+                            return (
+                              <div className="mt-1.5 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                                <Wifi className="h-3 w-3 text-amber-600 shrink-0" />
+                                <span className="text-xs text-amber-800 font-medium">
+                                  Detectado en <span className="font-mono">{det.ip}</span> vía {det.source === 'dhcp' ? 'DHCP' : 'ARP'} · {det.routerName}
+                                </span>
+                                <button onClick={() => dismissMacScan(eq)} className="ml-auto text-amber-500 hover:text-amber-700" title="Confirmar y descartar">
+                                  <XCircle className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )
+                          })()}
+                          {eq.type === 'cpe' && macScanResult[eq.id]?.found === false && !macScanLoading[eq.id] && (
+                            <p className="text-xs text-gray-400 mt-1">MAC no encontrada en {macScanResult[eq.id].routersScanned} router(s)</p>
+                          )}
+                          {eq.type === 'cpe' && macScanResult[eq.id]?.error && (
+                            <p className="text-xs text-red-400 mt-1">{macScanResult[eq.id].error}</p>
+                          )}
                           {eq.type === 'router' && isEdgeRouter(eq) && eq.agentConnected && (
                             <BandwidthSparkline
                               routerId={eq.id}
@@ -501,7 +546,19 @@ export default function NetworkManager({ API, onBack }: Props) {
                           </div>
                         )}
                         {eq.type === 'cpe' && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 shrink-0">
+                            {eq.macAddress && eq.status !== 'online' && (
+                              <button
+                                onClick={() => scanForMac(eq)}
+                                disabled={macScanLoading[eq.id]}
+                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg disabled:opacity-50"
+                                title={`Buscar por MAC: ${eq.macAddress}`}
+                              >
+                                {macScanLoading[eq.id]
+                                  ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  : <ScanSearch className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
                             <button onClick={() => openEditCpe(eq)}
                               className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
                               title="Editar antena / abonado">
