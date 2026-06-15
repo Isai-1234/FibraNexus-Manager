@@ -64,6 +64,10 @@ export function startScheduler() {
   // Heartbeat stale check: marcar offline routers con agentToken sin heartbeat reciente
   setTimeout(() => markStaleHeartbeatRouters(), 30_000);
   setInterval(() => markStaleHeartbeatRouters(), 3 * 60 * 1000);
+
+  // Device detection: primera pasada 45s post-arranque, luego cada 5 min
+  setTimeout(() => triggerDeviceScanRound('initial'), 45_000);
+  setInterval(() => triggerDeviceScanRound('scheduled'), 5 * 60 * 1000);
 }
 
 async function triggerIpResolveRound(label) {
@@ -104,6 +108,24 @@ async function markStaleHeartbeatRouters() {
     }
   } catch (err) {
     console.error('[scheduler:heartbeat-stale] error:', err.message);
+  }
+}
+
+async function triggerDeviceScanRound(label) {
+  try {
+    const { db } = await import('../db/index.js');
+    const { organizations } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const { dispatch, JobNames } = await import('./jobs/queue.js');
+    const orgs = await db.select({ id: organizations.id }).from(organizations)
+      .where(eq(organizations.isActive, true));
+    for (const org of orgs) {
+      dispatch(JobNames.DEVICE_SCAN_ORG, { orgId: org.id })
+        .catch((err) => console.error('[scheduler:device-scan] org=%d error: %s', org.id, err.message));
+    }
+    console.log('[scheduler:device-scan:%s] dispatched for %d org(s)', label, orgs.length);
+  } catch (err) {
+    console.error('[scheduler:device-scan:%s] error: %s', label, err.message);
   }
 }
 

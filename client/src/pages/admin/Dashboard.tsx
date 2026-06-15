@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
 import NetworkManager from './NetworkManager'
 import BillingSettings from './BillingSettings'
+import DetectedDevices from './DetectedDevices'
 import { formatDateCL } from '../../lib/formatDate'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
@@ -192,6 +193,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       items: [
         { id: 'network', label: 'Red ISP (sitios/nodos)', icon: Network },
         { id: 'equipment', label: 'Equipos / Routers', icon: Server },
+        { id: 'detected-devices', label: 'Dispositivos detectados', icon: Radar },
         { id: 'ips', label: 'Gestión IP', icon: MapPin },
       ],
     },
@@ -211,6 +213,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     services: 'Auditoría técnica (IPs y estados)',
     plans: 'Planes comerciales',
     equipment: 'Equipos y routers',
+    'detected-devices': 'Dispositivos detectados',
     ips: 'Gestión de IPs',
     invoices: 'Facturación',
     tickets: 'Tickets de soporte',
@@ -222,6 +225,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
     equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
+    'detected-devices': 'Dispositivos conectados a tus routers vía DHCP+ARP — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
     tickets: 'Incidencias reportadas por abonados',
@@ -659,6 +663,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               </div>
             </div>
+          )}
+
+          {/* DISPOSITIVOS DETECTADOS */}
+          {activeTab === 'detected-devices' && (
+            <DetectedDevices API={API} />
           )}
 
           {/* EQUIPOS con subtabs */}

@@ -69,6 +69,11 @@ export const jobTasks = {
     const { syncOrgLeases } = await import('../ipResolver.js');
     return syncOrgLeases(orgId);
   },
+
+  'device-scan-org': async ({ orgId }) => {
+    const { scanDevicesForOrg } = await import('../deviceScanner.js');
+    return scanDevicesForOrg(orgId);
+  },
 };
 
 export async function runTask(jobName, payload) {

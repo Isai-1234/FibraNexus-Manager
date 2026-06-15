@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, timestamp, boolean, integer, decimal, pgEnum, json, jsonb, date, index } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, timestamp, boolean, integer, decimal, pgEnum, json, jsonb, date, index, unique } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'technician', 'client']);
 export const clientTypeEnum = pgEnum('client_type', ['individual', 'business']);
@@ -209,6 +209,25 @@ export const ipAddresses = pgTable('ip_addresses', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const detectedDevices = pgTable('detected_devices', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
+  equipmentId: integer('equipment_id').references(() => equipment.id, { onDelete: 'cascade' }).notNull(),
+  macAddress: varchar('mac_address', { length: 17 }).notNull(),
+  ipAddress: varchar('ip_address', { length: 45 }),
+  hostname: varchar('hostname', { length: 255 }),
+  interfaceName: varchar('interface_name', { length: 64 }),
+  source: varchar('source', { length: 16 }).notNull().default('dhcp'),
+  firstSeen: timestamp('first_seen').defaultNow().notNull(),
+  lastSeen: timestamp('last_seen').defaultNow().notNull(),
+  status: varchar('status', { length: 16 }).notNull().default('detected'),
+  adoptedAsClientServiceId: integer('adopted_as_client_service_id').references(() => clientServices.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqEquipmentMac: unique('uq_detected_equipment_mac').on(table.equipmentId, table.macAddress),
+}));
 
 export const activityLog = pgTable('activity_log', {
   id: serial('id').primaryKey(),

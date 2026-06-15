@@ -119,6 +119,29 @@ export async function runMigrations(connectionString) {
     await sql`CREATE INDEX IF NOT EXISTS idx_equipment_client_id ON equipment(client_id)`;
 
     await sql`
+      CREATE TABLE IF NOT EXISTS detected_devices (
+        id SERIAL PRIMARY KEY,
+        organization_id INTEGER REFERENCES organizations(id),
+        equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+        mac_address VARCHAR(17) NOT NULL,
+        ip_address VARCHAR(45),
+        hostname VARCHAR(255),
+        interface_name VARCHAR(64),
+        source VARCHAR(16) NOT NULL DEFAULT 'dhcp',
+        first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+        last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+        status VARCHAR(16) NOT NULL DEFAULT 'detected',
+        adopted_as_client_service_id INTEGER REFERENCES client_services(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_detected_equipment_mac UNIQUE (equipment_id, mac_address)
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_detected_devices_org ON detected_devices(organization_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_detected_devices_status ON detected_devices(status)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_detected_devices_last_seen ON detected_devices(last_seen DESC)`;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS ticket_messages (
         id SERIAL PRIMARY KEY,
         ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,

@@ -13,6 +13,7 @@ export const JobNames = {
   SUSPEND_SERVICE: 'suspend-service',
   REACTIVATE_SERVICE: 'reactivate-service',
   SYNC_QUEUE_METADATA: 'sync-queue-metadata',
+  DEVICE_SCAN_ORG: 'device-scan-org',
 };
 
 /**

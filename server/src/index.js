@@ -19,6 +19,7 @@ import { ipManagementRouter } from './routes/ipManagement.js';
 import { sitesRouter } from './routes/sites.js';
 import { routersRouter, agentHeartbeatHandler, agentCmdResultHandler } from './routes/routers.js';
 import { edgeosRouter } from './routes/edgeos.js';
+import { devicesRouter } from './routes/devices.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireActiveOrg } from './lib/tenant.js';
@@ -56,6 +57,7 @@ app.use('/api/edgeos', authenticateToken, requireActiveOrg, edgeosRouter);
 app.use('/api/sites', authenticateToken, requireActiveOrg, sitesRouter);
 app.use('/api/settings', authenticateToken, requireActiveOrg, settingsRouter);
 app.use('/api/network', authenticateToken, requireActiveOrg, networkRouter);
+app.use('/api/devices', authenticateToken, requireActiveOrg, devicesRouter);
 
 app.get('/api/health', async (req, res) => {
   const payload = await getHealthPayload();
