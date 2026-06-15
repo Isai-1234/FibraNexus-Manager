@@ -415,7 +415,7 @@ export async function agentHeartbeatHandler(req, res) {
     );
     const toSend = pending.slice(0, 3).map(c => ({ id: c.id, script: c.script }));
 
-    console.log(`[heartbeat] router=${router.id} (${router.name}) cola_total=${allPendingCmds.length} listos=${pending.length} enviando=${toSend.length}`);
+    console.log(`[heartbeat] router=${router.id} (${router.name}) siteId=${router.siteId} cola_total=${allPendingCmds.length} listos=${pending.length} enviando=${toSend.length}`);
     if (toSend.length > 0) {
       const fullCmds = allPendingCmds.filter(c => toSend.some(s => s.id === c.id));
       fullCmds.forEach(c => console.log(`[heartbeat] → dispatch id=${c.id} type=${c.type} retries=${c.retries || 0}/${c.maxRetries || 3} meta=${JSON.stringify(c.meta || {})}`));
@@ -461,6 +461,7 @@ export async function agentHeartbeatHandler(req, res) {
       snmpTargets = pollable
         .map(c => `${c.ipAddress.trim().split('/')[0]},${c.snmpCommunity.trim()},${c.id}`)
         .join(';');
+      console.log(`[heartbeat-snmp-targets] router=${router.id} siteId=${router.siteId} cpes_total=${cpes.length} pollable=${pollable.length} targets="${snmpTargets}"`);
     }
 
     res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend, snmpTargets });
