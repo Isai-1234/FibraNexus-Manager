@@ -16,26 +16,68 @@ function macMatches(a, b) {
 }
 
 // Búsqueda recursiva: recorre cualquier estructura JSON buscando la MAC
-// y devuelve la IP asociada si la encuentra junto a campos ip/ip-addr/ip-address
+// en CUALQUIER campo (no solo los nombrados estándar) y devuelve la IP
 function deepSearchMac(obj, targetMac, depth = 0) {
-  if (depth > 6 || !obj || typeof obj !== 'object') return null;
+  if (depth > 8 || !obj || typeof obj !== 'object') return null;
 
-  const MAC_FIELDS = ['mac', 'mac-addr', 'mac-address'];
-  const IP_FIELDS  = ['ip', 'ip-addr', 'ip-address'];
+  const IP_FIELDS = ['ip', 'ip-addr', 'ip-address', 'address', 'fixed-address'];
 
   if (!Array.isArray(obj)) {
-    for (const mf of MAC_FIELDS) {
-      if (obj[mf] && macMatches(obj[mf], targetMac)) {
+    // Buscar MAC en cualquier campo de string del objeto
+    for (const [key, val] of Object.entries(obj)) {
+      if (typeof val === 'string' && macMatches(val, targetMac)) {
+        // Encontró la MAC — buscar IP en el mismo objeto
         for (const ipf of IP_FIELDS) {
           if (obj[ipf]) return String(obj[ipf]).split('/')[0];
         }
+        // Si la clave padre es una IP, devolverla
+        break;
       }
     }
   }
 
-  for (const val of (Array.isArray(obj) ? obj : Object.values(obj))) {
+  for (const [key, val] of (Array.isArray(obj)
+    ? obj.map((v, i) => [i, v])
+    : Object.entries(obj))) {
     const res = deepSearchMac(val, targetMac, depth + 1);
     if (res) return res;
+    // Caso especial: la clave ES la IP y el valor contiene la MAC
+    if (!Array.isArray(obj) && typeof val === 'object' && val !== null) {
+      const macInVal = Object.values(val).some(v => typeof v === 'string' && macMatches(v, targetMac));
+      if (macInVal && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(String(key))) return String(key);
+    }
+  }
+  return null;
+}
+
+// Búsqueda bruta por string: si la MAC aparece en cualquier lugar del JSON
+// (con cualquier formato: colons, guiones, sin separador, mayúsculas),
+// extrae la IP más cercana del contexto.
+function bruteForceMacSearch(jsonStr, targetMac) {
+  const norm = normalizeMac(targetMac);
+  if (!norm) return null;
+  const hex = norm.replace(/:/g, '');
+
+  // Generar todas las variantes posibles del MAC
+  const variants = [
+    norm,                            // 44:d9:e7:b8:a1:36
+    norm.toUpperCase(),              // 44:D9:E7:B8:A1:36
+    hex,                             // 44d9e7b8a136
+    hex.toUpperCase(),               // 44D9E7B8A136
+    norm.replace(/:/g, '-'),         // 44-d9-e7-b8-a1-36
+    norm.replace(/:/g, '-').toUpperCase(), // 44-D9-E7-B8-A1-36
+  ];
+
+  for (const v of variants) {
+    const idx = jsonStr.indexOf(v);
+    if (idx === -1) continue;
+    // Tomar contexto alrededor del match y buscar una IP
+    const ctx = jsonStr.slice(Math.max(0, idx - 150), idx + 200);
+    const ipMatch = ctx.match(/"?(?:ip|ip-addr|ip-address|address|fixed-address)"?\s*[":]\s*"?((?:\d{1,3}\.){3}\d{1,3})"?/i);
+    if (ipMatch) return ipMatch[1];
+    // También chequear si la clave inmediatamente anterior es una IP
+    const keyMatch = jsonStr.slice(Math.max(0, idx - 60), idx).match(/"((?:\d{1,3}\.){3}\d{1,3})"\s*:/);
+    if (keyMatch) return keyMatch[1];
   }
   return null;
 }
@@ -112,9 +154,17 @@ async function scanEdgeOSForMac(router, targetMac) {
       }
     }
 
-    // Fallback genérico: búsqueda profunda en toda la respuesta
+    // Fallback profundo (campo con cualquier nombre)
     const deepIp = deepSearchMac(data, targetMac);
     if (deepIp) return { found: true, ip: deepIp, source: 'dhcp' };
+
+    // Fallback bruto (busca MAC como string en el JSON completo)
+    const jsonStr = JSON.stringify(data);
+    const norm = normalizeMac(targetMac);
+    const inJson = norm && jsonStr.toLowerCase().includes(norm.replace(/:/g, '').slice(0, 8));
+    console.log(`[MacScan] EdgeOS DHCP MAC en JSON: ${inJson ? 'SÍ (parser falló)' : 'NO'}`);
+    const bruteIp = bruteForceMacSearch(jsonStr, targetMac);
+    if (bruteIp) return { found: true, ip: bruteIp, source: 'dhcp' };
   } catch (e) {
     console.log(`[MacScan] EdgeOS DHCP ${router.name}: ${e.message.slice(0, 80)}`);
   }
@@ -147,9 +197,11 @@ async function scanEdgeOSForMac(router, targetMac) {
         }
       }
 
-      // Fallback profundo
+      // Fallback profundo + bruto
       const deepIp = deepSearchMac(arpData, targetMac);
       if (deepIp) return { found: true, ip: deepIp, source: 'arp' };
+      const bruteIp = bruteForceMacSearch(JSON.stringify(arpData), targetMac);
+      if (bruteIp) return { found: true, ip: bruteIp, source: 'arp' };
     } catch (e) {
       console.log(`[MacScan] EdgeOS ${dataPath} ${router.name}: ${e.message.slice(0, 60)}`);
     }
