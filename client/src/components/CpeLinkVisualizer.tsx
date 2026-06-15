@@ -812,9 +812,11 @@ export default function CpeLinkVisualizer({
             <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
             <span>
               {equipment.wirelessDebugHint || (
-                equipment.snmpPollMethod === 'router'
-                  ? 'Antena online vía MikroTik (IP privada). Las métricas dBm/CCQ usan MIB Ubiquiti — pulsa ↻ para reintentar.'
-                  : 'Antena online — habilita SNMP en airOS (Services → SNMP) con la misma community del equipo.'
+                equipment.snmpPollMethod === 'edgerouter-arp'
+                  ? 'Antena online — detectada vía ARP en EdgeRouter. Métricas de señal no disponibles (requiere SNMP en airOS).'
+                  : equipment.snmpPollMethod === 'router'
+                    ? 'Antena online vía MikroTik (IP privada). Las métricas dBm/CCQ usan MIB Ubiquiti — pulsa ↻ para reintentar.'
+                    : 'Antena online — habilita SNMP en airOS (Services → SNMP) con la misma community del equipo.'
               )}
             </span>
           </div>
@@ -828,7 +830,7 @@ export default function CpeLinkVisualizer({
 
       {equipment.snmpPolledAt && (
         <p className="px-6 pb-4 text-[10px] text-slate-700 font-mono">
-          snmp · {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
+          {equipment.snmpPollMethod === 'edgerouter-arp' ? 'arp' : 'snmp'} · {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
         </p>
       )}
     </div>
