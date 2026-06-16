@@ -36,9 +36,14 @@ devicesRouter.get('/detected', requireRole('admin', 'technician'), async (req, r
         routerName: equipment.name,
         routerBrand: equipment.brand,
         routerModel: equipment.model,
+        adoptedClientId: clients.id,
+        adoptedClientName: users.fullName,
       })
       .from(detectedDevices)
       .leftJoin(equipment, eq(detectedDevices.equipmentId, equipment.id))
+      .leftJoin(clientServices, eq(detectedDevices.adoptedAsClientServiceId, clientServices.id))
+      .leftJoin(clients, eq(clientServices.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
       .where(and(...filters))
       .orderBy(desc(detectedDevices.lastSeen))
       .limit(500);
@@ -187,6 +192,19 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
       .limit(1);
     if (!clientRow) return res.status(404).json({ error: 'Cliente no encontrado en esta organización' });
 
+    // Verificar conflicto de MAC con otro abonado (no puede haber dos clientes con el mismo equipo)
+    const [macConflict] = await db.select({ id: equipment.id, clientId: equipment.clientId })
+      .from(equipment)
+      .where(and(eq(equipment.macAddress, device.macAddress), orgFilter(equipment, orgId)))
+      .limit(1);
+
+    if (macConflict?.clientId && macConflict.clientId !== clientId) {
+      return res.status(409).json({
+        error: 'Esta MAC ya está asignada a otro abonado',
+        conflictClientId: macConflict.clientId,
+      });
+    }
+
     // Crear client_service con la IP detectada
     const routerId = rawRouterId ? parseInt(rawRouterId, 10) : device.equipmentId;
     const installDate = new Date().toISOString().split('T')[0];
@@ -201,6 +219,32 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
       installationDate: installDate,
     }).returning();
 
+    // Crear o vincular equipo CPE en la pestaña "Equipos del Abonado"
+    let equipmentId;
+    if (macConflict) {
+      // Equipo ya existe (sin cliente o re-vinculado) — reutilizar
+      const [relinked] = await db.update(equipment)
+        .set({ clientId, detectedDeviceId: device.id, ...(device.ipAddress ? { ipAddress: device.ipAddress } : {}), updatedAt: new Date() })
+        .where(eq(equipment.id, macConflict.id))
+        .returning({ id: equipment.id });
+      equipmentId = relinked.id;
+    } else {
+      const equipName = device.hostname || `CPE-${device.macAddress.slice(-5).replace(/:/g, '')}`;
+      const [newEquip] = await db.insert(equipment).values({
+        organizationId: orgId,
+        name: equipName,
+        type: 'cpe',
+        brand: 'Detectado',
+        model: device.hostname || 'CPE',
+        ipAddress: device.ipAddress || null,
+        macAddress: device.macAddress,
+        clientId,
+        detectedDeviceId: device.id,
+        status: 'offline',
+      }).returning({ id: equipment.id });
+      equipmentId = newEquip.id;
+    }
+
     // Marcar dispositivo como adoptado
     await db.update(detectedDevices)
       .set({
@@ -213,6 +257,7 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
     res.status(201).json({
       message: 'Dispositivo adoptado',
       clientServiceId: service.id,
+      equipmentId,
       clientId,
       ipAddress: device.ipAddress,
     });

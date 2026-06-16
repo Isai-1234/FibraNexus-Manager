@@ -16,6 +16,8 @@ interface DetectedDevice {
   equipmentId: number
   routerName: string | null
   routerBrand: string | null
+  adoptedClientId: number | null
+  adoptedClientName: string | null
 }
 
 interface Router {
@@ -321,7 +323,7 @@ export default function DetectedDevices({ API }: { API: string }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['Router', 'MAC', 'IP', 'Hostname', 'Interfaz', 'Fuente', 'Última vez', 'Estado', 'Acciones'].map(h => (
+                  {['Router', 'MAC', 'IP', 'Hostname', 'Interfaz', 'Fuente', 'Última vez', 'Estado', 'Abonado', 'Acciones'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -355,6 +357,12 @@ export default function DetectedDevices({ API }: { API: string }) {
                     <td className="px-4 py-3">
                       <StatusBadge status={device.status} />
                     </td>
+                    <td className="px-4 py-3 max-w-[160px]">
+                      {device.adoptedClientName
+                        ? <span className="text-xs font-medium text-green-700 truncate block">{device.adoptedClientName}</span>
+                        : <span className="text-gray-300">—</span>
+                      }
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {device.status !== 'adopted' && (
@@ -376,7 +384,7 @@ export default function DetectedDevices({ API }: { API: string }) {
                           </button>
                         )}
                         {device.status === 'adopted' && (
-                          <span className="text-xs text-green-600 font-medium">✓ Adoptado</span>
+                          <span className="text-xs text-green-600 font-medium">✓ Vinculado</span>
                         )}
                       </div>
                     </td>

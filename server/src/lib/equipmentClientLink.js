@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { equipment, clients, clientServices, users, sites } from '../db/schema.js';
+import { equipment, clients, clientServices, users, sites, detectedDevices } from '../db/schema.js';
 import { and, eq, inArray, ne, desc } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 
@@ -59,6 +59,13 @@ export async function assignEquipmentToClient(equipmentId, clientId, orgId) {
         ne(equipment.id, equipmentId),
         orgFilter(equipment, orgId),
       ));
+  }
+
+  // When unlinking, revert the originating detected_device so it can be re-adopted
+  if (!clientId && row.detectedDeviceId) {
+    await db.update(detectedDevices)
+      .set({ status: 'detected', adoptedAsClientServiceId: null, updatedAt: new Date() })
+      .where(eq(detectedDevices.id, row.detectedDeviceId));
   }
 
   const [updated] = await db.update(equipment).set({

@@ -134,6 +134,7 @@ export const equipment = pgTable('equipment', {
   snmpCommunity: varchar('snmp_community', { length: 100 }),
   notes: text('notes'),
   lastSeen: timestamp('last_seen'),
+  detectedDeviceId: integer('detected_device_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -141,6 +141,37 @@ export async function runMigrations(connectionString) {
     await sql`CREATE INDEX IF NOT EXISTS idx_detected_devices_status ON detected_devices(status)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_detected_devices_last_seen ON detected_devices(last_seen DESC)`;
 
+    // Bidirectional link: equipment ← detected_devices (for reversible adopt/unlink cycle)
+    await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS detected_device_id INTEGER`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_equipment_detected_device_id ON equipment(detected_device_id)`;
+
+    // Backfill: create equipment records for devices adopted before this migration ran
+    await sql`
+      INSERT INTO equipment (
+        organization_id, name, type, brand, model,
+        ip_address, mac_address, client_id, detected_device_id,
+        status, created_at, updated_at
+      )
+      SELECT
+        dd.organization_id,
+        COALESCE(NULLIF(dd.hostname, ''), 'CPE-' || RIGHT(REPLACE(dd.mac_address, ':', ''), 6)),
+        'cpe'::equipment_type,
+        'Detectado',
+        COALESCE(NULLIF(dd.hostname, ''), 'CPE'),
+        dd.ip_address,
+        dd.mac_address,
+        cs.client_id,
+        dd.id,
+        'offline'::equipment_status,
+        NOW(),
+        NOW()
+      FROM detected_devices dd
+      JOIN client_services cs ON dd.adopted_as_client_service_id = cs.id
+      WHERE dd.status = 'adopted'
+        AND NOT EXISTS (SELECT 1 FROM equipment e WHERE e.detected_device_id = dd.id)
+        AND NOT EXISTS (SELECT 1 FROM equipment e WHERE e.mac_address = dd.mac_address AND e.client_id = cs.client_id)
+    `;
+
     await sql`
       CREATE TABLE IF NOT EXISTS ticket_messages (
         id SERIAL PRIMARY KEY,
