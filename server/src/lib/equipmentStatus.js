@@ -49,20 +49,22 @@ export async function persistPollResult(row, result) {
 export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
   const wireless = lastSnmp?.wireless;
+  // Fallback: métricas enviadas por heartbeat EdgeRouter vía SNMP
+  const lm = item.credentials?.lastMetrics;
   return {
     ...item,
     snmpOnline: item.status === 'online',
     snmpUptime: lastSnmp?.uptime || null,
-    snmpPolledAt: lastSnmp?.polledAt || item.lastSeen || null,
+    snmpPolledAt: lastSnmp?.polledAt || lm?.ts || item.lastSeen || null,
     snmpError: lastSnmp?.error || null,
     snmpPollMethod: lastSnmp?.pollMethod || null,
     snmpSysDescr: lastSnmp?.sysDescr || null,
-    wirelessSignal: wireless?.signalDbm ?? null,
+    wirelessSignal: wireless?.signalDbm ?? lm?.signal ?? null,
     wirelessRssi: wireless?.rssiDbm ?? null,
-    wirelessCcq: wireless?.ccqPercent ?? null,
-    wirelessSnr: wireless?.snrDb ?? null,
-    wirelessTxRate: wireless?.txRateMbps ?? null,
-    wirelessRxRate: wireless?.rxRateMbps ?? null,
+    wirelessCcq: wireless?.ccqPercent ?? lm?.txCcq ?? null,
+    wirelessSnr: wireless?.snrDb ?? lm?.cinr ?? null,
+    wirelessTxRate: wireless?.txRateMbps ?? (lm?.txRate ? lm.txRate / 1_000_000 : null) ?? null,
+    wirelessRxRate: wireless?.rxRateMbps ?? (lm?.rxRate ? lm.rxRate / 1_000_000 : null) ?? null,
     wirelessWarnings: wireless?.warnings || [],
     wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
