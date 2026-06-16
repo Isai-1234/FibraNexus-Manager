@@ -68,6 +68,10 @@ export function startScheduler() {
   // Device detection: primera pasada 45s post-arranque, luego cada 5 min
   setTimeout(() => triggerDeviceScanRound('initial'), 45_000);
   setInterval(() => triggerDeviceScanRound('scheduled'), 5 * 60 * 1000);
+
+  // CPE offline: si last_seen > 10 min sin ARP/SNMP, marcar offline
+  setTimeout(() => markStaleCpes(), 90_000);
+  setInterval(() => markStaleCpes(), 5 * 60 * 1000);
 }
 
 async function triggerIpResolveRound(label) {
@@ -126,6 +130,26 @@ async function triggerDeviceScanRound(label) {
     console.log('[scheduler:device-scan:%s] dispatched for %d org(s)', label, orgs.length);
   } catch (err) {
     console.error('[scheduler:device-scan:%s] error: %s', label, err.message);
+  }
+}
+
+async function markStaleCpes() {
+  try {
+    const { db } = await import('../db/index.js');
+    const { equipment } = await import('../db/schema.js');
+    const { and, eq, sql } = await import('drizzle-orm');
+    const result = await db.update(equipment)
+      .set({ status: 'offline', updatedAt: new Date() })
+      .where(and(
+        eq(equipment.status, 'online'),
+        eq(equipment.type, 'cpe'),
+        sql`${equipment.lastSeen} IS NOT NULL`,
+        sql`${equipment.lastSeen} < NOW() - INTERVAL '10 minutes'`,
+      ))
+      .returning({ id: equipment.id });
+    if (result.length) console.log('[scheduler:stale-cpes] marcados offline:', result.map(r => r.id).join(','));
+  } catch (err) {
+    console.error('[scheduler:stale-cpes] error:', err.message);
   }
 }
 

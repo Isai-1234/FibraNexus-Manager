@@ -95,6 +95,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [snmpRefreshing, setSnmpRefreshing] = useState(false)
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'error' | 'success' | 'warning' | 'info' }[]>([])
   const toastId = useRef(0)
+  const [expandedMetricsId, setExpandedMetricsId] = useState<number | null>(null)
+  const [metricsData, setMetricsData] = useState<Record<number, any[]>>({})
 
   function toast(msg: string, type: 'error' | 'success' | 'warning' | 'info' = 'info') {
     const id = ++toastId.current
@@ -602,6 +604,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     { label: 'Por cobrar', value: '$' + totalDeuda.toLocaleString('es-CL'), icon: CreditCard, tab: 'invoices' as const, accent: totalDeuda > 0 ? 'text-red-400' : 'text-slate-300' },
     { label: 'Tickets', value: openTicketsCount > 0 ? `${openTicketsCount} abierto${openTicketsCount > 1 ? 's' : ''}` : '0', icon: Ticket, tab: 'tickets' as const, accent: openTicketsCount > 0 ? 'text-amber-400' : 'text-slate-300' },
   ]
+
+  async function loadMetrics(equipId: number) {
+    if (metricsData[equipId]) { setExpandedMetricsId(equipId); return }
+    try {
+      const res = await api().get(`/devices/metrics/${equipId}?hours=24`)
+      setMetricsData(prev => ({ ...prev, [equipId]: Array.isArray(res.data) ? res.data : [] }))
+      setExpandedMetricsId(equipId)
+    } catch { setExpandedMetricsId(equipId) }
+  }
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -1339,6 +1350,11 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                           <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>
                           <div className="col-span-2"><span className="text-gray-400">Nodo:</span> {eq.siteName || 'Sin nodo'} {eq.siteCity ? `· ${eq.siteCity}` : ''}</div>
                           {eq.snmpCommunity && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> {eq.snmpCommunity}</div>}
+                          {eq.credentials?.lastMetrics && (
+                            <div className="col-span-2">
+                              <SignalBadge metrics={eq.credentials.lastMetrics} />
+                            </div>
+                          )}
                           {eq.credentials?.connectionMode && eq.credentials.connectionMode !== 'static' && (
                             <div className="col-span-2">
                               <span className="text-gray-400">Modo:</span>{' '}
@@ -1348,16 +1364,29 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                             </div>
                           )}
                         </div>
-                        <div className="flex gap-2 mt-4">
+                        <div className="flex gap-2 mt-4 flex-wrap">
                           <button onClick={() => openEditEquip(eq)}
                             className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
                             <Pencil className="h-3 w-3" /> Editar
                           </button>
+                          {eq.snmpCommunity && (
+                            <button
+                              onClick={() => expandedMetricsId === eq.id ? setExpandedMetricsId(null) : loadMetrics(eq.id)}
+                              className="px-3 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
+                              📶 {expandedMetricsId === eq.id ? 'Ocultar' : 'Ver señal 24h'}
+                            </button>
+                          )}
                           <button onClick={() => unlinkEquipment(eq.id, eq.name)}
                             className="px-3 py-1.5 text-xs bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100">
                             Desvincular
                           </button>
                         </div>
+                        {expandedMetricsId === eq.id && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs font-medium text-gray-500 mb-2">Señal últimas 24h</p>
+                            <SignalChart data={metricsData[eq.id] || []} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1771,6 +1800,57 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function SignalBadge({ metrics }: { metrics?: any }) {
+  if (!metrics?.signal || metrics.signal === 0) return null
+  const s = metrics.signal
+  const level = s >= -65 ? 'Excelente' : s >= -75 ? 'Buena' : s >= -85 ? 'Regular' : 'Débil'
+  const color = s >= -65 ? 'bg-green-100 text-green-700' : s >= -75 ? 'bg-blue-100 text-blue-700' : s >= -85 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      <span className={`text-xs px-2 py-0.5 rounded-full font-medium font-mono ${color}`}>{s} dBm · {level}</span>
+      {metrics.txCcq > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">CCQ {metrics.txCcq}%</span>}
+      {metrics.cinr !== 0 && metrics.cinr != null && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">CINR {metrics.cinr} dB</span>}
+      {metrics.noise !== 0 && metrics.noise != null && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Ruido {metrics.noise} dBm</span>}
+    </div>
+  )
+}
+
+function SignalChart({ data }: { data: any[] }) {
+  const pts = data.filter(d => d.signal && d.signal !== 0)
+  if (pts.length < 2) return <p className="text-xs text-gray-400 py-2">Sin datos suficientes aún</p>
+  const W = 300, H = 56
+  const sigs = pts.map(d => d.signal)
+  const min = Math.min(...sigs) - 2, max = Math.max(...sigs) + 2
+  const range = max - min || 1
+  const polyline = pts.map((d, i) => {
+    const x = ((i / (pts.length - 1)) * W).toFixed(1)
+    const y = (H - ((d.signal - min) / range) * H).toFixed(1)
+    return `${x},${y}`
+  }).join(' ')
+  const ccqPts = pts.filter(d => d.txCcq > 0)
+  const ccqLine = ccqPts.map((d, i) => {
+    const x = ((i / Math.max(ccqPts.length - 1, 1)) * W).toFixed(1)
+    const y = (H - (d.txCcq / 100) * H).toFixed(1)
+    return `${x},${y}`
+  }).join(' ')
+  const fmt = (s: string) => new Date(s).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-14 overflow-visible">
+        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="#e5e7eb" strokeWidth="0.5" />
+        <polyline fill="none" stroke="#3b82f6" strokeWidth="1.5" points={polyline} />
+        {ccqLine && <polyline fill="none" stroke="#a855f7" strokeWidth="1" strokeDasharray="3,2" points={ccqLine} />}
+      </svg>
+      <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+        <span>{fmt(pts[0].sampledAt)}</span>
+        <span className="text-blue-500 font-medium">{min.toFixed(0)}…{max.toFixed(0)} dBm</span>
+        <span>{fmt(pts[pts.length - 1].sampledAt)}</span>
+      </div>
+      <p className="text-xs text-gray-300 mt-1">— señal (azul) · - - CCQ (morado)</p>
     </div>
   )
 }

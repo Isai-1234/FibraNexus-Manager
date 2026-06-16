@@ -172,6 +172,32 @@ export async function runMigrations(connectionString) {
         AND NOT EXISTS (SELECT 1 FROM equipment e WHERE e.mac_address = dd.mac_address AND e.client_id = cs.client_id)
     `;
 
+    // Fix FK: permite eliminar client_services sin romper detected_devices
+    await sql`ALTER TABLE detected_devices DROP CONSTRAINT IF EXISTS detected_devices_adopted_as_client_service_id_fkey`;
+    await sql`
+      ALTER TABLE detected_devices ADD CONSTRAINT detected_devices_adopted_as_client_service_id_fkey
+        FOREIGN KEY (adopted_as_client_service_id) REFERENCES client_services(id) ON DELETE SET NULL
+    `;
+
+    // Métricas de antenas CPE (CCQ, señal, ruido) — series de tiempo
+    await sql`
+      CREATE TABLE IF NOT EXISTS device_metrics (
+        id SERIAL PRIMARY KEY,
+        equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+        sampled_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        signal INTEGER,
+        noise INTEGER,
+        cinr INTEGER,
+        tx_ccq INTEGER,
+        tx_rate INTEGER,
+        rx_rate INTEGER,
+        source VARCHAR(20) NOT NULL DEFAULT 'heartbeat'
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_device_metrics_equip_time ON device_metrics(equipment_id, sampled_at DESC)`;
+    // Limpieza automática: métricas > 7 días (idempotente en cada arranque)
+    await sql`DELETE FROM device_metrics WHERE sampled_at < NOW() - INTERVAL '7 days'`;
+
     await sql`
       CREATE TABLE IF NOT EXISTS ticket_messages (
         id SERIAL PRIMARY KEY,

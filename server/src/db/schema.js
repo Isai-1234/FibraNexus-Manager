@@ -230,6 +230,21 @@ export const detectedDevices = pgTable('detected_devices', {
   uniqEquipmentMac: unique('uq_detected_equipment_mac').on(table.equipmentId, table.macAddress),
 }));
 
+export const deviceMetrics = pgTable('device_metrics', {
+  id: serial('id').primaryKey(),
+  equipmentId: integer('equipment_id').references(() => equipment.id, { onDelete: 'cascade' }).notNull(),
+  sampledAt: timestamp('sampled_at').defaultNow().notNull(),
+  signal: integer('signal'),
+  noise: integer('noise'),
+  cinr: integer('cinr'),
+  txCcq: integer('tx_ccq'),
+  txRate: integer('tx_rate'),
+  rxRate: integer('rx_rate'),
+  source: varchar('source', { length: 20 }).notNull().default('heartbeat'),
+}, (table) => ({
+  idxEquipTime: index('idx_device_metrics_equip_time').on(table.equipmentId, table.sampledAt),
+}));
+
 export const activityLog = pgTable('activity_log', {
   id: serial('id').primaryKey(),
   organizationId: integer('organization_id').references(() => organizations.id),

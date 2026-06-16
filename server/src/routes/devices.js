@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { detectedDevices, equipment, clients, users, clientServices, plans } from '../db/schema.js';
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { detectedDevices, equipment, clients, users, clientServices, plans, deviceMetrics } from '../db/schema.js';
+import { and, eq, desc, gte, sql } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
@@ -51,6 +51,41 @@ devicesRouter.get('/detected', requireRole('admin', 'technician'), async (req, r
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: 'Error al listar dispositivos: ' + err.message });
+  }
+});
+
+// GET /api/devices/metrics/:equipmentId?hours=24 — series de tiempo para gráficos
+devicesRouter.get('/metrics/:equipmentId', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const equipId = parseInt(req.params.equipmentId, 10);
+    const hours = Math.min(parseInt(req.query.hours || '24', 10), 168);
+
+    const [equip] = await db.select({ id: equipment.id })
+      .from(equipment)
+      .where(and(eq(equipment.id, equipId), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!equip) return res.status(404).json({ error: 'Equipo no encontrado' });
+
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const rows = await db.select({
+      sampledAt: deviceMetrics.sampledAt,
+      signal: deviceMetrics.signal,
+      noise: deviceMetrics.noise,
+      cinr: deviceMetrics.cinr,
+      txCcq: deviceMetrics.txCcq,
+      txRate: deviceMetrics.txRate,
+      rxRate: deviceMetrics.rxRate,
+    })
+      .from(deviceMetrics)
+      .where(and(eq(deviceMetrics.equipmentId, equipId), gte(deviceMetrics.sampledAt, cutoff)))
+      .orderBy(deviceMetrics.sampledAt)
+      .limit(2000);
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

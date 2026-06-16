@@ -160,8 +160,9 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     '    [ -f "$f" ] && DHCP_DATA=$(awk \'/^lease /{ip=$2} /hardware ethernet /{mac=$3; gsub(/;/,"",mac)} /binding state active/{if(ip&&mac)printf "%s,%s;",ip,mac}\' "$f" 2>/dev/null | head -c 1500) && break',
     '  done',
     '',
-    '  # SNMP poll de CPEs via snmpget bash puro (sin Python)',
+    '  # SNMP poll de CPEs: uptime + métricas Ubiquiti airMAX (CCQ, señal, ruido)',
     '  SNMP_DATA=""',
+    '  CPE_METRICS=""',
     '  if [ -f /tmp/fn_hb.json ] && command -v snmpget >/dev/null 2>&1; then',
     "    SNMP_TGTS=$(grep -o '\"snmpTargets\":\"[^\"]*\"' /tmp/fn_hb.json | cut -d'\"' -f4)",
     "    for T in $(echo \"$SNMP_TGTS\" | tr ';' ' '); do",
@@ -169,20 +170,32 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     "      COMM=$(echo \"$T\" | cut -d',' -f2)",
     "      EID=$(echo \"$T\" | cut -d',' -f3)",
     '      [ -z "$IP" ] || [ -z "$EID" ] && continue',
-    '      SNMP_OUT=$(snmpget -v2c -c "$COMM" -t 3 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
+    '      SNMP_UP=$(snmpget -v2c -c "$COMM" -t 3 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
     '      if [ $? -eq 0 ]; then',
-    "        SEC=$(echo \"$SNMP_OUT\" | sed -n 's/.*(\([0-9]*\)).*/\\1/p'); [ -z \"$SEC\" ] && SEC=0",
+    "        SEC=$(echo \"$SNMP_UP\" | sed -n 's/.*(\([0-9]*\)).*/\\1/p'); [ -z \"$SEC\" ] && SEC=0",
     '        SNMP_DATA="${SNMP_DATA}${EID},1,${SEC};"',
+    '        # Métricas airMAX 8.x (LiteBeam 5AC, NanoBeam AC, etc.)',
+    '        _M=$(snmpget -v2c -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.7.1.2.1 .1.3.6.1.4.1.41112.1.4.7.1.12.1 .1.3.6.1.4.1.41112.1.4.7.1.11.1 .1.3.6.1.4.1.41112.1.4.7.1.15.1 .1.3.6.1.4.1.41112.1.4.7.1.3.1 .1.3.6.1.4.1.41112.1.4.7.1.4.1 2>/dev/null)',
+    '        # Fallback airMAX 5.x (NanoStation M5, Bullet M, etc.)',
+    '        [ $? -ne 0 ] && _M=$(snmpget -v1 -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.14.0 .1.3.6.1.4.1.41112.1.4.5.1.13.0 .1.3.6.1.4.1.41112.1.4.5.1.5.0 .1.3.6.1.4.1.41112.1.4.5.1.12.0 2>/dev/null)',
+    "        _SIG=$(echo \"$_M\" | sed -n '1p' | grep -oE '^-?[0-9]+')",
+    "        _NOISE=$(echo \"$_M\" | sed -n '2p' | grep -oE '^-?[0-9]+')",
+    "        _CCQ=$(echo \"$_M\" | sed -n '3p' | grep -oE '^[0-9]+')",
+    "        _CINR=$(echo \"$_M\" | sed -n '4p' | grep -oE '^-?[0-9]+')",
+    "        _TXKBPS=$(echo \"$_M\" | sed -n '5p' | grep -oE '^[0-9]+')",
+    "        _RXKBPS=$(echo \"$_M\" | sed -n '6p' | grep -oE '^[0-9]+')",
+    '        [ -n "$_SIG" ] && [ "$_SIG" != "0" ] && CPE_METRICS="${CPE_METRICS}${EID},${_SIG},${_NOISE:-0},${_CCQ:-0},${_CINR:-0},${_TXKBPS:-0},${_RXKBPS:-0};"',
     '      else',
     '        SNMP_DATA="${SNMP_DATA}${EID},0,0;"',
     '      fi',
     '    done',
     '    SNMP_DATA="${SNMP_DATA%;}"',
+    '    CPE_METRICS="${CPE_METRICS%;}"',
     '  fi',
     '',
     '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
     '    -H "Content-Type: application/json" \\',
-    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\",\\"snmpData\\":\\"${SNMP_DATA}\\"}")',
+    '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"${UPTIME}s\\",\\"cpuLoad\\":$CPU,\\"hostName\\":\\"$(hostname)\\",\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\",\\"snmpData\\":\\"${SNMP_DATA}\\",\\"cpeMetrics\\":\\"${CPE_METRICS}\\"}")',
     '',
     '  if [ -n "$RESPONSE" ]; then',
     '    echo "$RESPONSE" | sudo tee /tmp/fn_hb.json > /dev/null',
@@ -342,7 +355,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
 
 export async function agentHeartbeatHandler(req, res) {
   try {
-    const { agentToken, routerInfo, ifaceStats, arpData, dhcpData, snmpData } = req.body;
+    const { agentToken, routerInfo, ifaceStats, arpData, dhcpData, snmpData, cpeMetrics } = req.body;
     if (!agentToken) return res.status(403).json({ error: 'Token de agente requerido' });
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials && r.credentials.agentToken === agentToken);
@@ -458,6 +471,27 @@ export async function agentHeartbeatHandler(req, res) {
           updatedAt: new Date(),
         }).where(eq(equipment.id, cpe.id));
         console.log(`[heartbeat-arp] router=${router.id} equipo=${cpe.id} (${cpe.name}) online via ARP mac=${cpe.macAddress}`);
+      }
+    }
+
+    // Procesar métricas Ubiquiti airMAX enviadas por el agente EdgeRouter
+    if (cpeMetrics) {
+      const { deviceMetrics } = await import('../db/schema.js');
+      const metricEntries = String(cpeMetrics).split(';').filter(Boolean);
+      for (const entry of metricEntries) {
+        const [eidStr, sig, noise, ccq, cinr, txKbps, rxKbps] = entry.split(',').map(Number);
+        if (!eidStr || sig === 0) continue;
+        const [cpe] = await db.select({ id: equipment.id, credentials: equipment.credentials })
+          .from(equipment).where(eq(equipment.id, eidStr)).limit(1);
+        if (!cpe) continue;
+        await db.insert(deviceMetrics).values({
+          equipmentId: cpe.id, signal: sig, noise, cinr, txCcq: ccq, txRate: txKbps, rxRate: rxKbps, source: 'heartbeat',
+        });
+        await db.update(equipment).set({
+          credentials: { ...(cpe.credentials || {}), lastMetrics: { signal: sig, noise, cinr, txCcq: ccq, txRate: txKbps, rxRate: rxKbps, ts: new Date().toISOString() } },
+          updatedAt: new Date(),
+        }).where(eq(equipment.id, cpe.id));
+        console.log(`[heartbeat-metrics] router=${router.id} cpe=${cpe.id} sig=${sig}dBm ccq=${ccq}% cinr=${cinr}dB`);
       }
     }
 
