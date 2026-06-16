@@ -170,7 +170,7 @@ function buildEdgeosHeartbeatScript(token, serverUrl) {
     "      COMM=$(echo \"$T\" | cut -d',' -f2)",
     "      EID=$(echo \"$T\" | cut -d',' -f3)",
     '      [ -z "$IP" ] || [ -z "$EID" ] && continue',
-    '      SNMP_UP=$(snmpget -v2c -c "$COMM" -t 3 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
+    '      SNMP_UP=$(snmpget -v2c -c "$COMM" -t 2 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null) || SNMP_UP=$(snmpget -v1 -c "$COMM" -t 2 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
     '      if [ $? -eq 0 ]; then',
     "        SEC=$(echo \"$SNMP_UP\" | sed -n 's/.*(\([0-9]*\)).*/\\1/p'); [ -z \"$SEC\" ] && SEC=0",
     '        SNMP_DATA="${SNMP_DATA}${EID},1,${SEC};"',
