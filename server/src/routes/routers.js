@@ -84,7 +84,7 @@ function formatUptimeSec(sec) {
   return `${m}m`;
 }
 
-function buildEdgeosHeartbeatScript(token, serverUrl) {
+export function buildEdgeosHeartbeatScript(token, serverUrl) {
   const cmdResultUrl = serverUrl.replace('/agent/heartbeat', '/agent/cmd-result');
   return [
     '#!/bin/bash',
@@ -604,8 +604,10 @@ routersRouter.get('/agent/heartbeat-script', async (req, res) => {
     const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
     const router = allRouters.find(r => r.credentials?.agentToken === token);
     if (!router) return res.status(403).send('token invalido');
+    const token = router.credentials.agentToken;
+    const serverUrl = `${serverBaseUrl()}/api/routers/agent/heartbeat`;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.send(buildEdgeosHeartbeatScript(router));
+    res.send(buildEdgeosHeartbeatScript(token, serverUrl));
   } catch (err) {
     res.status(500).send(err.message);
   }
