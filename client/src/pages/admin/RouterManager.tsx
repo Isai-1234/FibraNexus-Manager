@@ -263,8 +263,8 @@ export default function RouterManager({ API, onBack }: Props) {
   async function openCredentials(router: any) {
     const isUbiquitiRouter = (router.brand || '').toLowerCase() === 'ubiquiti'
     setCredTab(isUbiquitiRouter ? 'heartbeat' : 'api')
-    // Leer el token desde la lista (optimista). Luego verificar contra BD.
     setCredTokenValue(router.credentials?.agentToken || '')
+    setEdgeosScript(null)
     setEditingRouter(router)
     setCredForm({
       routerUser: router.credentials?.routerUser || 'admin',
@@ -274,12 +274,16 @@ export default function RouterManager({ API, onBack }: Props) {
       connectionMethod: resolveConnectionMethod(router),
     })
     setCredTestResult(null)
-    // Sincronizar el token con BD (force=false → nunca modifica nada)
-    // Esto corrige el caso donde la lista tenía el token en caché pero BD tiene otro
     try {
       const res = await api().post(`/routers/${router.id}/token`, { force: false })
       setCredTokenValue(res.data.agentToken)
-    } catch { /* silencioso: el campo ya tiene el valor de la lista */ }
+    } catch { /* silencioso */ }
+    if (isUbiquitiRouter) {
+      try {
+        const scriptRes = await api().get(`/routers/${router.id}/edgeos-script`)
+        setEdgeosScript(scriptRes.data)
+      } catch { setEdgeosScript(null) }
+    }
   }
 
   async function saveCredentials() {
@@ -351,135 +355,17 @@ export default function RouterManager({ API, onBack }: Props) {
     if (!ok) return
     setTokenRegenerating(true)
     try {
-      // force=true → el servidor genera UUID nuevo (único caso donde cambia el token)
       const res = await api().post(`/routers/${editingRouter.id}/token`, { force: true })
       setCredTokenValue(res.data.agentToken)
       setEditingRouter({ ...editingRouter, credentials: { ...editingRouter.credentials, agentToken: res.data.agentToken } })
+      try {
+        const scriptRes = await api().get(`/routers/${editingRouter.id}/edgeos-script`)
+        setEdgeosScript(scriptRes.data)
+      } catch { setEdgeosScript(null) }
     } catch (e: any) {
       alert('Error al regenerar token: ' + (e.response?.data?.error || e.message))
     }
     setTokenRegenerating(false)
-  }
-
-  function buildEdgeosInstallScript(token: string): string {
-    const url = 'https://app.fibranexus.cl/api/routers/agent/heartbeat'
-    const cmdResultUrl = 'https://app.fibranexus.cl/api/routers/agent/cmd-result'
-    const hb = [
-      '#!/bin/bash',
-      `TOKEN="${token}"`,
-      `SERVER="${url}"`,
-      `CMD_RESULT="${cmdResultUrl}"`,
-      'PIDFILE="/tmp/fibranexus.pid"',
-      'if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then exit 0; fi',
-      'echo $$ > "$PIDFILE"',
-      'trap "rm -f $PIDFILE" EXIT',
-      '',
-      '# Detectar Python disponible',
-      'FNPY=$(command -v python3 || command -v python || command -v python2 || echo "")',
-      '',
-      '# Escribir agente Python a archivo (fuera del loop — evita problema de heredoc)',
-      'cat > /tmp/fn_agent.py << \'PYEOF\'',
-      'import os, json, subprocess',
-      'try:',
-      '    from urllib.request import Request, urlopen',
-      'except ImportError:',
-      '    from urllib2 import Request, urlopen',
-      'try:',
-      '    with open("/tmp/fn_hb.json") as f: d = json.loads(f.read())',
-      '    cmds = d.get("pendingCommands", [])',
-      '    if not cmds: raise SystemExit(0)',
-      '    cmd = cmds[0]',
-      '    cmd_id, script = cmd.get("id",""), cmd.get("script","")',
-      '    if not cmd_id or not script: raise SystemExit(0)',
-      '    with open("/tmp/fn_cmd.sh","w") as f: f.write(script)',
-      '    p = subprocess.Popen(["/bin/vbash","/tmp/fn_cmd.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)',
-      '    stdout, stderr = p.communicate()',
-      '    out = (stdout.decode("utf-8","ignore")+stderr.decode("utf-8","ignore"))[:300].strip()',
-      '    token = os.environ.get("FN_TOKEN",""); url = os.environ.get("FN_CMD_URL","")',
-      '    body = json.dumps({"agentToken":token,"cmdId":cmd_id,"success":p.returncode==0,"output":out}).encode()',
-      '    req = Request(url, data=body, headers={"Content-Type":"application/json"})',
-      '    urlopen(req, timeout=8)',
-      'except SystemExit: pass',
-      'except Exception: pass',
-      'PYEOF',
-      '',
-      'while true; do',
-      '  VER=$(cat /opt/vyatta/etc/version 2>/dev/null | awk \'{print $2}\' || echo "EdgeOS")',
-      '  UPTIME=$(awk \'{printf "%ds", int($1)}\' /proc/uptime 2>/dev/null || echo "0s")',
-      '  CPU=$(awk \'/^cpu /{u=$2+$4; t=$2+$3+$4+$5; if(t>0)printf "%d", u*100/t; else print 0}\' /proc/stat 2>/dev/null || echo "0")',
-      '  MEM_AVAIL=$(awk \'/MemAvailable:/{print $2; exit}\' /proc/meminfo 2>/dev/null || echo 0)',
-      '  MEM_TOTAL=$(awk \'/MemTotal:/{print $2; exit}\' /proc/meminfo 2>/dev/null || echo 1)',
-      '  RAM_PCT=0; [ "$MEM_TOTAL" -gt 0 ] && RAM_PCT=$(( 100 * (MEM_TOTAL - MEM_AVAIL) / MEM_TOTAL ))',
-      '  TEMP_RAW=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0)',
-      '  TEMP_C=$(( TEMP_RAW / 1000 ))',
-      '  IFACE_STATS=$(awk \'NR>2 && $1!~/lo:/ {gsub(/:/, "", $1); printf "%s,%s,%s;", $1, $2, $10}\' /proc/net/dev 2>/dev/null || echo "")',
-      '  ARP_DATA=$(awk \'NR>1 && $3!="0x0" {print $1","$4}\' /proc/net/arp 2>/dev/null | tr \'\\n\' \';\' | head -c 1500 || echo "")',
-      '  DHCP_DATA=""',
-      '  for f in /var/run/dhcpd.leases /var/run/dhcpd/dhcpd.leases /var/lib/dhcp/dhcpd.leases; do',
-      '    [ -f "$f" ] && DHCP_DATA=$(awk \'/^lease /{ip=$2} /hardware ethernet /{mac=$3; gsub(/;/,"",mac)} /binding state active/{if(ip&&mac)printf "%s,%s;",ip,mac}\' "$f" 2>/dev/null | head -c 1500) && break',
-      '  done',
-      '  # SNMP poll de CPEs: uptime + métricas Ubiquiti airMAX (CCQ, señal, ruido)',
-      '  SNMP_DATA=""',
-      '  CPE_METRICS=""',
-      '  if [ -f /tmp/fn_hb.json ] && command -v snmpget >/dev/null 2>&1; then',
-      '    SNMP_TGTS=$(grep -o \'"snmpTargets":"[^"]*"\' /tmp/fn_hb.json | cut -d\'"\' -f4)',
-      '    for T in $(echo "$SNMP_TGTS" | tr \';\' \' \'); do',
-      '      IP=$(echo "$T" | cut -d\',\' -f1)',
-      '      COMM=$(echo "$T" | cut -d\',\' -f2)',
-      '      EID=$(echo "$T" | cut -d\',\' -f3)',
-      '      [ -z "$IP" ] || [ -z "$EID" ] && continue',
-      '      SNMP_UP=$(snmpget -v2c -c "$COMM" -t 3 -r 0 "$IP" 1.3.6.1.2.1.1.3.0 2>/dev/null)',
-      '      if [ $? -eq 0 ]; then',
-      '        SEC=$(echo "$SNMP_UP" | sed -n \'s/.*(\([0-9]*\)).*/\\1/p\'); [ -z "$SEC" ] && SEC=0',
-      '        SNMP_DATA="${SNMP_DATA}${EID},1,${SEC};"',
-      '        _M=$(snmpget -v2c -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.7.1.2.1 .1.3.6.1.4.1.41112.1.4.7.1.12.1 .1.3.6.1.4.1.41112.1.4.7.1.11.1 .1.3.6.1.4.1.41112.1.4.7.1.15.1 .1.3.6.1.4.1.41112.1.4.7.1.3.1 .1.3.6.1.4.1.41112.1.4.7.1.4.1 2>/dev/null)',
-      '        [ $? -ne 0 ] && _M=$(snmpget -v1 -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.14.0 .1.3.6.1.4.1.41112.1.4.5.1.13.0 .1.3.6.1.4.1.41112.1.4.5.1.5.0 .1.3.6.1.4.1.41112.1.4.5.1.12.0 2>/dev/null)',
-      '        _SIG=$(echo "$_M" | sed -n \'1p\' | grep -oE \'^-?[0-9]+\')',
-      '        _NOISE=$(echo "$_M" | sed -n \'2p\' | grep -oE \'^-?[0-9]+\')',
-      '        _CCQ=$(echo "$_M" | sed -n \'3p\' | grep -oE \'^[0-9]+\')',
-      '        _CINR=$(echo "$_M" | sed -n \'4p\' | grep -oE \'^-?[0-9]+\')',
-      '        _TXKBPS=$(echo "$_M" | sed -n \'5p\' | grep -oE \'^[0-9]+\')',
-      '        _RXKBPS=$(echo "$_M" | sed -n \'6p\' | grep -oE \'^[0-9]+\')',
-      '        [ -n "$_SIG" ] && [ "$_SIG" != "0" ] && CPE_METRICS="${CPE_METRICS}${EID},${_SIG},${_NOISE:-0},${_CCQ:-0},${_CINR:-0},${_TXKBPS:-0},${_RXKBPS:-0};"',
-      '      else',
-      '        SNMP_DATA="${SNMP_DATA}${EID},0,0;"',
-      '      fi',
-      '    done',
-      '    SNMP_DATA="${SNMP_DATA%;}"',
-      '    CPE_METRICS="${CPE_METRICS%;}"',
-      '  fi',
-      '  RESPONSE=$(curl -sf --max-time 8 -X POST "$SERVER" \\',
-      '    -H "Content-Type: application/json" \\',
-      '    -d "{\\"agentToken\\":\\"$TOKEN\\",\\"routerInfo\\":{\\"version\\":\\"$VER\\",\\"uptime\\":\\"$UPTIME\\",\\"cpuLoad\\":$CPU,\\"ramUsage\\":$RAM_PCT,\\"tempC\\":$TEMP_C},\\"ifaceStats\\":\\"${IFACE_STATS}\\",\\"arpData\\":\\"${ARP_DATA}\\",\\"dhcpData\\":\\"${DHCP_DATA}\\",\\"snmpData\\":\\"${SNMP_DATA}\\",\\"cpeMetrics\\":\\"${CPE_METRICS}\\"}" 2>/dev/null)',
-      '  if [ -n "$RESPONSE" ]; then',
-      '    echo "$RESPONSE" > /tmp/fn_hb.json',
-      '    [ -z "$FNPY" ] || FN_TOKEN="$TOKEN" FN_CMD_URL="$CMD_RESULT" "$FNPY" /tmp/fn_agent.py',
-      '  fi',
-      '  sleep 28',
-      'done',
-    ].join('\n')
-    return [
-      '# === FibraNexus — Instalar agente daemon en EdgeRouter (pegar en SSH) ===',
-      'sudo mkdir -p /config/scripts/fibranexus /config/scripts/post-config.d',
-      '',
-      "sudo tee /config/scripts/fibranexus/heartbeat.sh > /dev/null << 'FNHB'",
-      hb,
-      'FNHB',
-      '',
-      'sudo chmod +x /config/scripts/fibranexus/heartbeat.sh',
-      '',
-      '# Auto-arranque al boot via post-config.d (reemplaza task-scheduler)',
-      "sudo tee /config/scripts/post-config.d/fibranexus-start.sh > /dev/null << 'FNBOOT'",
-      '#!/bin/bash',
-      '/bin/bash /config/scripts/fibranexus/heartbeat.sh &',
-      'FNBOOT',
-      'sudo chmod +x /config/scripts/post-config.d/fibranexus-start.sh',
-      '',
-      '# Iniciar daemon ahora',
-      'kill $(cat /tmp/fibranexus.pid 2>/dev/null) 2>/dev/null; rm -f /tmp/fibranexus.pid',
-      'nohup /bin/bash /config/scripts/fibranexus/heartbeat.sh >/dev/null 2>&1 &',
-      'echo "Agente FibraNexus iniciado (PID $!) — verifica el dashboard en ~30 segundos."',
-    ].join('\n')
   }
 
   async function handleDelete(id: number) {
@@ -1236,10 +1122,10 @@ export default function RouterManager({ API, onBack }: Props) {
                       <div className="relative">
                         <div className="bg-gray-900 rounded-lg p-3 max-h-60 overflow-y-auto">
                           <code className="text-green-400 text-xs block whitespace-pre-wrap font-mono leading-relaxed">
-                            {buildEdgeosInstallScript(credTokenValue)}
+                            {edgeosScript?.installScript ?? 'Cargando script...'}
                           </code>
                         </div>
-                        <button onClick={() => copyText(buildEdgeosInstallScript(credTokenValue), 'edgeos-install')}
+                        <button onClick={() => copyText(edgeosScript?.installScript ?? '', 'edgeos-install')}
                           className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded" title="Copiar script">
                           {copied === 'edgeos-install' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
                         </button>
