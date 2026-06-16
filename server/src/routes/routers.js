@@ -475,6 +475,7 @@ export async function agentHeartbeatHandler(req, res) {
     }
 
     // Procesar métricas Ubiquiti airMAX enviadas por el agente EdgeRouter
+    console.log(`[heartbeat-cpe] router=${router.id} cpeMetrics="${cpeMetrics ?? '(no enviado)'}"`);
     if (cpeMetrics) {
       const { deviceMetrics } = await import('../db/schema.js');
       const metricEntries = String(cpeMetrics).split(';').filter(Boolean);
