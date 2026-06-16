@@ -595,6 +595,22 @@ export async function agentCmdResultHandler(req, res) {
   }
 }
 
+// GET /api/routers/agent/heartbeat-script?token=AGENT_TOKEN
+// Permite que el EdgeRouter descargue su propio heartbeat.sh via curl sin necesidad de paste
+routersRouter.get('/agent/heartbeat-script', async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).send('token requerido');
+    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
+    const router = allRouters.find(r => r.credentials?.agentToken === token);
+    if (!router) return res.status(403).send('token invalido');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(buildEdgeosHeartbeatScript(router));
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
 routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
