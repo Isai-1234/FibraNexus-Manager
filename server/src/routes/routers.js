@@ -495,23 +495,22 @@ export async function agentHeartbeatHandler(req, res) {
       }
     }
 
-    // Construir snmpTargets para el próximo ciclo: CPEs con IP + community
-    // Si el router tiene siteId, filtra por site; si no, cae a toda la org
+    // Construir snmpTargets: todos los CPEs de la org con IP + snmpCommunity
+    // No filtramos por site — el router sabe por red qué IPs alcanza
     let snmpTargets = '';
     {
-      const cpeFilter = router.siteId
-        ? and(eq(equipment.siteId, router.siteId), ne(equipment.type, 'router'))
-        : and(eq(equipment.organizationId, router.organizationId), ne(equipment.type, 'router'));
       const cpes = await db.select({
         id: equipment.id,
         ipAddress: equipment.ipAddress,
         snmpCommunity: equipment.snmpCommunity,
-      }).from(equipment).where(cpeFilter);
+      }).from(equipment).where(
+        and(eq(equipment.organizationId, router.organizationId), ne(equipment.type, 'router')),
+      );
       const pollable = cpes.filter(c => c.ipAddress?.trim() && c.snmpCommunity?.trim());
       snmpTargets = pollable
         .map(c => `${c.ipAddress.trim().split('/')[0]},${c.snmpCommunity.trim()},${c.id}`)
         .join(';');
-      console.log(`[heartbeat-snmp-targets] router=${router.id} siteId=${router.siteId ?? 'none'} cpes_total=${cpes.length} pollable=${pollable.length} targets="${snmpTargets}"`);
+      console.log(`[heartbeat-snmp-targets] router=${router.id} org=${router.organizationId} cpes_total=${cpes.length} pollable=${pollable.length} targets="${snmpTargets}"`);
     }
 
     res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend, snmpTargets });
