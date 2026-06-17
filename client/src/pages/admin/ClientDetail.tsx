@@ -366,7 +366,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   }
 
   async function deleteService(serviceId: number, planName: string) {
-    if (!confirm(`¿Eliminar el servicio "${planName}"? El abonado conserva su cuenta.`)) return
+    if (!confirm(`¿Eliminar el servicio "${planName}"?\n\nEl abonado conserva su cuenta. Las facturas pendientes de este servicio se borrarán; las pagadas quedan en el historial.`)) return
     try {
       await api().delete(`/services/${serviceId}`)
       loadAll()

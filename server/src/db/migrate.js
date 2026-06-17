@@ -179,6 +179,12 @@ export async function runMigrations(connectionString) {
         FOREIGN KEY (adopted_as_client_service_id) REFERENCES client_services(id) ON DELETE SET NULL
     `;
 
+    await sql`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_client_service_id_fkey`;
+    await sql`
+      ALTER TABLE invoices ADD CONSTRAINT invoices_client_service_id_fkey
+        FOREIGN KEY (client_service_id) REFERENCES client_services(id) ON DELETE SET NULL
+    `;
+
     // Métricas de antenas CPE (CCQ, señal, ruido) — series de tiempo
     await sql`
       CREATE TABLE IF NOT EXISTS device_metrics (

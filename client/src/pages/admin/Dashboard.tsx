@@ -462,7 +462,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {tabDescriptions[activeTab] && (
               <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && (
+            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && (
               <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
@@ -471,7 +471,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
@@ -667,7 +667,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
           {/* DISPOSITIVOS DETECTADOS */}
           {activeTab === 'detected-devices' && (
-            <DetectedDevices API={API} />
+            <DetectedDevices API={API} onOpenClient={(id) => setSelectedClientId(id)} />
           )}
 
           {/* EQUIPOS con subtabs */}
@@ -764,7 +764,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           )}
 
           {/* TABLAS GENERALES */}
-          {activeTab !== 'dashboard' && activeTab !== 'equipment' && (
+          {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && (
             <div className="space-y-4">
               {activeTab === 'plans' && (
                 <div className="bg-purple-50 border border-purple-100 rounded-xl px-5 py-3 text-sm text-purple-900">

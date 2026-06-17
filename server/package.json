@@ -6,11 +6,13 @@
     "node": ">=20.0.0"
   },
   "scripts": {
+    "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
     "build": "cd ../client && npm install --include=dev && npm run build",
     "db:push": "drizzle-kit push",
-    "db:seed": "node src/seed.js"
+    "db:seed": "node src/seed.js",
+    "lab:detected": "node ../scripts/lab-detected-check.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

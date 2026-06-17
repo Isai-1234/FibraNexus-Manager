@@ -12,12 +12,14 @@ interface DetectedDevice {
   firstSeen: string
   lastSeen: string
   status: 'detected' | 'adopted' | 'ignored'
+  effectiveStatus?: 'detected' | 'adopted' | 'ignored'
   adoptedAsClientServiceId: number | null
   equipmentId: number
   routerName: string | null
   routerBrand: string | null
   adoptedClientId: number | null
   adoptedClientName: string | null
+  linkedEquipmentId?: number | null
 }
 
 interface Router {
@@ -76,7 +78,34 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(h / 24)}d`
 }
 
-export default function DetectedDevices({ API }: { API: string }) {
+function effStatus(device: DetectedDevice) {
+  const raw = device.effectiveStatus ?? device.status
+  if (raw === 'adopted' && !device.adoptedClientId) return 'detected'
+  return raw
+}
+
+function isReallyLinked(device: DetectedDevice) {
+  return effStatus(device) === 'adopted' && Boolean(device.adoptedClientId)
+}
+
+function isGhostAdoption(device: DetectedDevice) {
+  return device.status === 'adopted' && effStatus(device) === 'detected'
+}
+
+function filterForDisplay(rows: DetectedDevice[], filter: string) {
+  if (filter === 'adopted') {
+    return rows.filter((d) => isReallyLinked(d))
+  }
+  if (filter === 'detected') {
+    return rows.filter((d) => effStatus(d) === 'detected')
+  }
+  if (filter === 'ignored') {
+    return rows.filter((d) => d.status === 'ignored')
+  }
+  return rows
+}
+
+export default function DetectedDevices({ API, onOpenClient }: { API: string; onOpenClient?: (clientId: number) => void }) {
   const [devices, setDevices] = useState<DetectedDevice[]>([])
   const [routers, setRouters] = useState<Router[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
@@ -84,6 +113,8 @@ export default function DetectedDevices({ API }: { API: string }) {
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
+  const [ghostHint, setGhostHint] = useState('')
+  const [reconciling, setReconciling] = useState(false)
   const [statusFilter, setStatusFilter] = useState('detected')
   const [routerFilter, setRouterFilter] = useState('')
   const [lastScan, setLastScan] = useState<string | null>(null)
@@ -106,15 +137,51 @@ export default function DetectedDevices({ API }: { API: string }) {
     headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
   }), [API])
 
-  async function loadDevices() {
-    setLoading(true)
+  async function runReconcile() {
+    setReconciling(true)
+    setGhostHint('')
     setError('')
+    try {
+      await api().post('/devices/reconcile')
+      await loadDevices(true)
+      await loadScanStatus()
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        setGhostHint(
+          'El servidor aún no tiene limpieza automática. Ejecuta el SQL en Supabase (te lo envío en el chat) o pide deploy a Render.',
+        )
+      } else {
+        setError(err.response?.data?.error || err.message)
+      }
+    }
+    setReconciling(false)
+  }
+
+  async function loadDevices(skipAutoReconcile = false) {
+    setLoading(true)
+    if (!skipAutoReconcile) setError('')
     try {
       const params: Record<string, string> = {}
       if (statusFilter) params.status = statusFilter
       if (routerFilter) params.equipmentId = routerFilter
       const res = await api().get('/devices/detected', { params })
-      setDevices(Array.isArray(res.data) ? res.data : [])
+      const raw: DetectedDevice[] = Array.isArray(res.data) ? res.data : []
+      const filtered = filterForDisplay(raw, statusFilter)
+
+      if (!skipAutoReconcile && raw.some((d) => isGhostAdoption(d))) {
+        try {
+          await api().post('/devices/reconcile')
+          return loadDevices(true)
+        } catch {
+          setGhostHint(
+            'Quedaron registros viejos marcados como adoptados sin antena en Equipos. Pulsa «Limpiar ahora» o ejecuta SQL en Supabase.',
+          )
+        }
+      } else {
+        setGhostHint('')
+      }
+
+      setDevices(filtered)
     } catch (err: any) {
       setError(err.response?.data?.error || err.message)
     }
@@ -165,6 +232,36 @@ export default function DetectedDevices({ API }: { API: string }) {
       setError(err.response?.data?.error || err.message)
       setScanning(false)
     }
+  }
+
+  async function revertAdoption(device: DetectedDevice) {
+    if (!confirm(`¿Desvincular ${device.macAddress}?\n\nQuedará como Detectado para adoptar al abonado correcto.`)) return
+    setError('')
+    try {
+      try {
+        await api().post(`/devices/${device.id}/revert-adoption`)
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          await api().post(`/devices/${device.id}/unignore`)
+        } else {
+          throw err
+        }
+      }
+      await loadDevices()
+      await loadScanStatus()
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error
+        || err.message
+        || 'No se pudo desvincular. Si persiste, usa SQL en Supabase o deploy a Render.',
+      )
+    }
+  }
+
+  function showGhostUnlink(device: DetectedDevice) {
+    return Boolean(device.adoptedAsClientServiceId)
+      && device.status === 'adopted'
+      && !isReallyLinked(device)
   }
 
   async function handleIgnore(device: DetectedDevice) {
@@ -229,7 +326,7 @@ export default function DetectedDevices({ API }: { API: string }) {
       )
     : clients
 
-  const detected = devices.filter(d => d.status === 'detected').length
+  const detected = devices.filter(d => effStatus(d) === 'detected').length
 
   return (
     <div className="space-y-5">
@@ -295,6 +392,21 @@ export default function DetectedDevices({ API }: { API: string }) {
         </button>
       </div>
 
+      {ghostHint && (
+        <div className="flex flex-wrap items-center gap-3 bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-600" />
+          <span className="flex-1">{ghostHint}</span>
+          <button
+            type="button"
+            onClick={runReconcile}
+            disabled={reconciling}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
+          >
+            {reconciling ? 'Limpiando…' : 'Limpiar ahora'}
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />
@@ -355,17 +467,26 @@ export default function DetectedDevices({ API }: { API: string }) {
                       {timeAgo(device.lastSeen)}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={device.status} />
+                      <StatusBadge status={effStatus(device)} />
                     </td>
                     <td className="px-4 py-3 max-w-[160px]">
-                      {device.adoptedClientName
-                        ? <span className="text-xs font-medium text-green-700 truncate block">{device.adoptedClientName}</span>
+                      {device.adoptedClientName && device.adoptedClientId
+                        ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenClient?.(device.adoptedClientId!)}
+                            className="text-xs font-medium text-green-700 truncate block text-left hover:underline"
+                            title="Ver perfil del abonado"
+                          >
+                            {device.adoptedClientName}
+                          </button>
+                        )
                         : <span className="text-gray-300">—</span>
                       }
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {device.status !== 'adopted' && (
+                        {effStatus(device) !== 'adopted' && (
                           <button
                             onClick={() => openAdoptModal(device)}
                             className="flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 font-medium transition"
@@ -374,7 +495,7 @@ export default function DetectedDevices({ API }: { API: string }) {
                             Adoptar
                           </button>
                         )}
-                        {device.status !== 'adopted' && (
+                        {effStatus(device) !== 'adopted' && (
                           <button
                             onClick={() => handleIgnore(device)}
                             className="flex items-center gap-1 px-2.5 py-1 border text-xs rounded-lg hover:bg-gray-50 text-gray-500 transition"
@@ -383,8 +504,38 @@ export default function DetectedDevices({ API }: { API: string }) {
                             {device.status === 'ignored' ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           </button>
                         )}
-                        {device.status === 'adopted' && (
-                          <span className="text-xs text-green-600 font-medium">✓ Vinculado</span>
+                        {isReallyLinked(device) && (
+                          <>
+                            <span className="text-xs text-green-600 font-medium">✓ Vinculado</span>
+                            <button
+                              onClick={() => revertAdoption(device)}
+                              className="text-xs text-gray-500 hover:text-red-600 underline"
+                              type="button"
+                            >
+                              Desvincular
+                            </button>
+                          </>
+                        )}
+                        {isGhostAdoption(device) && (
+                          <button
+                            onClick={() => revertAdoption(device)}
+                            className="flex items-center gap-1 px-2.5 py-1 border border-red-200 text-xs rounded-lg hover:bg-red-50 text-red-700 transition"
+                            type="button"
+                            title="Registro fantasma — limpia adopción obsoleta"
+                          >
+                            <EyeOff className="h-3 w-3" />
+                            Limpiar fantasma
+                          </button>
+                        )}
+                        {showGhostUnlink(device) && !isGhostAdoption(device) && (
+                          <button
+                            onClick={() => revertAdoption(device)}
+                            className="flex items-center gap-1 px-2.5 py-1 border border-amber-300 text-xs rounded-lg hover:bg-amber-50 text-amber-700 transition"
+                            type="button"
+                          >
+                            <EyeOff className="h-3 w-3" />
+                            Desvincular
+                          </button>
                         )}
                       </div>
                     </td>

@@ -5,6 +5,7 @@ import { orgFilter } from './tenant.js';
 import { isEdgeRouterType, edgeosLogin, edgeosDataGet, resolveHost, resolvePort, getRouterCredentials } from './edgeosClient.js';
 import { mikrotikRequest } from './mikrotikClient.js';
 import { listDhcpLeases } from './mikrotikNetwork.js';
+import { syncDetectedDeviceStates } from './detectedDeviceSync.js';
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -13,6 +14,36 @@ function normalizeMac(mac) {
   const clean = String(mac).toLowerCase().replace(/[^0-9a-f]/g, '');
   if (clean.length !== 12) return null;
   return clean.replace(/(.{2})(?=.)/g, '$1:');
+}
+
+function isInfrastructureDevice(device, router, allRouters = []) {
+  const ip = String(device.ipAddress || '').split('/')[0];
+  if (!ip) return false;
+
+  // Red del container cloudflared en MikroTik
+  if (ip.startsWith('172.30.')) return true;
+
+  const hostname = String(device.hostname || '').toLowerCase();
+  if (/edgerouter|mikrotik|router|cloudflared|fibranexus/i.test(hostname)) return true;
+
+  for (const r of [router, ...allRouters]) {
+    if (!r) continue;
+    const creds = r.credentials || {};
+    const candidates = [
+      creds.routerLocalIp,
+      r.ipAddress,
+    ].filter(Boolean).map((h) => String(h).split('/')[0].replace(/^https?:\/\//, '').split(':')[0]);
+
+    if (candidates.includes(ip)) return true;
+  }
+
+  // Gateway típico del propio router en LAN (.1)
+  if (/\.(1|254)$/.test(ip) && device.source === 'arp') {
+    const onContainers = String(device.interfaceName || '').toLowerCase().includes('container');
+    if (onContainers) return true;
+  }
+
+  return false;
 }
 
 // ─── MikroTik ────────────────────────────────────────────────
@@ -236,12 +267,13 @@ async function getDevicesForRouter(router) {
 
 // ─── UPSERT en BD ────────────────────────────────────────────
 
-async function upsertDetectedDevices(router, devices, orgId) {
+async function upsertDetectedDevices(router, devices, orgId, allRouters = []) {
   let upserted = 0;
   const now = new Date();
 
   for (const device of devices) {
     if (!device.macAddress) continue;
+    if (isInfrastructureDevice(device, router, allRouters)) continue;
     try {
       await db.insert(detectedDevices).values({
         organizationId: orgId,
@@ -286,8 +318,9 @@ export async function scanDevicesForOrg(orgId) {
   for (const router of routers) {
     try {
       const devices = await getDevicesForRouter(router);
-      if (!devices.length) continue;
-      const count = await upsertDetectedDevices(router, devices, orgId);
+      const filtered = devices.filter((d) => !isInfrastructureDevice(d, router, routers));
+      if (!filtered.length) continue;
+      const count = await upsertDetectedDevices(router, filtered, orgId, routers);
       totalUpserted += count;
       scannedRouters++;
       console.log('[deviceScanner] router=%s (%s) found=%d upserted=%d', router.name, router.id, devices.length, count);
@@ -295,6 +328,10 @@ export async function scanDevicesForOrg(orgId) {
       console.error('[deviceScanner] router=%s error: %s', router.name, err.message);
     }
   }
+
+  await syncDetectedDeviceStates(orgId).catch((err) => {
+    console.warn('[deviceScanner] sync detected states org=%d: %s', orgId, err.message);
+  });
 
   return { scannedRouters, totalUpserted };
 }

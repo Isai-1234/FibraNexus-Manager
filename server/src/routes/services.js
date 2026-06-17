@@ -8,6 +8,7 @@ import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServ
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
 import { createInvoiceForService } from '../lib/invoiceService.js';
+import { deleteClientServiceWithCleanup } from '../lib/serviceDelete.js';
 
 export const servicesRouter = Router();
 
@@ -340,8 +341,12 @@ servicesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    await db.delete(clientServices).where(eq(clientServices.id, serviceId));
-    res.json({ message: 'Suscripción eliminada' });
+    const result = await deleteClientServiceWithCleanup(serviceId, orgId);
+    res.json({
+      message: 'Suscripción eliminada',
+      deletedInvoices: result.deletedInvoices,
+      preservedPaidInvoices: result.preservedPaidInvoices,
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar servicio: ' + error.message });
   }

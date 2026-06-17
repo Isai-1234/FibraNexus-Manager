@@ -1,7 +1,8 @@
 import { db } from '../db/index.js';
-import { equipment, clients, clientServices, users, sites, detectedDevices } from '../db/schema.js';
+import { equipment, clients, clientServices, users, sites } from '../db/schema.js';
 import { and, eq, inArray, ne, desc } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
+import { revertDetectedDeviceForEquipment, markDetectedDeviceAdopted, syncDetectedDeviceStates, clearOrphanServiceMac } from './detectedDeviceSync.js';
 
 const ACTIVE_SERVICE_STATUSES = ['active', 'suspended', 'pending'];
 
@@ -61,11 +62,14 @@ export async function assignEquipmentToClient(equipmentId, clientId, orgId) {
       ));
   }
 
-  // When unlinking, revert the originating detected_device so it can be re-adopted
-  if (!clientId && row.detectedDeviceId) {
-    await db.update(detectedDevices)
-      .set({ status: 'detected', adoptedAsClientServiceId: null, updatedAt: new Date() })
-      .where(eq(detectedDevices.id, row.detectedDeviceId));
+  // When unlinking, revert detected row and limpiar MAC huérfana en el servicio
+  if (!clientId) {
+    const prevClientId = row.clientId;
+    if (prevClientId && row.macAddress) {
+      await clearOrphanServiceMac(prevClientId, row.macAddress, orgId);
+    }
+    await revertDetectedDeviceForEquipment(row, orgId);
+    await syncDetectedDeviceStates(orgId);
   }
 
   const [updated] = await db.update(equipment).set({
@@ -75,6 +79,13 @@ export async function assignEquipmentToClient(equipmentId, clientId, orgId) {
 
   if (clientId) {
     await syncEquipmentToClientService(updated, clientId, orgId);
+    const [svc] = await db.select({ id: clientServices.id })
+      .from(clientServices)
+      .where(and(eq(clientServices.clientId, clientId), eq(clientServices.macAddress, updated.macAddress)))
+      .orderBy(desc(clientServices.createdAt))
+      .limit(1);
+    await markDetectedDeviceAdopted(updated, orgId, svc?.id ?? null);
+    await syncDetectedDeviceStates(orgId);
   }
 
   return updated;

@@ -5,6 +5,7 @@ import { and, eq, desc, gte, sql } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
+import { syncDetectedDeviceStates, enrichDetectedRowsWithLiveClient, clearOrphanServiceMac, reconcileDetectedGhosts } from '../lib/detectedDeviceSync.js';
 import bcrypt from 'bcryptjs';
 
 export const devicesRouter = Router();
@@ -15,12 +16,13 @@ devicesRouter.get('/detected', requireRole('admin', 'technician'), async (req, r
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
 
+    await reconcileDetectedGhosts(orgId);
+
     const { equipmentId, status } = req.query;
     const filters = [orgFilter(detectedDevices, orgId)];
     if (equipmentId) filters.push(eq(detectedDevices.equipmentId, parseInt(equipmentId, 10)));
-    if (status) filters.push(eq(detectedDevices.status, status));
 
-    const rows = await db
+    const rawRows = await db
       .select({
         id: detectedDevices.id,
         macAddress: detectedDevices.macAddress,
@@ -36,17 +38,22 @@ devicesRouter.get('/detected', requireRole('admin', 'technician'), async (req, r
         routerName: equipment.name,
         routerBrand: equipment.brand,
         routerModel: equipment.model,
-        adoptedClientId: clients.id,
-        adoptedClientName: users.fullName,
       })
       .from(detectedDevices)
       .leftJoin(equipment, eq(detectedDevices.equipmentId, equipment.id))
-      .leftJoin(clientServices, eq(detectedDevices.adoptedAsClientServiceId, clientServices.id))
-      .leftJoin(clients, eq(clientServices.clientId, clients.id))
-      .leftJoin(users, eq(clients.userId, users.id))
       .where(and(...filters))
       .orderBy(desc(detectedDevices.lastSeen))
       .limit(500);
+
+    let rows = await enrichDetectedRowsWithLiveClient(rawRows, orgId);
+
+    if (status) {
+      const want = String(status);
+      rows = rows.filter((r) => {
+        const eff = r.effectiveStatus || r.status;
+        return eff === want;
+      });
+    }
 
     res.json(rows);
   } catch (err) {
@@ -111,6 +118,18 @@ devicesRouter.get('/scan/status', requireRole('admin', 'technician'), async (req
   }
 });
 
+// POST /api/devices/reconcile — limpia adopciones fantasma (registros viejos sin antena real)
+devicesRouter.post('/reconcile', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const stats = await reconcileDetectedGhosts(orgId);
+    res.json({ message: 'Limpieza completada', ...stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/devices/scan — dispara escaneo bajo demanda
 devicesRouter.post('/scan', requireRole('admin', 'technician'), async (req, res) => {
   try {
@@ -121,6 +140,37 @@ devicesRouter.post('/scan', requireRole('admin', 'technician'), async (req, res)
 
     dispatch(JobNames.DEVICE_SCAN_ORG, { orgId })
       .catch((err) => console.error('[devices/scan] org=%d error: %s', orgId, err.message));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/devices/:id/revert-adoption — quita vínculo fantasma (sin CPE en perfil)
+devicesRouter.post('/:id/revert-adoption', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const id = parseInt(req.params.id, 10);
+
+    const [device] = await db.select().from(detectedDevices)
+      .where(and(eq(detectedDevices.id, id), orgFilter(detectedDevices, orgId)))
+      .limit(1);
+    if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+
+    if (device.adoptedAsClientServiceId) {
+      const [svc] = await db.select({ clientId: clientServices.clientId })
+        .from(clientServices).where(eq(clientServices.id, device.adoptedAsClientServiceId)).limit(1);
+      if (svc?.clientId && device.macAddress) {
+        await clearOrphanServiceMac(svc.clientId, device.macAddress, orgId, device.adoptedAsClientServiceId);
+      }
+    }
+
+    await db.update(detectedDevices)
+      .set({ status: 'detected', adoptedAsClientServiceId: null, updatedAt: new Date() })
+      .where(eq(detectedDevices.id, id));
+
+    await syncDetectedDeviceStates(orgId);
+    res.json({ message: 'Dispositivo desvinculado' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -149,17 +199,31 @@ devicesRouter.post('/:id/ignore', requireRole('admin', 'technician'), async (req
   }
 });
 
-// POST /api/devices/:id/unignore — volver a detected
+// POST /api/devices/:id/unignore — volver a detected (también limpia adopción fantasma)
 devicesRouter.post('/:id/unignore', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const id = parseInt(req.params.id, 10);
 
-    await db.update(detectedDevices)
-      .set({ status: 'detected', updatedAt: new Date() })
-      .where(and(eq(detectedDevices.id, id), orgFilter(detectedDevices, orgId)));
+    const [device] = await db.select().from(detectedDevices)
+      .where(and(eq(detectedDevices.id, id), orgFilter(detectedDevices, orgId)))
+      .limit(1);
+    if (!device) return res.status(404).json({ error: 'Dispositivo no encontrado' });
 
+    if (device.adoptedAsClientServiceId && device.macAddress) {
+      const [svc] = await db.select({ clientId: clientServices.clientId })
+        .from(clientServices).where(eq(clientServices.id, device.adoptedAsClientServiceId)).limit(1);
+      if (svc?.clientId) {
+        await clearOrphanServiceMac(svc.clientId, device.macAddress, orgId, device.adoptedAsClientServiceId);
+      }
+    }
+
+    await db.update(detectedDevices)
+      .set({ status: 'detected', adoptedAsClientServiceId: null, updatedAt: new Date() })
+      .where(eq(detectedDevices.id, id));
+
+    await syncDetectedDeviceStates(orgId);
     res.json({ message: 'Dispositivo restaurado' });
   } catch (err) {
     res.status(500).json({ error: err.message });
