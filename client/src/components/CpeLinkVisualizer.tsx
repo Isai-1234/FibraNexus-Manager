@@ -3,38 +3,53 @@ import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
 import cpeArt from '../assets/link/Gemini_Generated_Image_uepoonuepoonuepo-removebg-preview.png'
 import towerArt from '../assets/link/Gemini_Generated_Image_tc60kttc60kttc60-removebg-preview.png'
 
-/** Layout unificado viewBox 580×250 — imágenes y haces comparten coordenadas */
+/** Layout responsivo: viewBox 580×280; centros en % del ancho (hardware + etiquetas) */
 type ImgBox = {
   x: number
   y: number
   w: number
   h: number
-  align: 'xMaxYMax' | 'xMinYMax'
+  align: 'xMaxYMax' | 'xMinYMax' | 'xMidYMax'
   srcAspect: number
   hornRel: { x: number; y: number }
 }
 
-const LINK_LAYOUT = {
+const LINK_SCENE = {
   viewW: 580,
-  viewH: 200,
-  /** true = SVG en assets/link/; false = dibujo integrado fallback */
+  viewH: 280,
+  groundY: 248,
+  /** 18% izquierda · 82% derecha — separación clara con espacio de enlace al centro */
+  cpeCenterPct: 0.18,
+  towerCenterPct: 0.82,
+} as const
+
+const LINK_SCENE_X = {
+  cpe: LINK_SCENE.viewW * LINK_SCENE.cpeCenterPct,
+  tower: LINK_SCENE.viewW * LINK_SCENE.towerCenterPct,
+} as const
+
+function boxFromCenter(centerX: number, groundY: number, w: number, h: number) {
+  return { x: centerX - w / 2, y: groundY - h, w, h }
+}
+
+const LINK_LAYOUT = {
+  viewW: LINK_SCENE.viewW,
+  viewH: LINK_SCENE.viewH,
   useAssetFiles: true,
   cpeBox: {
-    // CPE más pequeño que la torre — proporciones realistas de instalación ISP
-    x: 8, y: 22, w: 142, h: 170,
-    align: 'xMaxYMax',
-    srcAspect: 526 / 474,   // Litebeam CPE — 526×474
-    // Punta exacta del LNB feed (tubo blanco que sobresale a la derecha)
-    hornRel: { x: 0.92, y: 0.37 },
+    ...boxFromCenter(LINK_SCENE_X.cpe, LINK_SCENE.groundY, 92, 108),
+    align: 'xMidYMax',
+    srcAspect: 526 / 474,
+    hornRel: { x: 0.82, y: 0.40 },
   } satisfies ImgBox,
   towerBox: {
-    x: 368, y: 0, w: 210, h: 196,
-    align: 'xMinYMax',
-    srcAspect: 586 / 426,   // Torre roja/blanca — 586×426
-    hornRel: { x: 0.27, y: 0.30 },
+    ...boxFromCenter(LINK_SCENE_X.tower, LINK_SCENE.groundY, 268, 210),
+    align: 'xMidYMax',
+    srcAspect: 586 / 426,
+    hornRel: { x: 0.42, y: 0.26 },
   } satisfies ImgBox,
-  vectorCpe: { tx: 74, ty: 96, scale: 1.38, horn: { x: 70, y: 32 } },
-  vectorTower: { tx: 320, ty: 66, scale: 1.38, horn: { x: 70, y: 40 } },
+  vectorCpe: { tx: LINK_SCENE_X.cpe - 62, ty: 118, scale: 1.24, horn: { x: 70, y: 32 } },
+  vectorTower: { tx: LINK_SCENE_X.tower - 62, ty: 58, scale: 1.42, horn: { x: 70, y: 40 } },
 } as const
 
 function renderedImageRect(box: ImgBox) {
@@ -47,7 +62,11 @@ function renderedImageRect(box: ImgBox) {
   } else {
     rw = box.h * srcAspect
   }
-  const ox = box.align === 'xMaxYMax' ? box.x + box.w - rw : box.x
+  const ox = box.align === 'xMaxYMax'
+    ? box.x + box.w - rw
+    : box.align === 'xMidYMax'
+      ? box.x + (box.w - rw) / 2
+      : box.x
   const oy = box.y + box.h - rh
   return { x: ox, y: oy, w: rw, h: rh }
 }
@@ -68,23 +87,25 @@ function hornFromVector(v: { tx: number; ty: number; scale: number; horn: { x: n
 }
 
 function linkBeamEndpoints(useAssetFiles: boolean) {
-  if (useAssetFiles) {
-    return {
-      cpe: hornFromBox(LINK_LAYOUT.cpeBox),
-      tower: hornFromBox(LINK_LAYOUT.towerBox),
-    }
-  }
+  const cpe = useAssetFiles ? hornFromBox(LINK_LAYOUT.cpeBox) : hornFromVector(LINK_LAYOUT.vectorCpe)
+  const tower = useAssetFiles ? hornFromBox(LINK_LAYOUT.towerBox) : hornFromVector(LINK_LAYOUT.vectorTower)
   return {
-    cpe: hornFromVector(LINK_LAYOUT.vectorCpe),
-    tower: hornFromVector(LINK_LAYOUT.vectorTower),
+    cpe,
+    tower,
+    mid: {
+      x: (cpe.x + tower.x) / 2,
+      y: (cpe.y + tower.y) / 2,
+    },
   }
 }
 
-const LINK_BEAM = {
-  viewW: LINK_LAYOUT.viewW,
-  viewH: LINK_LAYOUT.viewH,
-  ...linkBeamEndpoints(LINK_LAYOUT.useAssetFiles),
-} as const
+function getLinkBeam(useAssetFiles = LINK_LAYOUT.useAssetFiles) {
+  return {
+    viewW: LINK_LAYOUT.viewW,
+    viewH: LINK_LAYOUT.viewH,
+    ...linkBeamEndpoints(useAssetFiles),
+  }
+}
 
 /** SVG vectorial puro — sin filtro (trazos claros sobre fondo transparente) */
 const LINK_ART_FILTER = 'none'
@@ -119,7 +140,6 @@ interface Props {
   } | null
   siteName?: string
   immersive?: boolean
-  isStale?: boolean
   onExpand?: () => void
   onRefresh?: () => void
   refreshing?: boolean
@@ -247,16 +267,18 @@ function LinkHardwareSvg({
   return (
     <g aria-hidden>
       {showCpeImg ? (
-        <image
-          href={cpeSrc}
-          x={cpeBox.x}
-          y={cpeBox.y}
-          width={cpeBox.w}
-          height={cpeBox.h}
-          preserveAspectRatio="xMaxYMax meet"
-          style={artStyle}
-          onError={() => setCpeImgOk(false)}
-        />
+        <g transform={`translate(${LINK_SCENE_X.cpe}, ${LINK_SCENE.groundY})`}>
+          <image
+            href={cpeSrc}
+            x={-cpeBox.w / 2}
+            y={-cpeBox.h}
+            width={cpeBox.w}
+            height={cpeBox.h}
+            preserveAspectRatio="xMidYMax meet"
+            style={artStyle}
+            onError={() => setCpeImgOk(false)}
+          />
+        </g>
       ) : (
         <g transform={`translate(${vectorCpe.tx}, ${vectorCpe.ty}) scale(${vectorCpe.scale})`}>
           <LiteBeamSvg uid={uid} />
@@ -264,16 +286,18 @@ function LinkHardwareSvg({
       )}
 
       {showTowerImg ? (
-        <image
-          href={towerSrc}
-          x={towerBox.x}
-          y={towerBox.y}
-          width={towerBox.w}
-          height={towerBox.h}
-          preserveAspectRatio="xMinYMax meet"
-          style={artStyle}
-          onError={() => setTowerImgOk(false)}
-        />
+        <g transform={`translate(${LINK_SCENE_X.tower}, ${LINK_SCENE.groundY})`}>
+          <image
+            href={towerSrc}
+            x={-towerBox.w / 2}
+            y={-towerBox.h}
+            width={towerBox.w}
+            height={towerBox.h}
+            preserveAspectRatio="xMidYMax meet"
+            style={artStyle}
+            onError={() => setTowerImgOk(false)}
+          />
+        </g>
       ) : (
         <g transform={`translate(${vectorTower.tx}, ${vectorTower.ty}) scale(${vectorTower.scale})`}>
           <SectorHornSvg uid={uid} />
@@ -296,16 +320,27 @@ function LinkHardwareSvg({
   )
 }
 
-function LinkHardwareLabels({ apLabel }: { apLabel: string }) {
+function LinkHardwareLabelsSvg({ apLabel }: { apLabel: string }) {
+  const labelY = LINK_SCENE.viewH - 6
+  const towerText = apLabel.length > 22 ? `${apLabel.slice(0, 20)}…` : apLabel
+  const labelProps = {
+    y: labelY,
+    textAnchor: 'middle' as const,
+    fill: '#64748b',
+    fontSize: 10,
+    fontFamily: 'system-ui,sans-serif',
+  }
+
   return (
-    <>
-      <p className="absolute left-[2%] bottom-[1%] z-10 text-[10px] sm:text-xs text-slate-500 text-center pointer-events-none">
+    <g aria-hidden pointerEvents="none">
+      <text x={LINK_SCENE_X.cpe} {...labelProps}>
         CPE · Cliente
-      </p>
-      <p className="absolute right-[2%] bottom-[1%] z-10 text-[10px] sm:text-xs text-slate-500 text-center truncate max-w-[38%] pointer-events-none">
-        {apLabel.length > 18 ? `${apLabel.slice(0, 16)}…` : apLabel}
-      </p>
-    </>
+      </text>
+      <text x={LINK_SCENE_X.tower} {...labelProps}>
+        <title>{apLabel}</title>
+        {towerText}
+      </text>
+    </g>
   )
 }
 
@@ -339,7 +374,7 @@ function QualityRing({ score, color, uid }: { score: number; color: string; uid:
 }
 
 function SignalBeams({
-  uid, online, strength, colors, txSpeed, rxSpeed,
+  uid, online, strength, colors, txSpeed, rxSpeed, beam,
 }: {
   uid: string
   online: boolean
@@ -347,115 +382,91 @@ function SignalBeams({
   colors: { primary: string; secondary: string; rx: string; glow: string }
   txSpeed: number
   rxSpeed: number
+  beam: ReturnType<typeof getLinkBeam>
 }) {
   if (!online) return null
 
-  const { cpe, tower } = LINK_BEAM
-  const midX = (cpe.x + tower.x) / 2
-  // Arco suave hacia arriba: el control point desplazado -18px convierte la
-  // bezier cuadrática en una parábola visible (en línea recta sería plana).
-  const midY = (cpe.y + tower.y) / 2 - 18
-  const corePath = `M ${cpe.x} ${cpe.y} Q ${midX} ${midY} ${tower.x} ${tower.y}`
-  const rxPath = `M ${tower.x} ${tower.y} Q ${midX} ${midY} ${cpe.x} ${cpe.y}`
+  const { cpe, tower, mid } = beam
+  const txPath = `M ${cpe.x} ${cpe.y} L ${tower.x} ${tower.y}`
+  const rxPath = `M ${tower.x} ${tower.y} L ${cpe.x} ${cpe.y}`
+  const dx = tower.x - cpe.x
+  const dy = tower.y - cpe.y
+  const segLen = Math.hypot(dx, dy) || 1
 
-  const beamCount = strength >= 75 ? 9 : strength >= 50 ? 6 : 4
+  const beamCount = strength >= 75 ? 5 : strength >= 50 ? 4 : 3
   const txDur = Math.max(0.7, 2.8 - (txSpeed / 150))
   const rxDur = Math.max(0.7, 2.8 - (rxSpeed / 150))
 
   const paths = useMemo(() => Array.from({ length: beamCount }, (_, i) => {
     const t = (i - (beamCount - 1) / 2) / (beamCount - 1 || 1)
-    const yOff = t * 24
-    const curve = t * 6
-    const d = `M ${cpe.x} ${cpe.y} Q ${midX + curve} ${midY + yOff} ${tower.x} ${tower.y}`
-    return { id: i, d, delay: i * 0.14, color: i % 2 === 0 ? colors.primary : colors.secondary }
-  }), [beamCount, colors.primary, colors.secondary, cpe.x, cpe.y, tower.x, tower.y, midX, midY])
+    const off = t * 10
+    const ox = (-dy / segLen) * off
+    const oy = (dx / segLen) * off
+    const d = `M ${cpe.x + ox} ${cpe.y + oy} L ${tower.x + ox} ${tower.y + oy}`
+    return { id: i, d, delay: i * 0.16, color: i % 2 === 0 ? colors.primary : colors.secondary }
+  }), [beamCount, colors.primary, colors.secondary, cpe.x, cpe.y, tower.x, tower.y, dx, dy, segLen])
 
   return (
-    <g>
-      {/* ── Backbone: línea sólida permanente, visible con o sin animación ── */}
-      <path
-        d={corePath}
-        fill="none"
-        stroke={colors.primary}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity={0.22}
-      />
-
-      {/* ── Halo de emisión — puntas CPE y torre ── */}
-      <circle cx={cpe.x} cy={cpe.y} r="5" fill={colors.primary} opacity="0.2">
-        <animate attributeName="r" values="4;11;4" dur="2.2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.12;0.32;0.12" dur="2.2s" repeatCount="indefinite" />
+    <g filter={`url(#${uid}-beamGlow)`}>
+      <circle cx={cpe.x} cy={cpe.y} r="6" fill={colors.primary} opacity="0.15">
+        <animate attributeName="r" values="4;9;4" dur="2.2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.1;0.35;0.1" dur="2.2s" repeatCount="indefinite" />
       </circle>
-      <circle cx={tower.x} cy={tower.y} r="5" fill={colors.rx} opacity="0.15">
-        <animate attributeName="r" values="3;10;3" dur="2.4s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.1;0.28;0.1" dur="2.4s" repeatCount="indefinite" />
+      <circle cx={tower.x} cy={tower.y} r="5" fill={colors.rx} opacity="0.12">
+        <animate attributeName="r" values="3;8;3" dur="2.4s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.08;0.3;0.08" dur="2.4s" repeatCount="indefinite" />
       </circle>
 
-      {/* ── Pulso en punto medio del arco ── */}
-      <circle cx={midX} cy={midY} r="3" fill={colors.primary} opacity="0.3">
-        <animate attributeName="r" values="2;14;2" dur="2.8s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.3;0;0.3" dur="2.8s" repeatCount="indefinite" />
-      </circle>
-
-      {/* ── Haces TX en abanico ── */}
       {paths.map((b) => (
         <path
           key={`tx-${b.id}`}
           d={b.d}
           fill="none"
           stroke={b.color}
-          strokeWidth={b.id === Math.floor(beamCount / 2) ? 2.4 : 1.5}
+          strokeWidth={b.id === Math.floor(beamCount / 2) ? 2 : 1.2}
           strokeLinecap="round"
-          strokeDasharray="7 10 2 13"
-          opacity={Math.max(0.32, 0.25 + (strength / 100) * 0.5)}
+          strokeDasharray="6 14"
+          opacity={0.22 + (strength / 100) * 0.45}
           className="beam-tx"
           style={{ animationDuration: `${txDur}s`, animationDelay: `${b.delay}s` }}
         />
       ))}
 
-      {/* ── Core beam: gradiente + flujo + pulso de opacidad ── */}
       <path
-        d={corePath}
+        d={txPath}
         fill="none"
         stroke={`url(#${uid}-beamTx)`}
-        strokeWidth="3.5"
+        strokeWidth="2.4"
         strokeLinecap="round"
-        strokeDasharray="14 10 3 12"
-        opacity={Math.max(0.72, 0.55 + (strength / 100) * 0.35)}
-        className="beam-core"
-        style={{ animationDuration: `${txDur * 0.9}s, 2.4s` }}
+        strokeDasharray="8 16"
+        opacity={0.55 + (strength / 100) * 0.35}
+        className="beam-tx beam-core"
+        style={{ animationDuration: `${txDur * 0.9}s` }}
       />
 
-      {/* ── Haces RX (retorno) ── */}
-      {paths.slice(0, Math.ceil(beamCount / 2)).map((b) => (
-        <path
-          key={`rx-${b.id}`}
-          d={b.d}
-          fill="none"
-          stroke={colors.rx}
-          strokeWidth="1.3"
-          strokeLinecap="round"
-          strokeDasharray="4 14 2 18"
-          opacity={Math.max(0.22, 0.2 + (strength / 100) * 0.35)}
-          className="beam-rx"
-          style={{ animationDuration: `${rxDur}s`, animationDelay: `${b.delay + 0.3}s` }}
-        />
-      ))}
+      <path
+        d={rxPath}
+        fill="none"
+        stroke={colors.rx}
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeDasharray="5 12"
+        opacity={0.25 + (strength / 100) * 0.35}
+        className="beam-rx"
+        style={{ animationDuration: `${rxDur}s`, animationDelay: '0.25s' }}
+      />
 
-      {/* ── Partículas TX ── */}
-      {[0, 1, 2, 3].map((p) => (
-        <circle key={`ptx-${p}`} r="2.2" fill={colors.primary}>
-          <animateMotion dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} path={corePath} />
-          <animate attributeName="opacity" values="0;1;1;0" dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.35}s`} />
+      {[0, 1, 2].map((p) => (
+        <circle key={`ptx-${p}`} r="2" fill={colors.primary} className="beam-particle">
+          <animateMotion dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} path={txPath} />
+          <animate attributeName="opacity" values="0;1;1;0" dur={`${txDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} />
         </circle>
       ))}
 
-      {/* ── Partículas RX ── */}
-      {[0, 1, 2].map((p) => (
-        <circle key={`prx-${p}`} r="1.8" fill={colors.rx}>
-          <animateMotion dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} path={rxPath} />
-          <animate attributeName="opacity" values="0;0.9;0.9;0" dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.4}s`} />
+      {[0, 1].map((p) => (
+        <circle key={`prx-${p}`} r="1.8" fill={colors.rx} className="beam-particle">
+          <animateMotion dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.45}s`} path={rxPath} />
+          <animate attributeName="opacity" values="0;0.9;0.9;0" dur={`${rxDur * 1.1}s`} repeatCount="indefinite" begin={`${p * 0.45}s`} />
         </circle>
       ))}
     </g>
@@ -475,8 +486,7 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
 }
 
 export default function CpeLinkVisualizer({
-  equipment, siteName, immersive = false, isStale = false, onExpand, onRefresh, refreshing = false,
-  className = '',
+  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false, className = '',
   cpeImageUrl = LINK_VISUAL_ASSETS.cpe,
   towerImageUrl = LINK_VISUAL_ASSETS.tower,
 }: Props) {
@@ -505,6 +515,7 @@ export default function CpeLinkVisualizer({
   const theme = linkTheme(linkScore, online, warnings.length > 0)
   const txSpeed = equipment.wirelessTxRate || beamStrength * 1.2
   const rxSpeed = equipment.wirelessRxRate || beamStrength * 1.5
+  const linkBeam = useMemo(() => getLinkBeam(), [])
 
   return (
     <div className={`relative overflow-hidden rounded-3xl border border-white/[0.08] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] cpe-viz ${immersive ? 'min-h-[70vh] flex flex-col' : ''} ${className}`}>
@@ -513,16 +524,10 @@ export default function CpeLinkVisualizer({
           background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #060a12 45%, #030508 100%);
         }
         @keyframes beam-tx-flow {
-          from { stroke-dashoffset: 0; }
-          to   { stroke-dashoffset: -90; }
+          to { stroke-dashoffset: -90; }
         }
         @keyframes beam-rx-flow {
-          from { stroke-dashoffset: 0; }
-          to   { stroke-dashoffset: 90; }
-        }
-        @keyframes beam-core-pulse {
-          0%, 100% { opacity: 0.62; }
-          50%       { opacity: 1; }
+          to { stroke-dashoffset: 90; }
         }
         @keyframes aurora-drift {
           0%, 100% { transform: translateX(0) scale(1); opacity: 0.4; }
@@ -530,28 +535,15 @@ export default function CpeLinkVisualizer({
         }
         @keyframes grid-fade {
           0%, 100% { opacity: 0.03; }
-          50% { opacity: 0.055; }
+          50% { opacity: 0.06; }
         }
         @media (prefers-reduced-motion: no-preference) {
-          .beam-tx {
-            animation-name: beam-tx-flow;
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-          }
-          .beam-rx {
-            animation-name: beam-rx-flow;
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-          }
-          .beam-core {
-            animation-name: beam-tx-flow, beam-core-pulse;
-            animation-timing-function: linear, ease-in-out;
-            animation-iteration-count: infinite, infinite;
-          }
+          .beam-tx { animation: beam-tx-flow linear infinite; }
+          .beam-rx { animation: beam-rx-flow linear infinite; }
           .aurora-blob { animation: aurora-drift 8s ease-in-out infinite; }
-          .floor-grid  { animation: grid-fade 6s ease-in-out infinite; }
+          .floor-grid { animation: grid-fade 6s ease-in-out infinite; }
         }
-        .beam-core { filter: drop-shadow(0 0 10px ${theme.glow}); }
+        .beam-core { filter: drop-shadow(0 0 8px ${theme.glow}); }
       `}</style>
 
       {/* aurora atmosphere */}
@@ -604,71 +596,36 @@ export default function CpeLinkVisualizer({
             )}
           </div>
           <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm ${
-            online && !isStale
+            online
               ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 shadow-[0_0_20px_-5px_rgba(52,211,153,0.4)]'
-              : online && isStale
-                ? 'bg-amber-500/10 text-amber-300 border border-amber-400/20'
-                : 'bg-red-500/10 text-red-300 border border-red-400/20'
+              : 'bg-red-500/10 text-red-300 border border-red-400/20'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              online && !isStale ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]'
-              : online && isStale ? 'bg-amber-400'
-              : 'bg-red-400'
-            }`} />
-            {online && !isStale ? 'En línea' : online && isStale ? 'Datos desactualizados' : 'Desconectada'}
+            <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]' : 'bg-red-400'}`} />
+            {online ? 'En línea' : 'Sin enlace'}
           </span>
-          {isStale && (
-            <span className="text-[10px] text-amber-600/80 font-mono flex items-center gap-1">
-              Última lectura: {equipment.snmpPolledAt ? new Date(equipment.snmpPolledAt).toLocaleTimeString('es-CL') : 'desconocida'}
-            </span>
-          )}
-          {!isStale && equipment.snmpUptime && (
+          {equipment.snmpUptime && (
             <span className="text-[10px] text-slate-600 font-mono">uptime {equipment.snmpUptime}</span>
           )}
         </div>
       </div>
 
-      {/* banner offline — visible cuando CPE desconectada, sin animaciones */}
-      {!online && (
-        <div className="mx-4 mb-1 flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-red-300">Antena desconectada</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              {isStale
-                ? 'Sin datos recientes. Pulsa ↻ para verificar el estado actual.'
-                : `Sin respuesta SNMP${equipment.snmpPolledAt ? ` — verificado ${new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}` : ''}.`}
-            </p>
-          </div>
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshing}
-              className="ml-auto shrink-0 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs hover:bg-red-500/20 transition disabled:opacity-40"
-            >
-              {refreshing ? '…' : '↻ Verificar'}
-            </button>
-          )}
-        </div>
-      )}
-
       {/* escena enlace */}
-      <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center justify-center' : ''}`}>
-        <div className={`relative w-full mx-auto aspect-[580/200] overflow-hidden ${immersive ? 'max-w-[1300px]' : 'max-w-[742px]'}`}>
+      <div className={`relative px-1 sm:px-3 pb-1 ${immersive ? 'flex-1 flex items-center' : ''}`}>
+        <div className={`relative w-full ${immersive ? 'max-h-[min(58vh,560px)]' : 'max-h-[360px]'} aspect-[580/280]`}>
           <svg
-            viewBox="0 0 580 200"
+            viewBox="0 0 580 280"
             className="absolute inset-0 w-full h-full"
             aria-hidden
           >
             <defs>
-              <clipPath id={`${uid}-gridClip`}>
-                <rect x="0" y="128" width="580" height="74" />
-              </clipPath>
+              <filter id={`${uid}-beamGlow`} x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2" result="b" />
+                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
               <linearGradient id={`${uid}-beamTx`} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%"   stopColor={theme.primary}   stopOpacity="0.55" />
-                <stop offset="45%"  stopColor={theme.primary}   stopOpacity="1" />
-                <stop offset="100%" stopColor={theme.secondary}  stopOpacity="0.65" />
+                <stop offset="0%" stopColor={theme.primary} stopOpacity="0.1" />
+                <stop offset="40%" stopColor={theme.primary} stopOpacity="1" />
+                <stop offset="100%" stopColor={theme.secondary} stopOpacity="0.4" />
               </linearGradient>
               <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="transparent" />
@@ -688,18 +645,18 @@ export default function CpeLinkVisualizer({
               </linearGradient>
             </defs>
 
-            <g className="floor-grid" opacity="0.04" clipPath={`url(#${uid}-gridClip)`}>
-              {Array.from({ length: 10 }, (_, i) => (
-                <line key={`h${i}`} x1="0" y1={114 + i * 8} x2="580" y2={114 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
+            <g className="floor-grid" opacity="0.04">
+              {Array.from({ length: 12 }, (_, i) => (
+                <line key={`h${i}`} x1="0" y1={198 + i * 8} x2="580" y2={198 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
               ))}
               {Array.from({ length: 16 }, (_, i) => (
-                <line key={`v${i}`} x1={i * 38} y1="108" x2={i * 38 - 80} y2="202" stroke="#94a3b8" strokeWidth="0.5" />
+                <line key={`v${i}`} x1={i * 38} y1="188" x2={i * 38 - 80} y2="288" stroke="#94a3b8" strokeWidth="0.5" />
               ))}
             </g>
 
-            <rect x="0" y="108" width="580" height="94" fill={`url(#${uid}-horizon)`} />
+            <rect x="0" y="188" width="580" height="92" fill={`url(#${uid}-horizon)`} />
 
-            <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} />
+            <SignalBeams uid={uid} online={online} strength={beamStrength} colors={theme} txSpeed={txSpeed} rxSpeed={rxSpeed} beam={linkBeam} />
 
             <LinkHardwareSvg
               uid={uid}
@@ -711,17 +668,17 @@ export default function CpeLinkVisualizer({
             {online && signal != null && (
               <g opacity="0.65">
                 <line
-                  x1={LINK_BEAM.cpe.x}
-                  y1={LINK_BEAM.cpe.y - 18}
-                  x2={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2}
-                  y2={LINK_BEAM.cpe.y - 32}
+                  x1={linkBeam.mid.x}
+                  y1={linkBeam.mid.y}
+                  x2={linkBeam.mid.x}
+                  y2={linkBeam.mid.y - 18}
                   stroke="#475569"
                   strokeWidth="0.6"
                   strokeDasharray="2 3"
                 />
                 <rect
-                  x={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2 - 45}
-                  y={LINK_BEAM.cpe.y - 42}
+                  x={linkBeam.mid.x - 45}
+                  y={linkBeam.mid.y - 32}
                   width="90"
                   height="18"
                   rx="9"
@@ -730,8 +687,8 @@ export default function CpeLinkVisualizer({
                   strokeWidth="0.5"
                 />
                 <text
-                  x={(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2}
-                  y={LINK_BEAM.cpe.y - 30}
+                  x={linkBeam.mid.x}
+                  y={linkBeam.mid.y - 20}
                   textAnchor="middle"
                   fill="#94a3b8"
                   fontSize="8"
@@ -744,7 +701,7 @@ export default function CpeLinkVisualizer({
 
             {online && (
               <g
-                transform={`translate(${(LINK_BEAM.cpe.x + LINK_BEAM.tower.x) / 2 - 40}, ${LINK_BEAM.viewH - 28})`}
+                transform={`translate(${linkBeam.mid.x - 40}, ${linkBeam.viewH - 28})`}
                 fontFamily="system-ui,sans-serif"
                 fontSize="8"
                 fill="#64748b"
@@ -755,9 +712,9 @@ export default function CpeLinkVisualizer({
                 <text x="84" y="7">Bajada</text>
               </g>
             )}
-          </svg>
 
-          <LinkHardwareLabels apLabel={apLabel} />
+            <LinkHardwareLabelsSvg apLabel={apLabel} />
+          </svg>
         </div>
       </div>
 
@@ -812,11 +769,9 @@ export default function CpeLinkVisualizer({
             <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
             <span>
               {equipment.wirelessDebugHint || (
-                equipment.snmpPollMethod === 'edgerouter-arp'
-                  ? 'Antena online — detectada vía ARP en EdgeRouter. Métricas de señal no disponibles (requiere SNMP en airOS).'
-                  : equipment.snmpPollMethod === 'router'
-                    ? 'Antena online vía MikroTik (IP privada). Las métricas dBm/CCQ usan MIB Ubiquiti — pulsa ↻ para reintentar.'
-                    : 'Antena online — habilita SNMP en airOS (Services → SNMP) con la misma community del equipo.'
+                equipment.snmpPollMethod === 'router'
+                  ? 'Antena online vía MikroTik (IP privada). Las métricas dBm/CCQ usan MIB Ubiquiti — pulsa ↻ para reintentar.'
+                  : 'Antena online — habilita SNMP en airOS (Services → SNMP) con la misma community del equipo.'
               )}
             </span>
           </div>
@@ -830,7 +785,7 @@ export default function CpeLinkVisualizer({
 
       {equipment.snmpPolledAt && (
         <p className="px-6 pb-4 text-[10px] text-slate-700 font-mono">
-          {equipment.snmpPollMethod === 'edgerouter-arp' ? 'arp' : 'snmp'} · {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
+          snmp · {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
         </p>
       )}
     </div>
