@@ -1,10 +1,11 @@
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { pollEquipmentList } from './snmpPoller.js';
 
 const STALE_MS = 2 * 60 * 1000;
+const OFFLINE_AFTER_FAILURES = 3;
 
 export function isPollStale(lastSeen, staleMs = STALE_MS) {
   if (!lastSeen) return true;
@@ -19,28 +20,32 @@ export function isPollable(item) {
 
 async function buildRouterBySiteMap(items, orgId) {
   const siteIds = [...new Set(items.map((e) => e.siteId).filter(Boolean))];
-  if (!siteIds.length) return new Map();
-  // P1: 1 query con inArray en lugar de N queries seriales
-  const routers = await db.select().from(equipment)
-    .where(and(
-      inArray(equipment.siteId, siteIds),
-      eq(equipment.type, 'router'),
-      orgFilter(equipment, orgId),
-    ));
-  // Un router por site: si hay varios, toma el primero encontrado
   const map = new Map();
-  for (const router of routers) {
-    if (router.siteId && !map.has(router.siteId)) map.set(router.siteId, router);
+  for (const siteId of siteIds) {
+    const [router] = await db.select().from(equipment)
+      .where(and(
+        eq(equipment.siteId, siteId),
+        eq(equipment.type, 'router'),
+        orgFilter(equipment, orgId),
+      ))
+      .limit(1);
+    if (router) map.set(siteId, router);
   }
   return map;
 }
 
 export async function persistPollResult(row, result) {
-  const status = result.online ? 'online' : 'offline';
+  const prevFailures = row.credentials?.consecutiveFailures || 0;
+  const failed = !result.online || Boolean(result.error);
+  const consecutiveFailures = failed ? prevFailures + 1 : 0;
+  const status = failed
+    ? (consecutiveFailures >= OFFLINE_AFTER_FAILURES ? 'offline' : row.status)
+    : 'online';
+
   const [updated] = await db.update(equipment).set({
     status,
     lastSeen: new Date(),
-    credentials: { ...(row.credentials || {}), lastSnmp: result },
+    credentials: { ...(row.credentials || {}), lastSnmp: result, consecutiveFailures },
     updatedAt: new Date(),
   }).where(eq(equipment.id, row.id)).returning();
   return updated;
@@ -49,22 +54,20 @@ export async function persistPollResult(row, result) {
 export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
   const wireless = lastSnmp?.wireless;
-  // Fallback: métricas enviadas por heartbeat EdgeRouter vía SNMP
-  const lm = item.credentials?.lastMetrics;
   return {
     ...item,
     snmpOnline: item.status === 'online',
     snmpUptime: lastSnmp?.uptime || null,
-    snmpPolledAt: lastSnmp?.polledAt || lm?.ts || item.lastSeen || null,
+    snmpPolledAt: lastSnmp?.polledAt || item.lastSeen || null,
     snmpError: lastSnmp?.error || null,
     snmpPollMethod: lastSnmp?.pollMethod || null,
     snmpSysDescr: lastSnmp?.sysDescr || null,
-    wirelessSignal: wireless?.signalDbm ?? lm?.signal ?? null,
+    wirelessSignal: wireless?.signalDbm ?? null,
     wirelessRssi: wireless?.rssiDbm ?? null,
-    wirelessCcq: wireless?.ccqPercent ?? lm?.txCcq ?? null,
-    wirelessSnr: wireless?.snrDb ?? lm?.cinr ?? null,
-    wirelessTxRate: wireless?.txRateMbps ?? (lm?.txRate ? lm.txRate / 1_000_000 : null) ?? null,
-    wirelessRxRate: wireless?.rxRateMbps ?? (lm?.rxRate ? lm.rxRate / 1_000_000 : null) ?? null,
+    wirelessCcq: wireless?.ccqPercent ?? null,
+    wirelessSnr: wireless?.snrDb ?? null,
+    wirelessTxRate: wireless?.txRateMbps ?? null,
+    wirelessRxRate: wireless?.rxRateMbps ?? null,
     wirelessWarnings: wireless?.warnings || [],
     wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
@@ -86,15 +89,23 @@ export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 }
     const row = items.find((e) => e.id === r.id);
     if (!row) continue;
 
+    const prevFailures = row.credentials?.consecutiveFailures || 0;
+    const failed = !r.online || Boolean(r.error);
+    const consecutiveFailures = failed ? prevFailures + 1 : 0;
+    const status = failed
+      ? (consecutiveFailures >= OFFLINE_AFTER_FAILURES ? 'offline' : row.status)
+      : 'online';
+
     const patch = {
-      status: r.online ? 'online' : 'offline',
+      status,
       lastSeen: new Date(),
-      credentials: { ...(row.credentials || {}), lastSnmp: r },
+      credentials: { ...(row.credentials || {}), lastSnmp: r, consecutiveFailures },
     };
 
-    // Siempre escribir — un error de SNMP es offline confirmado
-    await db.update(equipment).set({ ...patch, updatedAt: new Date() })
-      .where(eq(equipment.id, row.id));
+    if (!r.error || consecutiveFailures >= OFFLINE_AFTER_FAILURES) {
+      await db.update(equipment).set({ ...patch, updatedAt: new Date() })
+        .where(eq(equipment.id, row.id));
+    }
 
     byId.set(row.id, attachSnmpDisplay({ ...row, ...patch }));
   }
@@ -117,9 +128,9 @@ export async function pollAllSnmpForOrg(orgId) {
     if (r.skipped) continue;
     const row = items.find((e) => e.id === r.id);
     if (!row) continue;
-    if (r.online) online++;
+    if (r.error) offline++;
+    else if (r.online) online++;
     else offline++;
-    // Siempre persistir — error = offline confirmado; sin esto el status queda 'online' en BD
     await persistPollResult(row, r);
   }
 
