@@ -14,35 +14,77 @@ function isMetricsFresh(lastMetrics) {
   return Date.now() - new Date(lastMetrics.ts).getTime() < METRICS_FRESH_MS;
 }
 
-/** Combina lastSnmp.wireless con lastMetrics del heartbeat cuando SNMP no trae wireless. */
-function mergeWirelessDisplay(lastSnmpWireless, lastMetrics) {
-  const w = lastSnmpWireless ? { ...lastSnmpWireless } : null;
-  if (!isMetricsFresh(lastMetrics) || !lastMetrics?.signal || lastMetrics.signal === 0) {
-    return w;
+function isEdgeRouterAgent(router) {
+  return Boolean(router?.credentials?.agentToken);
+}
+
+/** Presencia reciente vía agente EdgeRouter (ARP o cpeMetrics) — no degradar por SNMP fallido desde Render. */
+export function hasRecentHeartbeatPresence(row) {
+  const creds = row.credentials || {};
+  const lastSeenMs = row.lastSeen ? Date.now() - new Date(row.lastSeen).getTime() : Infinity;
+  const seenRecently = lastSeenMs < METRICS_FRESH_MS;
+  const viaArp = creds.lastSnmp?.pollMethod === 'edgerouter-arp';
+  const viaHbSnmp = creds.lastSnmp?.pollMethod === 'edgerouter-heartbeat';
+  return seenRecently && (viaArp || viaHbSnmp || isMetricsFresh(creds.lastMetrics));
+}
+
+function pickBestSignal(snmpSignal, heartbeatSignal, pollMethod) {
+  if (heartbeatSignal == null || heartbeatSignal === 0) return snmpSignal ?? null;
+  if (snmpSignal == null) return heartbeatSignal;
+  if (pollMethod === 'edgerouter-arp' || pollMethod === 'heartbeat' || pollMethod === 'edgerouter-heartbeat') {
+    return heartbeatSignal;
   }
-  const signal = w?.signalDbm ?? lastMetrics.signal;
-  const noise = w?.noiseFloorDbm ?? (lastMetrics.noise || null);
+  // SNMP remoto erróneo (-96) vs heartbeat coherente (-62)
+  if (snmpSignal <= -90 && heartbeatSignal > -80) return heartbeatSignal;
+  return snmpSignal;
+}
+
+/** Combina lastSnmp.wireless con lastMetrics del heartbeat cuando SNMP no trae wireless. */
+function mergeWirelessDisplay(lastSnmpWireless, lastMetrics, pollMethod) {
+  const w = lastSnmpWireless ? { ...lastSnmpWireless } : null;
+  const hbSignal = isMetricsFresh(lastMetrics) && lastMetrics?.signal ? lastMetrics.signal : null;
+  if (!w && !hbSignal) return null;
+
+  const signal = pickBestSignal(w?.signalDbm ?? null, hbSignal, pollMethod);
+  const noise = w?.noiseFloorDbm ?? (lastMetrics?.noise || null);
   const ccqFromSnmp = w?.ccqPercent;
-  const ccq = (ccqFromSnmp != null && ccqFromSnmp > 0)
-    ? ccqFromSnmp
-    : (lastMetrics.txCcq > 0 ? lastMetrics.txCcq : ccqFromSnmp ?? null);
+  const ccqFromHb = lastMetrics?.txCcq > 0 ? lastMetrics.txCcq : null;
+  const ccq = (ccqFromSnmp != null && ccqFromSnmp > 0) ? ccqFromSnmp : ccqFromHb;
   let snr = w?.snrDb ?? null;
-  if (snr == null && lastMetrics.cinr != null && lastMetrics.cinr !== 0) {
+  if (snr == null && lastMetrics?.cinr != null && lastMetrics.cinr !== 0) {
     snr = lastMetrics.cinr;
   } else if (snr == null && signal != null && noise != null) {
     snr = Math.round(signal - noise);
   }
   return {
     signalDbm: signal,
-    rssiDbm: w?.rssiDbm ?? lastMetrics.signal,
-    ccqPercent: ccq,
+    rssiDbm: w?.rssiDbm ?? hbSignal,
+    ccqPercent: ccq ?? null,
     noiseFloorDbm: noise,
     snrDb: snr,
-    txRateMbps: w?.txRateMbps ?? lastMetrics.txRate ?? null,
-    rxRateMbps: w?.rxRateMbps ?? lastMetrics.rxRate ?? null,
+    txRateMbps: w?.txRateMbps ?? lastMetrics?.txRate ?? null,
+    rxRateMbps: w?.rxRateMbps ?? lastMetrics?.rxRate ?? null,
     warnings: w?.warnings || [],
     linkQuality: ccq ?? w?.linkQuality ?? (signal != null ? Math.min(100, Math.max(0, 100 + signal)) : null),
   };
+}
+
+function mergeFailedPollSnmp(row, result, consecutiveFailures) {
+  const prevSnmp = row.credentials?.lastSnmp || {};
+  return {
+    ...prevSnmp,
+    polledAt: new Date().toISOString(),
+    pollAttemptFailed: true,
+    pollError: result.error || (result.online === false ? 'offline' : null),
+    consecutivePollFailures: consecutiveFailures,
+  };
+}
+
+function resolveStatusAfterPoll(row, failed, consecutiveFailures) {
+  if (!failed) return 'online';
+  if (hasRecentHeartbeatPresence(row)) return row.status === 'online' ? 'online' : row.status;
+  if (consecutiveFailures >= OFFLINE_AFTER_FAILURES) return 'offline';
+  return row.status;
 }
 
 export function isPollStale(lastSeen, staleMs = STALE_MS) {
@@ -76,14 +118,13 @@ export async function persistPollResult(row, result) {
   const prevFailures = row.credentials?.consecutiveFailures || 0;
   const failed = !result.online || Boolean(result.error);
   const consecutiveFailures = failed ? prevFailures + 1 : 0;
-  const status = failed
-    ? (consecutiveFailures >= OFFLINE_AFTER_FAILURES ? 'offline' : row.status)
-    : 'online';
+  const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
+  const lastSnmp = failed ? mergeFailedPollSnmp(row, result, consecutiveFailures) : result;
 
   const [updated] = await db.update(equipment).set({
     status,
-    lastSeen: new Date(),
-    credentials: { ...(row.credentials || {}), lastSnmp: result, consecutiveFailures },
+    lastSeen: failed && hasRecentHeartbeatPresence(row) ? row.lastSeen : new Date(),
+    credentials: { ...(row.credentials || {}), lastSnmp, consecutiveFailures: failed ? consecutiveFailures : 0 },
     updatedAt: new Date(),
   }).where(eq(equipment.id, row.id)).returning();
   return updated;
@@ -92,7 +133,8 @@ export async function persistPollResult(row, result) {
 export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
   const lastMetrics = item.credentials?.lastMetrics;
-  const wireless = mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics);
+  const pollMethod = lastSnmp?.pollMethod;
+  const wireless = mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics, pollMethod);
   const metricsFromHeartbeat = isMetricsFresh(lastMetrics)
     && Boolean(lastMetrics?.signal)
     && (!lastSnmp?.wireless?.signalDbm || (lastSnmp?.pollMethod === 'edgerouter-arp'));
@@ -134,17 +176,25 @@ async function applyPollResults(items, results) {
     const prevFailures = row.credentials?.consecutiveFailures || 0;
     const failed = !r.online || Boolean(r.error);
     const consecutiveFailures = failed ? prevFailures + 1 : 0;
-    const status = failed
-      ? (consecutiveFailures >= OFFLINE_AFTER_FAILURES ? 'offline' : row.status)
-      : 'online';
+    const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
+    const lastSnmp = failed ? mergeFailedPollSnmp(row, r, consecutiveFailures) : r;
+    const keepHeartbeatSeen = failed && hasRecentHeartbeatPresence(row);
 
     const patch = {
       status,
-      lastSeen: new Date(),
-      credentials: { ...(row.credentials || {}), lastSnmp: r, consecutiveFailures },
+      lastSeen: keepHeartbeatSeen ? row.lastSeen : new Date(),
+      credentials: {
+        ...(row.credentials || {}),
+        lastSnmp,
+        consecutiveFailures: failed ? consecutiveFailures : 0,
+      },
     };
 
-    if (!r.error || consecutiveFailures >= OFFLINE_AFTER_FAILURES) {
+    const shouldPersist = !failed
+      || consecutiveFailures >= OFFLINE_AFTER_FAILURES
+      || !keepHeartbeatSeen;
+
+    if (shouldPersist) {
       await db.update(equipment).set({ ...patch, updatedAt: new Date() })
         .where(eq(equipment.id, row.id));
     }
@@ -155,24 +205,35 @@ async function applyPollResults(items, results) {
   return items.map((e) => attachEquipmentDisplay(byId.get(e.id) || e));
 }
 
+function filterPollableFromRender(items, routerBySite) {
+  return items.filter((eq) => {
+    if (!isPollable(eq)) return false;
+    const router = eq.siteId ? routerBySite.get(eq.siteId) : null;
+    // Sitio con agente EdgeRouter: SNMP lo hace el heartbeat local, Render no alcanza la LAN
+    if (router && isEdgeRouterAgent(router)) return false;
+    return true;
+  });
+}
+
 /** Poll stale CPE/AP devices and update DB (max N per request to avoid timeouts). */
 export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 } = {}) {
-  const stale = items.filter((e) => isPollable(e) && isPollStale(e.lastSeen));
+  const routerBySite = await buildRouterBySiteMap(items, orgId);
+  const stale = filterPollableFromRender(items, routerBySite)
+    .filter((e) => isPollStale(e.lastSeen));
   if (!stale.length) return items.map(attachEquipmentDisplay);
 
   const toPoll = stale.slice(0, maxPoll);
-  const routerBySite = await buildRouterBySiteMap(toPoll, orgId);
   const results = await pollEquipmentList(toPoll, routerBySite);
   return applyPollResults(items, results);
 }
 
-/** Fuerza poll SNMP de todos los equipos pollables (background refresh). */
+/** Fuerza poll SNMP de equipos alcanzables desde Render (no sitios EdgeRouter-agent). */
 export async function forceRefreshEquipmentStatus(items, orgId, { maxPoll = 15 } = {}) {
-  const pollable = items.filter(isPollable);
+  const routerBySite = await buildRouterBySiteMap(items, orgId);
+  const pollable = filterPollableFromRender(items, routerBySite);
   if (!pollable.length) return items.map(attachEquipmentDisplay);
 
   const toPoll = pollable.slice(0, maxPoll);
-  const routerBySite = await buildRouterBySiteMap(toPoll, orgId);
   const results = await pollEquipmentList(toPoll, routerBySite);
   return applyPollResults(items, results);
 }
