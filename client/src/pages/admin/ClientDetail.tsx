@@ -56,6 +56,11 @@ function flattenSites(tree: any[]): any[] {
   return acc
 }
 
+function apiErrorMessage(e: any, fallback: string) {
+  const raw = e.response?.data?.error || e.message || fallback
+  return String(raw).replace(/^Error al eliminar servicio:\s*/i, '')
+}
+
 export default function ClientDetail({ clientId, API, onBack }: Props) {
   const [client, setClient] = useState<any>(null)
   const [services, setServices] = useState<any[]>([])
@@ -123,12 +128,32 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     }).catch(() => {})
   }, [clientId])
 
-  async function loadClientEquipment() {
+  async function loadClientEquipment(options: { quick?: boolean } = {}) {
     try {
-      const res = await api().get(`/clients/${clientId}/equipment`)
+      const qs = options.quick ? '?quick=1' : ''
+      const res = await api().get(`/clients/${clientId}/equipment${qs}`)
       setClientEquipment(Array.isArray(res.data) ? res.data : [])
     } catch {
       setClientEquipment([])
+    }
+  }
+
+  async function pollEquipmentUntilFresh(maxAttempts = 12, intervalMs = 1500) {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise<void>((r) => setTimeout(r, intervalMs))
+      const res = await api().get(`/clients/${clientId}/equipment?quick=1`)
+      const items: any[] = Array.isArray(res.data) ? res.data : []
+      setClientEquipment(items)
+      if (!items.some((e: any) => e.isStale)) break
+    }
+  }
+
+  async function startBackgroundSnmpRefresh() {
+    try {
+      await api().post(`/clients/${clientId}/equipment/refresh`)
+      await pollEquipmentUntilFresh()
+    } catch {
+      // refresh en background — sin toast
     }
   }
 
@@ -136,19 +161,9 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
     if (!clientEquipment.length) return
     setSnmpRefreshing(true)
     try {
-      // 202 inmediato — el poll SNMP corre en background
       await api().post(`/clients/${clientId}/equipment/refresh`)
-      // Polling cada 2s hasta datos frescos o confirmación offline (máx 10 intentos = 20s)
-      for (let i = 0; i < 10; i++) {
-        await new Promise<void>((r) => setTimeout(r, 2000))
-        const res = await api().get(`/clients/${clientId}/equipment`)
-        const items: any[] = Array.isArray(res.data) ? res.data : []
-        setClientEquipment(items)
-        // Parar si ningún equipo tiene datos obsoletos (incluye offline fresco = isStale:false)
-        if (!items.some((e: any) => e.isStale)) break
-      }
+      await pollEquipmentUntilFresh(10, 2000)
     } catch (err: any) {
-      // Sin alert nativo — mostrar banner inline que no bloquea el browser
       toast(err.response?.data?.error || 'No se pudo iniciar actualización SNMP', 'error')
     }
     setSnmpRefreshing(false)
@@ -176,7 +191,8 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
       setServices(filterByClientId(Array.isArray(sRes.data) ? sRes.data : [], clientId))
       setInvoices(filterByClientId(Array.isArray(iRes.data) ? iRes.data : [], clientId))
       setTickets(filterByClientId(Array.isArray(tRes.data) ? tRes.data : [], clientId))
-      await loadClientEquipment()
+      await loadClientEquipment({ quick: true })
+      void startBackgroundSnmpRefresh()
 
       const clientServices = (Array.isArray(sRes.data) ? sRes.data : []).filter((s: any) =>
         Number(s.client?.id) === Number(clientId) || Number(s.clientId) === Number(clientId))
@@ -368,10 +384,12 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   async function deleteService(serviceId: number, planName: string) {
     if (!confirm(`¿Eliminar el servicio "${planName}"?\n\nEl abonado conserva su cuenta. Las facturas pendientes de este servicio se borrarán; las pagadas quedan en el historial.`)) return
     try {
-      await api().delete(`/services/${serviceId}`)
+      const res = await api().delete(`/services/${serviceId}`)
+      const n = res.data?.deletedInvoices
+      toast(n ? `Servicio eliminado (${n} factura${n !== 1 ? 's' : ''} pendiente${n !== 1 ? 's' : ''} borrada${n !== 1 ? 's' : ''})` : 'Servicio eliminado', 'success')
       loadAll()
     } catch (e: any) {
-      toast('Error al eliminar servicio: ' + (e.response?.data?.error || e.message), 'error')
+      toast(apiErrorMessage(e, 'No se pudo eliminar el servicio'), 'error')
     }
   }
 
@@ -1080,14 +1098,14 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 Link {linkScore}
               </button>
             )}
-            {totalDeuda > 0 && (
+          {totalDeuda > 0 && (
               <div className="px-3 py-1.5 rounded-full bg-red-500/10 border border-red-400/20">
                 <span className="text-xs text-red-300 font-bold">${totalDeuda.toLocaleString('es-CL')}</span>
-              </div>
-            )}
+            </div>
+          )}
             <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${activeService ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20' : 'bg-white/[0.04] text-slate-500 border-white/[0.08]'}`}>
               {activeService ? 'Servicio activo' : 'Sin servicio'}
-            </span>
+          </span>
             <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
               !primaryAntenna ? 'bg-amber-500/10 text-amber-300 border-amber-400/20'
                 : antennaOnline ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20'
@@ -1149,7 +1167,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                     {openTickets.slice(0, 2).map((t) => t.subject).join(' · ')}
                     {openTicketsCount > 2 ? ` · +${openTicketsCount - 2} más` : ''}
                   </p>
-                </div>
+              </div>
                 <button type="button" onClick={() => setActiveTab('tickets')}
                   className="px-4 py-2 bg-amber-500/80 text-white rounded-xl text-sm font-medium hover:bg-amber-500 shrink-0">
                   Ver tickets
@@ -1228,7 +1246,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <div><span className="text-slate-600">Precio:</span> ${Number(s.plan?.price || 0).toLocaleString('es-CL')}</div>
                     </div>
                     <div className="flex gap-2 mt-3">
-                      <button onClick={() => toggleService(s.id, s.status)}
+                    <button onClick={() => toggleService(s.id, s.status)}
                         className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border ${
                           s.status === 'active' ? 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10' : 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
                         }`}>
@@ -1237,7 +1255,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                       <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                         className="px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 text-red-300 hover:bg-red-500/10 flex items-center gap-1">
                         <Trash2 className="h-3.5 w-3.5" /> Eliminar
-                      </button>
+                    </button>
                     </div>
                   </div>
                 ))}
@@ -1276,7 +1294,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                   <div key={inv.id} className="flex items-center justify-between py-2 border-b border-white/[0.05] last:border-0">
                     <div>
                       <p className="text-sm font-medium text-slate-200">{inv.invoiceNumber}</p>
-                      <p className="text-xs text-slate-500">{inv.billingPeriod || formatDateCL(inv.dueDate)}</p>
+                      <p className="text-xs text-slate-500">{formatDateCL(inv.dueDate) || inv.billingPeriod || '—'}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-white">${Number(inv.total).toLocaleString('es-CL')}</p>
@@ -1410,27 +1428,27 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 <Plus className="h-4 w-4" /> Nuevo servicio
               </button>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              {services.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <Wifi className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                  <p className="font-medium">Sin servicios asignados</p>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            {services.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">
+                <Wifi className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <p className="font-medium">Sin servicios asignados</p>
                   <button onClick={() => setShowServiceForm(true)} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer servicio</button>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {services.map(s => (
-                    <div key={s.id} className="p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="font-bold text-lg text-gray-900">{s.plan?.name}</h3>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {services.map(s => (
+                  <div key={s.id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-gray-900">{s.plan?.name}</h3>
                           <p className="text-gray-500">${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
-                        </div>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
-                          {statusLabel[s.status] || s.status}
-                        </span>
                       </div>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
+                        {statusLabel[s.status] || s.status}
+                      </span>
+                    </div>
 
                       {(s.queueName || s.networkMeta?.maxLimit || s.plan) && (
                         <div className="mb-4 max-w-md">
@@ -1544,18 +1562,18 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                         <DollarSign className="h-4 w-4" /> {generatingInvoice === s.id ? 'Generando...' : 'Generar factura'}
                       </button>
                       <button onClick={() => toggleService(s.id, s.status)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${s.status === 'active' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                          {s.status === 'active' ? <><PowerOff className="h-4 w-4" /> Suspender</> : <><Power className="h-4 w-4" /> Reactivar</>}
-                        </button>
+                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${s.status === 'active' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                        {s.status === 'active' ? <><PowerOff className="h-4 w-4" /> Suspender</> : <><Power className="h-4 w-4" /> Reactivar</>}
+                      </button>
                         <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                           className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-red-50 text-red-700 hover:bg-red-100">
                           <Trash2 className="h-4 w-4" /> Eliminar
                         </button>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                ))}
+              </div>
+            )}
             </div>
           </div>
         )}
@@ -1622,14 +1640,14 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                 <h3 className="font-semibold text-gray-900">Tickets de {client.user?.fullName}</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{openTicketsCount} abiertos · visible en portal cliente</p>
               </div>
-              {tickets.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <Ticket className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                  <p className="font-medium">Sin tickets registrados</p>
-                </div>
-              ) : (
+            {tickets.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">
+                <Ticket className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <p className="font-medium">Sin tickets registrados</p>
+              </div>
+            ) : (
                 <div className="divide-y max-h-[520px] overflow-y-auto">
-                  {tickets.map(t => (
+                {tickets.map(t => (
                     <button
                       key={t.id}
                       type="button"
@@ -1641,13 +1659,13 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${statusColor[t.status] || 'bg-gray-100'}`}>
                           {statusLabel[t.status] || t.status}
                         </span>
-                      </div>
+                        </div>
                       <p className="text-xs text-gray-400 mt-1 font-mono">{t.ticketNumber}</p>
                     </button>
                   ))}
-                </div>
+                        </div>
               )}
-            </div>
+                      </div>
 
             <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
               {!selectedTicketId ? (
@@ -1681,7 +1699,7 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                         </select>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[ticketDetail.priority] || 'bg-gray-100'}`}>
                           {statusLabel[ticketDetail.priority] || ticketDetail.priority}
-                        </span>
+                      </span>
                       </div>
                     </div>
                   </div>
@@ -1706,10 +1724,10 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
                           </p>
                           <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
                           <p className="text-[10px] opacity-60 mt-2">{new Date(msg.createdAt).toLocaleString('es-CL')}</p>
-                        </div>
-                      </div>
-                    ))}
+                    </div>
                   </div>
+                ))}
+              </div>
 
                   {!['closed', 'resolved'].includes(ticketDetail.status) && (
                     <form onSubmit={sendTicketReply} className="p-4 border-t bg-gray-50">

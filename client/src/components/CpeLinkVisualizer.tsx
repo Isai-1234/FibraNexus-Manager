@@ -143,6 +143,7 @@ interface Props {
   onExpand?: () => void
   onRefresh?: () => void
   refreshing?: boolean
+  isStale?: boolean
   className?: string
   cpeImageUrl?: string
   towerImageUrl?: string
@@ -486,7 +487,8 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
 }
 
 export default function CpeLinkVisualizer({
-  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false, className = '',
+  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false,
+  isStale = false, className = '',
   cpeImageUrl = LINK_VISUAL_ASSETS.cpe,
   towerImageUrl = LINK_VISUAL_ASSETS.tower,
 }: Props) {
@@ -784,8 +786,15 @@ export default function CpeLinkVisualizer({
       )}
 
       {equipment.snmpPolledAt && (
-        <p className="px-6 pb-4 text-[10px] text-slate-700 font-mono">
-          snmp · {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
+        <p className="px-6 pb-4 text-[10px] text-slate-700 font-mono flex items-center gap-2">
+          <span>
+            {(equipment.snmpPollMethod === 'heartbeat' ? 'heartbeat' : 'snmp')}
+            {' · '}
+            {new Date(equipment.snmpPolledAt).toLocaleString('es-CL')}
+          </span>
+          {(isStale || refreshing) && (
+            <span className="text-cyan-500/70 animate-pulse">actualizando…</span>
+          )}
         </p>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, users, invoices, tickets, clientServices, payments, equipment } from '../db/schema.js';
+import { clients, users, invoices, tickets, clientServices, payments, equipment, detectedDevices } from '../db/schema.js';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
@@ -8,9 +8,13 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { listClientEquipment } from '../lib/equipmentClientLink.js';
-import { attachSnmpDisplay, isPollable, isPollStale } from '../lib/equipmentStatus.js';
+import {
+  refreshStaleEquipmentStatus,
+  forceRefreshEquipmentStatus,
+  attachEquipmentDisplay,
+  isPollable,
+} from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
-import { dispatch, JobNames } from '../lib/jobs/queue.js';
 
 export const clientsRouter = Router();
 
@@ -66,52 +70,64 @@ clientsRouter.get('/:id/equipment', requireRole('admin', 'technician'), async (r
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const clientId = parseInt(req.params.id, 10);
-    const items = await listClientEquipment(clientId, orgId);
+    const quick = req.query.quick === '1' || req.query.quick === 'true';
+    let items = await listClientEquipment(clientId, orgId);
 
-    // Capa 4: respuesta inmediata desde caché BD — sin esperar SNMP
-    res.json(items.map((e) => ({ ...attachSnmpDisplay(e), isStale: isPollStale(e.lastSeen) })));
-
-    // Enriquecimiento de MAC en background — no bloquea al usuario
-    Promise.resolve().then(async () => {
-      for (const item of items) {
-        if (item.ipAddress && !item.macAddress && item.siteId) {
-          try {
-            const mac = await enrichMacFromDhcp(orgId, {
-              siteId: item.siteId,
-              ipAddress: item.ipAddress,
-              macAddress: null,
-            });
-            if (mac) {
-              await db.update(equipment).set({ macAddress: mac, updatedAt: new Date() })
-                .where(eq(equipment.id, item.id));
-            }
-          } catch { /* silencioso */ }
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.ipAddress && !item.macAddress && item.siteId) {
+        const mac = await enrichMacFromDhcp(orgId, {
+          siteId: item.siteId,
+          ipAddress: item.ipAddress,
+          macAddress: null,
+        });
+        if (mac) {
+          await db.update(equipment).set({ macAddress: mac, updatedAt: new Date() })
+            .where(eq(equipment.id, item.id));
+          items[i] = { ...item, macAddress: mac };
         }
       }
-    }).catch(() => {});
+    }
+
+    items = quick
+      ? items.map(attachEquipmentDisplay)
+      : await refreshStaleEquipmentStatus(items, orgId);
+    res.json(items);
   } catch (error) {
     const status = error.message === 'Abonado no encontrado' ? 404 : 500;
     res.status(status).json({ error: error.message || 'Error al listar equipos' });
   }
 });
 
+/** Poll SNMP en background — respuesta inmediata para no bloquear la UI. */
 clientsRouter.post('/:id/equipment/refresh', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const clientId = parseInt(req.params.id, 10);
-    const items = await listClientEquipment(clientId, orgId);
+    let items = await listClientEquipment(clientId, orgId);
     const pollable = items.filter(isPollable);
 
-    // Respuesta 202 inmediata — los polls corren en background
-    res.status(202).json({ queued: pollable.length, skipped: items.length - pollable.length });
+    res.status(202).json({
+      ok: true,
+      polling: pollable.length,
+      message: pollable.length
+        ? 'Actualización SNMP iniciada'
+        : 'Sin equipos con IP y community SNMP',
+    });
 
-    Promise.all(
-      pollable.map((eq) => dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: eq.id, orgId })),
-    ).catch((err) => console.error('[equipment-refresh]', err.message));
+    if (!pollable.length) return;
+
+    setImmediate(async () => {
+      try {
+        await forceRefreshEquipmentStatus(items, orgId, { maxPoll: pollable.length });
+      } catch (err) {
+        console.error('[equipment-refresh] client=%s error=%s', clientId, err.message);
+      }
+    });
   } catch (error) {
     const status = error.message === 'Abonado no encontrado' ? 404 : 500;
-    res.status(status).json({ error: error.message || 'Error al iniciar actualización' });
+    res.status(status).json({ error: error.message || 'Error al iniciar actualización SNMP' });
   }
 });
 
@@ -196,6 +212,19 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
     if (!existing.length) return res.status(404).json({ error: 'Abonado no encontrado' });
+
+    const svcRows = await db.select({ id: clientServices.id })
+      .from(clientServices).where(eq(clientServices.clientId, clientId));
+    const serviceIds = svcRows.map((s) => s.id);
+
+    if (serviceIds.length) {
+      await db.update(detectedDevices)
+        .set({ status: 'detected', adoptedAsClientServiceId: null, updatedAt: new Date() })
+        .where(inArray(detectedDevices.adoptedAsClientServiceId, serviceIds));
+      await db.update(equipment)
+        .set({ clientId: null, detectedDeviceId: null, updatedAt: new Date() })
+        .where(and(eq(equipment.clientId, clientId), orgFilter(equipment, orgId)));
+    }
 
     const clientInvoices = await db.select({ id: invoices.id })
       .from(invoices).where(eq(invoices.clientId, clientId));

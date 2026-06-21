@@ -175,7 +175,7 @@ export function buildEdgeosHeartbeatScript(token, serverUrl) {
     "        SEC=$(echo \"$SNMP_UP\" | sed -n 's/.*(\([0-9]*\)).*/\\1/p'); [ -z \"$SEC\" ] && SEC=0",
     '        SNMP_DATA="${SNMP_DATA}${EID},1,${SEC};"',
     '        # Métricas Ubiquiti airMAX: sig,noise,ccq,cinr,tx,rx — v2c primero, v1 fallback',
-    '        _M=$(snmpget -v2c -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.5.1 .1.3.6.1.4.1.41112.1.4.5.1.8.1 .1.3.6.1.4.1.41112.1.4.5.1.6.1 .1.3.6.1.4.1.41112.1.4.5.1.14.1 .1.3.6.1.4.1.41112.1.4.5.1.9.1 .1.3.6.1.4.1.41112.1.4.5.1.10.1 2>/dev/null) || _M=$(snmpget -v1 -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.5.1 .1.3.6.1.4.1.41112.1.4.5.1.8.1 .1.3.6.1.4.1.41112.1.4.5.1.6.1 .1.3.6.1.4.1.41112.1.4.5.1.14.1 .1.3.6.1.4.1.41112.1.4.5.1.9.1 .1.3.6.1.4.1.41112.1.4.5.1.10.1 2>/dev/null)',
+        '        _M=$(snmpget -v2c -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.5.1 .1.3.6.1.4.1.41112.1.4.5.1.8.1 .1.3.6.1.4.1.41112.1.4.5.1.7.1 .1.3.6.1.4.1.41112.1.4.5.1.14.1 .1.3.6.1.4.1.41112.1.4.5.1.9.1 .1.3.6.1.4.1.41112.1.4.5.1.10.1 2>/dev/null) || _M=$(snmpget -v1 -c "$COMM" -t 2 -r 0 -Oqv "$IP" .1.3.6.1.4.1.41112.1.4.5.1.5.1 .1.3.6.1.4.1.41112.1.4.5.1.8.1 .1.3.6.1.4.1.41112.1.4.5.1.7.1 .1.3.6.1.4.1.41112.1.4.5.1.14.1 .1.3.6.1.4.1.41112.1.4.5.1.9.1 .1.3.6.1.4.1.41112.1.4.5.1.10.1 2>/dev/null)',
     "        _SIG=$(echo \"$_M\" | sed -n '1p' | grep -oE '^-?[0-9]+')",
     "        _NOISE=$(echo \"$_M\" | sed -n '2p' | grep -oE '^-?[0-9]+')",
     "        _CCQ=$(echo \"$_M\" | sed -n '3p' | grep -oE '^[0-9]+')",
@@ -461,7 +461,13 @@ export async function agentHeartbeatHandler(req, res) {
         const cpeMac = normMac(cpe.macAddress);
         const arpEntry = creds.heartbeatArp.find(a => normMac(a.mac) === cpeMac);
         if (!arpEntry) continue;
-        const lastSnmpPatch = { polledAt: new Date().toISOString(), pollMethod: 'edgerouter-arp', online: true };
+        const prevSnmp = cpe.credentials?.lastSnmp || {};
+        const lastSnmpPatch = {
+          ...prevSnmp,
+          polledAt: new Date().toISOString(),
+          pollMethod: 'edgerouter-arp',
+          online: true,
+        };
         await db.update(equipment).set({
           status: 'online',
           lastSeen: new Date(),
