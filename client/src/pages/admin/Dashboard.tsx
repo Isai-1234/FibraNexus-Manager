@@ -7,6 +7,7 @@ import NetworkManager from './NetworkManager'
 import BillingSettings from './BillingSettings'
 import DetectedDevices from './DetectedDevices'
 import { formatDateCL } from '../../lib/formatDate'
+import DeviceIpLink from '../../components/DeviceIpLink'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -38,6 +39,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   useEffect(() => { loadData() }, [activeTab, equipmentSubTab])
+
+  // Red ISP no es una pestaña de datos: siempre abre NetworkManager
+  useEffect(() => {
+    if (activeTab === 'network' && !showNetwork && !showRouters && !showBillingSettings && !selectedClientId) {
+      setShowNetwork(true)
+    }
+  }, [activeTab, showNetwork, showRouters, showBillingSettings, selectedClientId])
 
   useEffect(() => {
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
@@ -377,7 +385,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
-          onTabClick={(id) => { setShowNetwork(false); setActiveTab(id) }} />
+          onTabClick={(id) => {
+            if (id === 'network') return
+            setShowNetwork(false)
+            setActiveTab(id)
+          }} />
         <NetworkManager
           API={API}
           onBack={() => { setShowNetwork(false); setActiveTab('dashboard') }}
@@ -394,7 +406,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
-          onTabClick={(id) => { setShowRouters(false); setActiveTab(id) }} />
+          onTabClick={(id) => {
+            if (id === 'network') { setShowRouters(false); setShowNetwork(true); return }
+            setShowRouters(false)
+            setActiveTab(id)
+          }} />
         <RouterManager API={API} onBack={() => { setShowRouters(false); setShowNetwork(true) }} />
       </div>
     )
@@ -458,7 +474,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         onTabClick={(id) => {
           if (id === 'network') { setShowNetwork(true); return }
           if (id === 'billing-settings') { setShowBillingSettings(true); return }
-          setActiveTab(id); setData([]); setError('')
+          setShowNetwork(false)
+          setShowBillingSettings(false)
+          setActiveTab(id)
+          setData([])
+          setError('')
         }} />
 
       {/* Main Content */}
@@ -477,7 +497,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {tabDescriptions[activeTab] && (
               <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && (
+            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
               <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
@@ -486,7 +506,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
@@ -647,13 +667,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               {c.pendingAmount > 0 && ` · Saldo $${c.pendingAmount.toLocaleString('es-CL')}`}
                             </p>
                             {c.ipAddress && (
-                              <button
-                                type="button"
-                                onClick={() => openClientProfile(c.id, 'equipment')}
+                              <DeviceIpLink
+                                ip={c.ipAddress}
                                 className="mt-1 inline-flex items-center gap-1 text-xs font-mono text-blue-600 hover:underline"
+                                title="Abrir interfaz web de la antena"
                               >
                                 <Router className="h-3 w-3" /> {c.ipAddress}
-                              </button>
+                              </DeviceIpLink>
                             )}
                           </div>
                           <button onClick={() => openClientProfile(c.id)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Gestionar</button>
@@ -844,15 +864,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               </span>
                             )}
                             {item.ipAddress ? (
-                              <button
-                                type="button"
-                                onClick={() => openClientProfile(item.id, 'equipment')}
+                              <DeviceIpLink
+                                ip={item.ipAddress}
                                 className="inline-flex items-center gap-1 text-xs font-mono text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition"
-                                title={item.equipmentName ? `Gestionar ${item.equipmentName}` : 'Abrir antena y equipos del abonado'}
+                                title={item.equipmentName ? `Abrir ${item.equipmentName} en el navegador` : 'Abrir antena en el navegador'}
                               >
                                 <Router className="h-3 w-3 shrink-0" />
                                 {item.ipAddress}
-                              </button>
+                              </DeviceIpLink>
                             ) : (
                               <span className="text-xs text-gray-400">Sin IP asignada</span>
                             )}

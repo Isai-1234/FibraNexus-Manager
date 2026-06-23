@@ -5,6 +5,7 @@ import { formatDateCL, todayISO } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import CpeLinkVisualizer, { computeLinkScore, linkTheme } from '../../components/CpeLinkVisualizer'
+import DeviceIpLink from '../../components/DeviceIpLink'
 
 interface Props {
   clientId: number
@@ -1097,7 +1098,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   <MapPin className="h-3 w-3 shrink-0" />
                   Nodo {primaryAntenna.siteName}
                   {primaryAntenna.ipAddress && (
-                    <span className="text-slate-500 font-mono">· {String(primaryAntenna.ipAddress).split('/')[0]}</span>
+                    <>
+                      {' · '}
+                      <DeviceIpLink
+                        ip={primaryAntenna.ipAddress}
+                        className="text-cyan-400/90 font-mono hover:underline"
+                        title="Abrir interfaz web de la antena"
+                      />
+                    </>
                   )}
                 </p>
               )}
@@ -1374,9 +1382,24 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
                           <div>
                             <span className="text-gray-400">IP:</span>{' '}
-                            <span className="font-mono">{eq.ipAddress || '—'}</span>
+                            {eq.ipAddress ? (
+                              <DeviceIpLink
+                                ip={eq.ipAddress}
+                                className="font-mono text-blue-600 hover:underline"
+                                title="Abrir interfaz web del equipo"
+                              />
+                            ) : (
+                              <span className="font-mono">—</span>
+                            )}
                             {eq.credentials?.resolvedIp && eq.credentials.connectionMode !== 'static' && (
-                              <span className="ml-1 text-emerald-600 font-mono">→ {eq.credentials.resolvedIp}</span>
+                              <>
+                                {' '}
+                                <DeviceIpLink
+                                  ip={eq.credentials.resolvedIp}
+                                  className="text-emerald-600 font-mono hover:underline"
+                                  title="Abrir IP resuelta en el navegador"
+                                />
+                              </>
                             )}
                           </div>
                           <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>

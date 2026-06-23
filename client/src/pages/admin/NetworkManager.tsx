@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User
+  Layers, Antenna, Network, Search, Pencil, User, Radar
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
+import NetworkTopologyMap from '../../components/NetworkTopologyMap'
+import DetectedDevices from './DetectedDevices'
+import DeviceIpLink from '../../components/DeviceIpLink'
 
 interface Props {
   API: string
@@ -21,6 +24,14 @@ const SITE_TYPES = [
   { value: 'tower', label: 'Torre / Nodo' },
   { value: 'node', label: 'Nodo secundario' },
   { value: 'office', label: 'Oficina' },
+]
+
+type NetworkView = 'topology' | 'tree' | 'detected'
+
+const NETWORK_VIEWS: { id: NetworkView; label: string; icon: typeof MapPin }[] = [
+  { id: 'topology', label: 'Topología', icon: Network },
+  { id: 'tree', label: 'Árbol', icon: Layers },
+  { id: 'detected', label: 'Detectados', icon: Radar },
 ]
 
 const EQUIP_TYPES = [
@@ -90,6 +101,7 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
   const [clients, setClients] = useState<any[]>([])
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
+  const [networkView, setNetworkView] = useState<NetworkView>('topology')
 
   function api() {
     return axios.create({
@@ -371,8 +383,31 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
         ))}
       </div>
 
+      <div className="px-6 pb-3">
+        <div className="inline-flex gap-1 bg-white border rounded-xl p-1 shadow-sm">
+          {NETWORK_VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setNetworkView(v.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                networkView === v.id ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <v.icon className="h-4 w-4" />
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {networkView === 'detected' ? (
+        <div className="flex-1 px-6 pb-6 overflow-auto min-h-0">
+          <DetectedDevices API={API} onOpenClient={onOpenClient ? (id) => onOpenClient(id, 'overview') : undefined} />
+        </div>
+      ) : (
       <div className="flex-1 flex gap-4 px-6 pb-6 min-h-0">
-        {/* Árbol sitios */}
+        {networkView === 'tree' && (
         <aside className="w-72 flex-shrink-0 bg-white rounded-xl border flex flex-col overflow-hidden">
           <div className="p-3 border-b flex justify-between items-center">
             <span className="text-sm font-semibold text-gray-700">Jerarquía de red</span>
@@ -413,15 +448,40 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
             </div>
           )}
         </aside>
+        )}
 
-        {/* Detalle sitio */}
-        <main className="flex-1 flex flex-col gap-4 min-w-0">
+        {networkView === 'topology' && (
+          <div className="flex-1 min-w-0 min-h-[480px] flex flex-col">
+            <NetworkTopologyMap
+              tree={tree}
+              selectedSiteId={selectedSite?.id}
+              onSelectSite={selectSite}
+            />
+          </div>
+        )}
+
+        <main className={`flex flex-col gap-4 min-w-0 ${networkView === 'topology' ? 'w-[420px] flex-shrink-0' : 'flex-1'}`}>
           {!selectedSite ? (
             <div className="flex-1 bg-white rounded-xl border flex items-center justify-center text-gray-400">
               <div className="text-center">
                 <Radio className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                <p className="font-medium">Selecciona un sitio o crea uno nuevo</p>
-                <p className="text-sm mt-1">Desde aquí agregas routers, switches y antenas del nodo</p>
+                <p className="font-medium">
+                  {networkView === 'topology' ? 'Selecciona un nodo en el mapa' : 'Selecciona un sitio o crea uno nuevo'}
+                </p>
+                <p className="text-sm mt-1">
+                  {networkView === 'topology'
+                    ? 'Clic en torre para gestionar el nodo · clic en antena para abrir su interfaz web'
+                    : 'Desde aquí agregas routers, switches y antenas del nodo'}
+                </p>
+                {networkView === 'topology' && (
+                  <button
+                    type="button"
+                    onClick={() => setNetworkView('tree')}
+                    className="mt-4 text-sm text-blue-600 hover:underline"
+                  >
+                    Ver jerarquía en Árbol →
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -474,20 +534,17 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
                           <p className="font-medium text-gray-900 truncate">{eq.name}</p>
                           <p className="text-xs text-gray-500">
                             {eq.type} · {eq.brand} {eq.model}
-                            {eq.ipAddress && eq.clientId && onOpenClient ? (
+                            {eq.ipAddress ? (
                               <>
                                 {' · '}
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenClient(eq.clientId, 'equipment')}
+                                <DeviceIpLink
+                                  ip={eq.ipAddress}
                                   className="font-mono text-blue-600 hover:underline"
-                                  title="Gestionar antena del abonado"
-                                >
-                                  {String(eq.ipAddress).split('/')[0]}
-                                </button>
+                                  title="Abrir interfaz web de la antena"
+                                />
                               </>
                             ) : (
-                              <> · {eq.ipAddress || 'sin IP'}</>
+                              <> · sin IP</>
                             )}
                           </p>
                           {eq.type === 'cpe' && eq.clientName && eq.clientId && onOpenClient && (
@@ -662,6 +719,7 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
           )}
         </main>
       </div>
+      )}
 
       {/* Modal sitio */}
       {showSiteForm && (
@@ -694,6 +752,23 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
                 <input className="w-full border rounded-lg px-3 py-2 mt-1" value={siteForm.address || ''}
                   onChange={e => setSiteForm({ ...siteForm, address: e.target.value })} />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-sm font-medium">Latitud</label>
+                  <input type="number" step="any" className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm"
+                    placeholder="-39.6436"
+                    value={siteForm.latitude ?? ''}
+                    onChange={e => setSiteForm({ ...siteForm, latitude: e.target.value || null })} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Longitud</label>
+                  <input type="number" step="any" className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm"
+                    placeholder="-72.3312"
+                    value={siteForm.longitude ?? ''}
+                    onChange={e => setSiteForm({ ...siteForm, longitude: e.target.value || null })} />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">Coordenadas opcionales para ubicar el nodo en mapas (Google Maps → clic derecho → copiar coordenadas).</p>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowSiteForm(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
