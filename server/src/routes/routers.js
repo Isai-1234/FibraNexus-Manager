@@ -274,16 +274,18 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const routersWithStatus = refreshed.map(r => {
       const agent = connectedAgents.get(r.id.toString());
       const connectionMethod = inferConnectionMethod(r);
+      const agentConnected = (agent != null && Date.now() - new Date(agent.lastSeen).getTime() < 120_000)
+        || (r.credentials?.lastHeartbeat
+          ? Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000
+          : r.status === 'online');
       return {
         ...r,
+        status: agentConnected ? 'online' : r.status,
         connectionMethod,
         hasApiCredentials: !!(r.credentials?.routerUser && r.credentials?.routerPass),
         credentials: { ...r.credentials, connectionMethod },
-        agentConnected: (agent != null && Date.now() - new Date(agent.lastSeen).getTime() < 120_000)
-          || (r.credentials?.lastHeartbeat
-            ? Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000
-            : r.status === 'online'),
-        agentLastSeen: agent?.lastSeen || r.lastSeen || null,
+        agentConnected,
+        agentLastSeen: agent?.lastSeen || r.credentials?.lastHeartbeat || r.lastSeen || null,
         routerInfo: agent?.routerInfo || r.credentials?.lastRouterInfo || null,
       };
     });

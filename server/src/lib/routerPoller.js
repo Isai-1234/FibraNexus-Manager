@@ -6,20 +6,25 @@ import { testRouterConnection } from './routerClient.js';
 import { isEdgeRouterType } from './edgeosClient.js';
 
 const STALE_MS = 2 * 60 * 1000;
+const HEARTBEAT_FRESH_MS = 120 * 1000;
+
+export function hasRecentAgentHeartbeat(router, freshMs = HEARTBEAT_FRESH_MS) {
+  const hb = router.credentials?.lastHeartbeat;
+  if (!hb) return false;
+  return Date.now() - new Date(hb).getTime() < freshMs;
+}
+
+function isEdgeRouterWithAgent(router) {
+  const creds = router.credentials || {};
+  return isEdgeRouterType(creds.routerType || '') && Boolean(creds.agentToken);
+}
 
 export function isApiPollableRouter(router) {
   if (router.type !== 'router') return false;
   const creds = router.credentials || {};
   if (!creds.routerUser || !creds.routerPass) return false;
-  // Dispositivo con agentToken → modo heartbeat únicamente, jamás pollear por API
-  if (creds.agentToken) return false;
   const type = creds.routerType || '';
-  if (isEdgeRouterType(type)) {
-    const method = inferConnectionMethod(router);
-    if (method === 'cloudflare_tunnel') return !!creds.tunnelHostname;
-    if (method === 'direct') return !!router.ipAddress;
-    return false;
-  }
+  if (isEdgeRouterType(type)) return true;
   const method = inferConnectionMethod(router);
   if (method === 'cloudflare_tunnel' && creds.tunnelHostname) return true;
   if (method === 'direct' && router.ipAddress) return true;
@@ -28,10 +33,15 @@ export function isApiPollableRouter(router) {
 }
 
 export function isRouterPollStale(router, staleMs = STALE_MS) {
-  // Cualquier router online con heartbeat reciente → no pollear (evita que un poll fallido pise el heartbeat)
-  if (router.status === 'online' && router.lastSeen) {
+  const creds = router.credentials || {};
+  const type = creds.routerType || '';
+  if (String(type).startsWith('mikrotik') && router.lastSeen && router.status === 'online') {
     const age = Date.now() - new Date(router.lastSeen).getTime();
     if (age < 90_000) return false;
+  }
+  // EdgeRouter con agente: heartbeat es la fuente de verdad; no forzar poll API vía túnel
+  if (isEdgeRouterWithAgent(router) && hasRecentAgentHeartbeat(router)) {
+    return false;
   }
   if (!router.lastSeen) return true;
   return Date.now() - new Date(router.lastSeen).getTime() > staleMs;
@@ -47,16 +57,20 @@ export async function pollRouterApi(router) {
 }
 
 export async function persistRouterPollResult(router, result) {
-  const creds = { ...(router.credentials || {}), lastRouterInfo: result.routerInfo || null, lastPollError: result.error || null };
-  // No pisar status='online' de un heartbeat reciente con un poll fallido
-  const hasRecentHeartbeat = creds.lastHeartbeat &&
-    Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000;
-  const newStatus = result.online ? 'online' : (hasRecentHeartbeat ? router.status : 'offline');
+  const heartbeatFresh = hasRecentAgentHeartbeat(router);
+  const online = result.online || heartbeatFresh;
+  const creds = {
+    ...(router.credentials || {}),
+    lastRouterInfo: result.routerInfo || router.credentials?.lastRouterInfo || null,
+    lastPollError: result.error || null,
+  };
   const [updated] = await db.update(equipment).set({
-    status: newStatus,
-    lastSeen: new Date(),
+    status: online ? 'online' : 'offline',
+    lastSeen: heartbeatFresh && !result.online ? router.lastSeen : new Date(),
     credentials: creds,
-    firmware: result.routerInfo?.version ? String(result.routerInfo.version).slice(0, 50) : router.firmware,
+    firmware: result.routerInfo?.version
+      ? String(result.routerInfo.version).slice(0, 50)
+      : router.firmware,
     updatedAt: new Date(),
   }).where(eq(equipment.id, router.id)).returning();
   return updated;
@@ -68,18 +82,16 @@ export async function pollAllRoutersForOrg(orgId, { maxPoll = 20 } = {}) {
 
   const candidates = routers.filter((r) => isApiPollableRouter(r) && isRouterPollStale(r));
   const toPoll = candidates.slice(0, maxPoll);
+  let online = 0;
+  let offline = 0;
 
-  // Paralelo: N routers offline ya no suman sus timeouts de 6s c/u
-  const results = await Promise.all(
-    toPoll.map(async (router) => {
-      const result = await pollRouterApi(router);
-      await persistRouterPollResult(router, result);
-      return result;
-    }),
-  );
+  for (const router of toPoll) {
+    const result = await pollRouterApi(router);
+    if (result.online) online++;
+    else offline++;
+    await persistRouterPollResult(router, result);
+  }
 
-  const online = results.filter((r) => r.online).length;
-  const offline = results.filter((r) => !r.online).length;
   return { polled: toPoll.length, online, offline, skipped: routers.length - toPoll.length };
 }
 

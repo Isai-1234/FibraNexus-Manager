@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud } from 'lucide-react'
 import axios from 'axios'
-import EdgeOSManager from './EdgeOSManager'
-import BandwidthSparkline from '../../components/BandwidthSparkline'
 
 interface Props { API: string; onBack: () => void }
 
@@ -115,54 +113,8 @@ function resolveConnectionMethod(router: any) {
   return router.credentials?.connectionMethod || 'direct'
 }
 
-function resolveHost(router: any) {
-  return router.ipAddress || router.credentials?.tunnelHostname || null
-}
-
-function RouterBrandImage({ brand, routerType, connected }: { brand: string; routerType?: string; connected?: boolean }) {
-  const b = (brand || '').toLowerCase()
-  const rt = (routerType || '').toLowerCase()
-  const isUbiquiti = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-  const isMikrotik = b === 'mikrotik' || rt.startsWith('mikrotik')
-
-  const dot = (
-    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${connected ? 'bg-green-500' : 'bg-gray-300'}`} />
-  )
-
-  if (isUbiquiti) return (
-    <div className="relative shrink-0">
-      <div className="w-11 h-11 rounded-xl bg-[#0559C9] flex items-center justify-center shadow-sm">
-        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-white">
-          <path d="M20 4C11.16 4 4 11.16 4 20s7.16 16 16 16 16-7.16 16-16S28.84 4 20 4zm0 6c5.52 0 10 4.48 10 10s-4.48 10-10 10S10 25.52 10 20 14.48 10 20 10zm0 4a6 6 0 100 12A6 6 0 0020 14zm0 3a3 3 0 110 6 3 3 0 010-6z"/>
-        </svg>
-      </div>
-      {dot}
-    </div>
-  )
-
-  if (isMikrotik) return (
-    <div className="relative shrink-0">
-      <div className="w-11 h-11 rounded-xl bg-[#CC0000] flex items-center justify-center shadow-sm">
-        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-white">
-          <path d="M8 10h4v20H8zm10 0h4l8 10-8 10h-4l8-10z"/>
-        </svg>
-      </div>
-      {dot}
-    </div>
-  )
-
-  return (
-    <div className="relative shrink-0">
-      <div className="w-11 h-11 rounded-xl bg-gray-200 flex items-center justify-center shadow-sm">
-        <svg viewBox="0 0 40 40" className="w-7 h-7 fill-gray-500">
-          <rect x="6" y="15" width="28" height="10" rx="2"/>
-          <circle cx="30" cy="20" r="2.5"/>
-          <rect x="8" y="18" width="16" height="4" rx="1"/>
-        </svg>
-      </div>
-      {dot}
-    </div>
-  )
+function isRouterOnline(router: any) {
+  return Boolean(router.agentConnected) || router.status === 'online'
 }
 
 export default function RouterManager({ API, onBack }: Props) {
@@ -178,16 +130,11 @@ export default function RouterManager({ API, onBack }: Props) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
   const [mikrotikScript, setMikrotikScript] = useState<any>(null)
-  const [edgeosScript, setEdgeosScript] = useState<any>(null)
   const [editingRouter, setEditingRouter] = useState<any>(null)
   const [credForm, setCredForm] = useState<any>({})
   const [credSaving, setCredSaving] = useState(false)
   const [credTesting, setCredTesting] = useState(false)
   const [credTestResult, setCredTestResult] = useState<any>(null)
-  const [credTab, setCredTab] = useState<'api' | 'heartbeat'>('api')
-  const [credTokenValue, setCredTokenValue] = useState('')
-  const [tokenRegenerating, setTokenRegenerating] = useState(false)
-  const [edgeosManagerRouter, setEdgeosManagerRouter] = useState<any>(null)
 
   function api() {
     return axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } })
@@ -196,17 +143,17 @@ export default function RouterManager({ API, onBack }: Props) {
   useEffect(() => { loadRouters() }, [])
 
   useEffect(() => {
-    const interval = setInterval(() => loadRouters(true), 30000)
+    const interval = setInterval(loadRouters, 30000)
     return () => clearInterval(interval)
   }, [])
 
-  async function loadRouters(silent = false) {
-    if (!silent) setLoading(true)
+  async function loadRouters() {
+    setLoading(true)
     try {
       const res = await api().get('/routers')
       setRouters(Array.isArray(res.data) ? res.data : [])
-    } catch { if (!silent) setRouters([]) }
-    if (!silent) setLoading(false)
+    } catch { setRouters([]) }
+    setLoading(false)
   }
 
   async function handleCreate() {
@@ -218,12 +165,6 @@ export default function RouterManager({ API, onBack }: Props) {
         try {
           const scriptRes = await api().get(`/routers/${res.data.id}/mikrotik-script`)
           setMikrotikScript(scriptRes.data)
-        } catch { }
-      }
-      if (form.routerType === 'edgerouter_v4' && res.data.id) {
-        try {
-          const scriptRes = await api().get(`/routers/${res.data.id}/edgeos-script`)
-          setEdgeosScript(scriptRes.data)
         } catch { }
       }
       setStep(4)
@@ -260,11 +201,7 @@ export default function RouterManager({ API, onBack }: Props) {
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
-  async function openCredentials(router: any) {
-    const isUbiquitiRouter = (router.brand || '').toLowerCase() === 'ubiquiti'
-    setCredTab(isUbiquitiRouter ? 'heartbeat' : 'api')
-    setCredTokenValue(router.credentials?.agentToken || '')
-    setEdgeosScript(null)
+  function openCredentials(router: any) {
     setEditingRouter(router)
     setCredForm({
       routerUser: router.credentials?.routerUser || 'admin',
@@ -274,16 +211,6 @@ export default function RouterManager({ API, onBack }: Props) {
       connectionMethod: resolveConnectionMethod(router),
     })
     setCredTestResult(null)
-    try {
-      const res = await api().post(`/routers/${router.id}/token`, { force: false })
-      setCredTokenValue(res.data.agentToken)
-    } catch { /* silencioso */ }
-    if (isUbiquitiRouter) {
-      try {
-        const scriptRes = await api().get(`/routers/${router.id}/edgeos-script`)
-        setEdgeosScript(scriptRes.data)
-      } catch { setEdgeosScript(null) }
-    }
   }
 
   async function saveCredentials() {
@@ -330,44 +257,6 @@ export default function RouterManager({ API, onBack }: Props) {
     setCredTesting(false)
   }
 
-  async function fetchOrCreateToken() {
-    if (!editingRouter) return
-    setTokenRegenerating(true)
-    try {
-      // force=false → el servidor devuelve el token existente sin modificar nada
-      const res = await api().post(`/routers/${editingRouter.id}/token`, { force: false })
-      setCredTokenValue(res.data.agentToken)
-      setEditingRouter({ ...editingRouter, credentials: { ...editingRouter.credentials, agentToken: res.data.agentToken } })
-    } catch (e: any) {
-      alert('Error al obtener token: ' + (e.response?.data?.error || e.message))
-    }
-    setTokenRegenerating(false)
-  }
-
-  async function forceRegenerateToken() {
-    if (!editingRouter) return
-    const ok = window.confirm(
-      '⚠️ ATENCIÓN — Esta acción es irreversible.\n\n' +
-      'Se generará un token NUEVO. El EdgeRouter perderá la conexión inmediatamente ' +
-      'y deberás instalar el script actualizado vía SSH para restaurarla.\n\n' +
-      '¿Confirmas que quieres reemplazar el token?'
-    )
-    if (!ok) return
-    setTokenRegenerating(true)
-    try {
-      const res = await api().post(`/routers/${editingRouter.id}/token`, { force: true })
-      setCredTokenValue(res.data.agentToken)
-      setEditingRouter({ ...editingRouter, credentials: { ...editingRouter.credentials, agentToken: res.data.agentToken } })
-      try {
-        const scriptRes = await api().get(`/routers/${editingRouter.id}/edgeos-script`)
-        setEdgeosScript(scriptRes.data)
-      } catch { setEdgeosScript(null) }
-    } catch (e: any) {
-      alert('Error al regenerar token: ' + (e.response?.data?.error || e.message))
-    }
-    setTokenRegenerating(false)
-  }
-
   async function handleDelete(id: number) {
     if (!confirm('¿Eliminar router y revocar token?')) return
     try { await api().delete(`/routers/${id}`); loadRouters() }
@@ -387,7 +276,6 @@ export default function RouterManager({ API, onBack }: Props) {
     setNewRouter(null)
     setTestResult(null)
     setMikrotikScript(null)
-    setEdgeosScript(null)
   }
 
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
@@ -430,6 +318,9 @@ export default function RouterManager({ API, onBack }: Props) {
                         if (rt.value === 'edgerouter_v4') {
                           base.location = 'Nodo 2'
                           base.model = 'EdgeRouter 4'
+                          base.lanSubnet = '192.168.2.0/24'
+                          base.lanInterface = 'ether2'
+                          base.dhcpSharedNetwork = 'LAN'
                           base.routerIp = '172.16.11.254'
                           base.connectionMethod = 'cloudflare_tunnel'
                         }
@@ -580,6 +471,35 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   )}
 
+                  {isEdgeRouter && (
+                    <div className="space-y-3 p-4 bg-violet-50 border border-violet-200 rounded-xl">
+                      <p className="text-sm font-medium text-violet-900">Red del nodo (LAN clientes)</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Subred LAN</label>
+                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                            placeholder="192.168.2.0/24"
+                            value={form.lanSubnet || ''}
+                            onChange={e => setForm({ ...form, lanSubnet: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Interfaz LAN</label>
+                          <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                            placeholder="ether2"
+                            value={form.lanInterface || ''}
+                            onChange={e => setForm({ ...form, lanInterface: e.target.value })} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Shared network DHCP (EdgeOS)</label>
+                        <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+                          placeholder="LAN"
+                          value={form.dhcpSharedNetwork || ''}
+                          onChange={e => setForm({ ...form, dhcpSharedNetwork: e.target.value })} />
+                        <p className="text-xs text-gray-500 mt-1">Nombre del shared-network en EdgeOS donde vive la subred de clientes.</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -705,56 +625,23 @@ export default function RouterManager({ API, onBack }: Props) {
                         </ol>
                       </div>
                     </div>
-                  ) : isEdgeRouter ? (
+                  ) : form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter ? (
                     <div className="space-y-4">
-                      {/* Heartbeat bash — conexión inmediata vía SSH */}
-                      {edgeosScript && (
-                        <div className="space-y-3">
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-                            <p className="font-semibold text-emerald-900 text-sm mb-1">Paso 1: Activar heartbeat (SSH — 1 minuto)</p>
-                            <p className="text-xs text-emerald-700">Pega el script en SSH del EdgeRouter. El router enviará su estado cada 30s y aparecerá como "Conectado".</p>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Script de instalación (pegar en SSH del EdgeRouter)</label>
-                            <div className="bg-gray-900 rounded-lg p-3 relative max-h-64 overflow-y-auto">
-                              <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{edgeosScript.installScript}</code>
-                              <button onClick={() => copyText(edgeosScript.installScript, 'edgeos-script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded sticky">
-                                {copied === 'edgeos-script' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
-                              </button>
-                            </div>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <p className="text-xs font-medium text-gray-600 mb-1.5 flex items-center gap-1.5"><Terminal className="h-3.5 w-3.5" /> Pasos</p>
-                            <ol className="space-y-1">
-                              {edgeosScript.installInstructions.map((instr: string, i: number) => (
-                                <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                  <span className="font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{i + 1}</span>
-                                  {instr}
-                                </li>
-                              ))}
-                            </ol>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Cloudflare — opcional, para gestión API completa */}
-                      {form.connectionMethod === 'cloudflare_tunnel' && (
-                        <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
-                          <p className="font-semibold text-sky-900 text-sm mb-1">Paso 2 (opcional): Cloudflare para gestión completa</p>
-                          <p className="text-xs text-sky-700 mb-3">Necesario para provisionar PPPoE/DHCP/colas desde FibraNexus. El heartbeat ya activa el estado sin esto.</p>
-                          <ol className="space-y-1.5 text-xs text-gray-700">
-                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Tunnels → el mismo túnel del MikroTik</li>
-                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2.fibranexus.cl'}</strong></li>
-                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="bg-white px-1 rounded font-mono">https://{form.routerIp || '192.168.2.1'}:443</code></li>
-                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> Avanzado → habilitar <strong>No TLS Verify</strong> (cert auto-firmado)</li>
-                            <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa "Probar conexión" en FibraNexus</li>
-                          </ol>
-                          <div className="mt-2 bg-white/60 rounded p-2 text-xs space-y-0.5">
-                            <div className="flex justify-between"><span className="text-gray-500">Hostname:</span><span className="font-mono">{form.tunnelHostname}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">IP EdgeRouter:</span><span className="font-mono">{form.routerIp}</span></div>
-                          </div>
-                        </div>
-                      )}
+                      <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+                        <p className="font-semibold text-sky-900 text-sm mb-2">☁️ Un paso en Cloudflare (2 minutos)</p>
+                        <p className="text-xs text-sky-800 mb-3">El cloudflared sigue en tu MikroTik. Solo publica el EdgeRouter con un hostname nuevo:</p>
+                        <ol className="space-y-2 text-xs text-gray-700">
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
+                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
+                        </ol>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                        <div className="flex justify-between"><span>Hostname:</span><span className="font-mono text-xs">{form.tunnelHostname}</span></div>
+                        <div className="flex justify-between mt-1"><span>IP local EdgeRouter:</span><span className="font-mono text-xs">{form.routerIp}</span></div>
+                      </div>
                     </div>
                   ) : form.connectionMethod === 'agent' ? (
                     <>
@@ -815,7 +702,7 @@ export default function RouterManager({ API, onBack }: Props) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => loadRouters()} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Actualizar</button>
+          <button onClick={loadRouters} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Actualizar</button>
           <button onClick={() => { setShowForm(true); setStep(1) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar Router</button>
         </div>
       </header>
@@ -845,11 +732,12 @@ export default function RouterManager({ API, onBack }: Props) {
               const methodInfo = CONNECTION_METHODS.find(m => m.value === method)
               const MethodIcon = methodInfo?.icon || Globe
               const info = router.routerInfo || (router.firmware ? { version: router.firmware } : null)
+              const online = isRouterOnline(router)
               return (
                 <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <RouterBrandImage brand={router.brand} routerType={router.credentials?.routerType} connected={router.agentConnected} />
+                      <div className={`w-3 h-3 rounded-full ${online ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
                       <div>
                         <h3 className="font-bold text-gray-900">{router.name}</h3>
                         <p className="text-xs text-gray-500">{router.brand} {router.model}</p>
@@ -858,65 +746,22 @@ export default function RouterManager({ API, onBack }: Props) {
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
                   </div>
 
-                  {router.agentConnected && info && (() => {
-                    const b = (router.brand || '').toLowerCase()
-                    const rt = (router.credentials?.routerType || '').toLowerCase()
-                    const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-                    const hasTemp = info.tempC != null && Number(info.tempC) > 0
-                    const hasRam = info.ramUsage != null
-                    if (isEdgeOS) {
-                      return (
-                        <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                            <div>
-                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">EdgeOS</p>
-                              <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Uptime</p>
-                              <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">CPU</p>
-                              <p className={`text-xs font-semibold ${Number(info.cpuLoad) > 80 ? 'text-red-600' : Number(info.cpuLoad) > 50 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                {info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">RAM</p>
-                              <p className={`text-xs font-semibold ${hasRam && Number(info.ramUsage) > 85 ? 'text-red-600' : hasRam && Number(info.ramUsage) > 60 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                {hasRam ? `${info.ramUsage}%` : '—'}
-                              </p>
-                            </div>
-                            {hasTemp && (
-                              <div className="col-span-2">
-                                <p className="text-[9px] uppercase text-gray-400 font-semibold tracking-wide">Temp</p>
-                                <p className={`text-xs font-semibold ${Number(info.tempC) > 75 ? 'text-red-600' : Number(info.tempC) > 55 ? 'text-amber-600' : 'text-gray-800'}`}>
-                                  {info.tempC}°C
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                        <div className="text-center">
-                          <p className="text-[10px] uppercase text-gray-400 font-semibold">RouterOS</p>
-                          <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
-                        </div>
-                        <div className="text-center border-x border-slate-200">
-                          <p className="text-[10px] uppercase text-gray-400 font-semibold">Uptime</p>
-                          <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[10px] uppercase text-gray-400 font-semibold">CPU</p>
-                          <p className="text-xs font-medium text-gray-800">{info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}</p>
-                        </div>
+                  {online && info && (
+                    <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">{router.credentials?.routerType === 'edgerouter_v4' ? 'EdgeOS' : 'RouterOS'}</p>
+                        <p className="text-xs font-medium text-gray-800 truncate" title={info.version}>{info.version?.split(' ')[0] || '—'}</p>
                       </div>
-                    )
-                  })()}
+                      <div className="text-center border-x border-slate-200">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">Uptime</p>
+                        <p className="text-xs font-medium text-gray-800">{info.uptime || '—'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] uppercase text-gray-400 font-semibold">CPU</p>
+                        <p className="text-xs font-medium text-gray-800">{info.cpuLoad != null ? `${info.cpuLoad}%` : '—'}</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex justify-between items-center">
@@ -960,29 +805,16 @@ export default function RouterManager({ API, onBack }: Props) {
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
-                    {(() => {
-                      const b = (router.brand || '').toLowerCase()
-                      const rt = (router.credentials?.routerType || '').toLowerCase()
-                      const isEdgeOS = b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-                      return isEdgeOS ? (
-                        <button onClick={() => setEdgeosManagerRouter(router)}
-                          className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-emerald-50 text-emerald-700 border-emerald-200">
-                          Gestionar EdgeOS
-                        </button>
-                      ) : null
-                    })()}
                   </div>
-                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${router.agentConnected ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
-                    {router.agentConnected ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
-                    {router.lastSeen && <span className="ml-auto text-xs text-gray-400 flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(router.lastSeen).toLocaleTimeString('es-CL')}</span>}
+                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${online ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
+                    {online ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
+                    {(router.agentLastSeen || router.lastSeen) && (
+                      <span className="ml-auto text-xs text-gray-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(router.agentLastSeen || router.lastSeen).toLocaleTimeString('es-CL')}
+                      </span>
+                    )}
                   </div>
-
-                  {/* Sparkline de ancho de banda — al fondo de la tarjeta */}
-                  {router.agentConnected && (
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <BandwidthSparkline routerId={router.id} API={API} pollMs={4000} />
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -992,176 +824,59 @@ export default function RouterManager({ API, onBack }: Props) {
 
       {editingRouter && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex justify-between items-start p-6 pb-0">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between mb-4">
               <div>
-                <h3 className="font-bold text-lg text-gray-900">Configurar — {editingRouter.name}</h3>
-                <p className="text-sm text-gray-400 mt-0.5">
-                  {editingRouter.brand} · {ROUTER_TYPES.find(t => t.value === editingRouter.credentials?.routerType)?.label || 'Router'}
-                </p>
+                <h3 className="font-bold text-lg">Credenciales API — {editingRouter.name}</h3>
+                <p className="text-sm text-gray-500">Usuario/contraseña API del router para provisionar y monitorear</p>
               </div>
-              <button onClick={() => setEditingRouter(null)} className="p-1 rounded-lg hover:bg-gray-100">
-                <X className="h-5 w-5 text-gray-400" />
-              </button>
+              <button onClick={() => setEditingRouter(null)}><X className="h-5 w-5" /></button>
             </div>
-
-            {/* Tabs */}
-            <div className="flex border-b mx-6 mt-4">
-              <button onClick={() => setCredTab('api')}
-                className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${credTab === 'api' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                Conexión API
-              </button>
-              <button onClick={() => setCredTab('heartbeat')}
-                className={`pb-2.5 px-1 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${credTab === 'heartbeat' ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                Heartbeat SSH
-                {credTokenValue && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>}
-              </button>
-            </div>
-
-            <div className="p-6">
-              {/* Tab: Conexión API */}
-              {credTab === 'api' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Host túnel / IP</label>
-                    <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="l009-test.fibranexus.cl"
-                      value={credForm.tunnelHostname || ''}
-                      onChange={e => setCredForm({ ...credForm, tunnelHostname: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Usuario API</label>
-                    <input className="w-full border rounded-lg px-3 py-2 mt-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={credForm.routerUser || ''}
-                      onChange={e => setCredForm({ ...credForm, routerUser: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Contraseña API</label>
-                    <input type="password" className="w-full border rounded-lg px-3 py-2 mt-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={credForm.routerPass || ''}
-                      onChange={e => setCredForm({ ...credForm, routerPass: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Puerto HTTPS</label>
-                    <input className="w-full border rounded-lg px-3 py-2 mt-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={credForm.routerPort || '443'}
-                      onChange={e => setCredForm({ ...credForm, routerPort: e.target.value })} />
-                  </div>
-                  {credTestResult && (
-                    <div className={`text-sm p-3 rounded-lg ${credTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                      {credTestResult.success ? 'Conexión OK — router responde' : credTestResult.error}
-                    </div>
-                  )}
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={() => setEditingRouter(null)} className="flex-1 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancelar</button>
-                    <button onClick={testStoredCredentials} disabled={credTesting}
-                      className="flex-1 py-2 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50 text-sm">
-                      {credTesting ? 'Probando…' : 'Probar'}
-                    </button>
-                    <button onClick={saveCredentials} disabled={credSaving}
-                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm">
-                      {credSaving ? 'Guardando…' : 'Guardar'}
-                    </button>
-                  </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Host túnel / IP</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm"
+                  placeholder="l009-test.fibranexus.cl"
+                  value={credForm.tunnelHostname || ''}
+                  onChange={e => setCredForm({ ...credForm, tunnelHostname: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Usuario API *</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerUser || ''}
+                  onChange={e => setCredForm({ ...credForm, routerUser: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Contraseña API *</label>
+                <input type="password" className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerPass || ''}
+                  onChange={e => setCredForm({ ...credForm, routerPass: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Puerto HTTPS</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={credForm.routerPort || '443'}
+                  onChange={e => setCredForm({ ...credForm, routerPort: e.target.value })} />
+              </div>
+              {credTestResult && (
+                <div className={`text-sm p-3 rounded-lg ${credTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                  {credTestResult.success ? 'Conexión OK — router responde' : credTestResult.error}
                 </div>
               )}
-
-              {/* Tab: Heartbeat SSH */}
-              {credTab === 'heartbeat' && (
-                <div className="space-y-5">
-                  {/* Token */}
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Token de agente</label>
-                    <p className="text-xs text-gray-400 mt-0.5 mb-2">UUID que identifica este router — se incrusta automáticamente en el script</p>
-                    {/* Token field */}
-                    <div className="flex gap-2">
-                      <input readOnly
-                        value={credTokenValue || '—'}
-                        className="flex-1 font-mono text-xs rounded-lg px-3 py-2 border bg-gray-50 text-gray-800 border-gray-200 min-w-0" />
-                      {credTokenValue && (
-                        <button onClick={() => copyText(credTokenValue, 'agent-token')}
-                          className="p-2 border rounded-lg hover:bg-gray-50 flex-shrink-0" title="Copiar token">
-                          {copied === 'agent-token' ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-gray-500" />}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Botones de acción del token */}
-                    <div className="flex gap-2 mt-2">
-                      {!credTokenValue && (
-                        <button onClick={fetchOrCreateToken} disabled={tokenRegenerating}
-                          className="flex-1 py-2 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
-                          <RefreshCw className={`h-3.5 w-3.5 ${tokenRegenerating ? 'animate-spin' : ''}`} />
-                          {tokenRegenerating ? 'Obteniendo…' : 'Obtener token'}
-                        </button>
-                      )}
-                      {credTokenValue && (
-                        <button onClick={forceRegenerateToken} disabled={tokenRegenerating}
-                          className="flex-1 py-2 text-xs bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 flex items-center justify-center gap-1.5">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          {tokenRegenerating ? 'Procesando…' : 'Regenerar token (peligro)'}
-                        </button>
-                      )}
-                    </div>
-                    {credTokenValue && (
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3 text-red-400 flex-shrink-0" />
-                        Regenerar invalida el script del router — requirirá reinstalar vía SSH
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Script */}
-                  {credTokenValue ? (
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <label className="text-sm font-medium text-gray-700">Script de instalación</label>
-                        <span className="text-xs text-gray-400">SSH al EdgeRouter → pegar → Enter</span>
-                      </div>
-                      <div className="relative">
-                        <div className="bg-gray-900 rounded-lg p-3 max-h-60 overflow-y-auto">
-                          <code className="text-green-400 text-xs block whitespace-pre-wrap font-mono leading-relaxed">
-                            {edgeosScript?.installScript ?? 'Cargando script...'}
-                          </code>
-                        </div>
-                        <button onClick={() => copyText(edgeosScript?.installScript ?? '', 'edgeos-install')}
-                          className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded" title="Copiar script">
-                          {copied === 'edgeos-install' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
-                        </button>
-                      </div>
-                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3 space-y-1.5">
-                        <p className="text-xs text-emerald-800 flex items-center gap-1.5">
-                          <Terminal className="h-3.5 w-3.5 flex-shrink-0" />
-                          Copia el script → SSH al EdgeRouter → pega → Enter
-                        </p>
-                        <p className="text-xs text-emerald-700 flex items-center gap-1.5">
-                          <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                          En ~30 segundos el router aparece verde en el dashboard
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
-                      <p className="text-sm text-amber-800 font-medium">Sin token</p>
-                      <p className="text-xs text-amber-600 mt-1">Presiona "Generar token" para obtener el script de instalación</p>
-                    </div>
-                  )}
-
-                  <button onClick={() => setEditingRouter(null)} className="w-full py-2 border rounded-lg text-sm hover:bg-gray-50">Cerrar</button>
-                </div>
-              )}
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={() => setEditingRouter(null)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button onClick={testStoredCredentials} disabled={credTesting}
+                className="flex-1 py-2 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50">
+                {credTesting ? 'Probando…' : 'Probar'}
+              </button>
+              <button onClick={saveCredentials} disabled={credSaving}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {credSaving ? 'Guardando…' : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>
-      )}
-
-      {edgeosManagerRouter && (
-        <EdgeOSManager
-          API={API}
-          router={edgeosManagerRouter}
-          onClose={() => setEdgeosManagerRouter(null)}
-        />
       )}
     </div>
   )
