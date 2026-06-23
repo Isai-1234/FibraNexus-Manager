@@ -16,6 +16,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [clientInitialTab, setClientInitialTab] = useState('overview')
   const [showRouters, setShowRouters] = useState(false)
   const [showBillingSettings, setShowBillingSettings] = useState(false)
+  const [showRedIsp, setShowRedIsp] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
@@ -37,7 +38,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     })
   }
 
-  useEffect(() => { if (activeTab !== 'network') loadData() }, [activeTab, equipmentSubTab])
+  useEffect(() => { if (!showRedIsp && activeTab !== 'red-isp' && activeTab !== 'network') loadData() }, [activeTab, equipmentSubTab, showRedIsp])
+
+  // Compat: activeTab legacy 'network' nunca debe mostrar tabla genérica
+  useEffect(() => {
+    if (activeTab === 'network' || activeTab === 'red-isp') {
+      setShowRedIsp(true)
+      if (activeTab === 'network') setActiveTab('red-isp')
+    }
+  }, [activeTab])
 
   useEffect(() => {
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
@@ -180,14 +189,24 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setSelectedClientId(clientId)
   }
 
+  function isRedIspMenu(id: string) {
+    return id === 'red-isp' || id === 'network'
+  }
+
+  function openRedIsp() {
+    setSelectedClientId(null)
+    setShowBillingSettings(false)
+    setShowRouters(false)
+    setShowRedIsp(true)
+    setActiveTab('red-isp')
+  }
+
   function navigateMenu(id: string) {
-    if (id === 'network') {
-      setSelectedClientId(null)
-      setShowBillingSettings(false)
-      setShowRouters(false)
-      setActiveTab('network')
+    if (isRedIspMenu(id)) {
+      openRedIsp()
       return
     }
+    setShowRedIsp(false)
     if (id === 'billing-settings') {
       setSelectedClientId(null)
       setShowBillingSettings(true)
@@ -218,7 +237,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       title: 'Red e infraestructura',
       hint: 'Nodos, routers y adopciones',
       items: [
-        { id: 'network', label: 'Red ISP', icon: Network },
+        { id: 'red-isp', label: 'Red ISP', icon: Network },
         { id: 'detected-devices', label: 'Dispositivos detectados', icon: Radar },
       ],
     },
@@ -399,22 +418,22 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
           onTabClick={(id) => { setShowRouters(false); navigateMenu(id) }} />
-        <RouterManager API={API} onBack={() => { setShowRouters(false); setActiveTab('network') }} />
+        <RouterManager API={API} onBack={() => { setShowRouters(false); openRedIsp() }} />
       </div>
     )
   }
 
-  // Vista red ISP (sitios/nodos) — activeTab 'network', no vista de tabla genérica
-  if (activeTab === 'network') {
+  // Vista red ISP — showRedIsp es la única puerta (no confundir con pestaña de datos)
+  if (showRedIsp) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
+        <Sidebar menuSections={menuSections} activeTab="red-isp" user={user} logout={logout}
           onTabClick={navigateMenu} />
         <NetworkManager
           API={API}
-          onBack={() => setActiveTab('dashboard')}
+          onBack={() => { setShowRedIsp(false); setActiveTab('dashboard') }}
           onManageRouters={() => setShowRouters(true)}
-          onOpenInventory={() => { setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
+          onOpenInventory={() => { setShowRedIsp(false); setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
           onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
         />
       </div>
@@ -494,7 +513,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {tabDescriptions[activeTab] && (
               <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
+            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && (
               <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
@@ -503,7 +522,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
@@ -716,7 +735,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
                 <span><strong>Inventario global</strong> — todos los equipos del ISP. Para ver por nodo y torre, usa Red ISP.</span>
-                <button type="button" onClick={() => setActiveTab('network')}
+                <button type="button" onClick={openRedIsp}
                   className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
                   Ir a Red ISP →
                 </button>
