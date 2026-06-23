@@ -10,6 +10,7 @@ interface Props {
   clientId: number
   API: string
   onBack: () => void
+  initialTab?: string
 }
 
 const OPEN_TICKET_STATUSES = ['open', 'in_progress', 'waiting_client']
@@ -61,13 +62,13 @@ function apiErrorMessage(e: any, fallback: string) {
   return String(raw).replace(/^Error al eliminar servicio:\s*/i, '')
 }
 
-export default function ClientDetail({ clientId, API, onBack }: Props) {
+export default function ClientDetail({ clientId, API, onBack, initialTab = 'overview' }: Props) {
   const [client, setClient] = useState<any>(null)
   const [services, setServices] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
   const [tickets, setTickets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [showPayModal, setShowPayModal] = useState<any>(null)
   const [payMethod, setPayMethod] = useState('transfer')
   const [routers, setRouters] = useState<any[]>([])
@@ -205,6 +206,10 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
   }
 
   useEffect(() => { loadAll() }, [clientId])
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [clientId, initialTab])
 
   async function loadTicketDetail(ticketId: number) {
     setSelectedTicketId(ticketId)
@@ -1087,6 +1092,15 @@ export default function ClientDetail({ clientId, API, onBack }: Props) {
               <h1 className="text-xl sm:text-2xl font-bold text-white truncate tracking-tight">{client.user?.fullName}</h1>
               <p className="text-slate-400 text-sm truncate">{client.user?.email}</p>
               <p className="text-slate-600 text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicación'}</p>
+              {primaryAntenna?.siteName && (
+                <p className="text-cyan-500/70 text-xs mt-1 flex items-center gap-1">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  Nodo {primaryAntenna.siteName}
+                  {primaryAntenna.ipAddress && (
+                    <span className="text-slate-500 font-mono">· {String(primaryAntenna.ipAddress).split('/')[0]}</span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">

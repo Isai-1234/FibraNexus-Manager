@@ -2,15 +2,19 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User, Settings, ScanSearch, XCircle
+  Layers, Antenna, Network, Search, Pencil, User
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
-import EdgeOSManager from './EdgeOSManager'
-import BandwidthSparkline from '../../components/BandwidthSparkline'
 
-interface Props { API: string; onBack: () => void }
+interface Props {
+  API: string
+  onBack: () => void
+  onManageRouters?: () => void
+  onOpenInventory?: () => void
+  onOpenClient?: (clientId: number, tab?: string) => void
+}
 
 const SITE_TYPES = [
   { value: 'pop', label: 'POP / Central' },
@@ -63,7 +67,7 @@ function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any
   )
 }
 
-export default function NetworkManager({ API, onBack }: Props) {
+export default function NetworkManager({ API, onBack, onManageRouters, onOpenInventory, onOpenClient }: Props) {
   const [tree, setTree] = useState<any[]>([])
   const [unassigned, setUnassigned] = useState<any[]>([])
   const [stats, setStats] = useState<any>({})
@@ -86,9 +90,6 @@ export default function NetworkManager({ API, onBack }: Props) {
   const [clients, setClients] = useState<any[]>([])
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
-  const [edgeosManagerRouter, setEdgeosManagerRouter] = useState<any>(null)
-  const [macScanLoading, setMacScanLoading] = useState<Record<number, boolean>>({})
-  const [macScanResult, setMacScanResult] = useState<Record<number, any>>({})
 
   function api() {
     return axios.create({
@@ -296,27 +297,6 @@ export default function NetworkManager({ API, onBack }: Props) {
     setLinkRouterId('')
   }
 
-  async function scanForMac(eq: any) {
-    setMacScanLoading(prev => ({ ...prev, [eq.id]: true }))
-    setMacScanResult(prev => ({ ...prev, [eq.id]: null }))
-    try {
-      const res = await api().post(`/equipment/${eq.id}/mac-scan`)
-      setMacScanResult(prev => ({ ...prev, [eq.id]: res.data }))
-      if (res.data.found) await refreshSelectedSite()
-    } catch (e: any) {
-      setMacScanResult(prev => ({ ...prev, [eq.id]: { error: e.response?.data?.error || e.message } }))
-    }
-    setMacScanLoading(prev => ({ ...prev, [eq.id]: false }))
-  }
-
-  async function dismissMacScan(eq: any) {
-    try {
-      await api().post(`/equipment/${eq.id}/mac-scan-dismiss`)
-      setMacScanResult(prev => ({ ...prev, [eq.id]: null }))
-      await refreshSelectedSite()
-    } catch { /* silent */ }
-  }
-
   function openRouterModal() {
     const linkable = routers.filter((r) => r.siteId !== selectedSite?.id)
     setRouterModalTab(linkable.length > 0 ? 'link' : 'create')
@@ -338,14 +318,8 @@ export default function NetworkManager({ API, onBack }: Props) {
     }
   }
 
-  function isEdgeRouter(eq: any) {
-    const b = (eq.brand || '').toLowerCase()
-    const rt = (eq.credentials?.routerType || '').toLowerCase()
-    return b === 'ubiquiti' || b.includes('edge') || rt.startsWith('edgerouter')
-  }
-
   const siteEquipment = selectedSite?.equipment || []
-  const siteRouters = siteEquipment.filter((e: any) => e.type === 'router' && !isEdgeRouter(e))
+  const siteRouters = siteEquipment.filter((e: any) => e.type === 'router')
   const siteCpe = siteEquipment.filter((e: any) => e.type === 'cpe')
   const linkableRouters = routers.filter((r) => r.siteId !== selectedSite?.id)
   const unassignedRouters = unassigned.filter((e) => e.type === 'router')
@@ -356,13 +330,27 @@ export default function NetworkManager({ API, onBack }: Props) {
         <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Network className="h-5 w-5 text-blue-600" /> Red ISP — Sitios y nodos
+            <Network className="h-5 w-5 text-blue-600" /> Red ISP
           </h1>
-          <p className="text-sm text-gray-500">Organiza torres, routers MikroTik, switches y antenas Ubiquiti</p>
+          <p className="text-sm text-gray-500">Jerarquía de nodos, routers y antenas — desde aquí ves toda la red</p>
         </div>
-        <button onClick={loadAll} className="p-2 hover:bg-gray-100 rounded-lg" title="Actualizar">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {onManageRouters && (
+            <button type="button" onClick={onManageRouters}
+              className="px-3 py-2 text-sm font-medium border border-purple-200 text-purple-800 bg-purple-50 rounded-lg hover:bg-purple-100 flex items-center gap-1.5">
+              <Router className="h-4 w-4" /> Routers y agentes
+            </button>
+          )}
+          {onOpenInventory && (
+            <button type="button" onClick={onOpenInventory}
+              className="px-3 py-2 text-sm font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
+              <Server className="h-4 w-4" /> Inventario
+            </button>
+          )}
+          <button onClick={loadAll} className="p-2 hover:bg-gray-100 rounded-lg" title="Actualizar">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </header>
 
       {/* Stats bar */}
@@ -480,12 +468,38 @@ export default function NetworkManager({ API, onBack }: Props) {
                         )}
                       </div>
                     ) : siteEquipment.map((eq: any) => (
-                      <div key={eq.id} className="p-4 flex items-start gap-3 hover:bg-gray-50">
-                        <span className={`w-3 h-3 rounded-full flex-shrink-0 mt-1 ${statusDot(eq)}`} />
+                      <div key={eq.id} className="p-4 flex items-center gap-3 hover:bg-gray-50">
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${statusDot(eq)}`} />
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{eq.name}</p>
-                          <p className="text-xs text-gray-500">{eq.type} · {eq.brand} {eq.model} · {eq.ipAddress || 'sin IP'}</p>
-                          {eq.type === 'cpe' && eq.clientName && (
+                          <p className="text-xs text-gray-500">
+                            {eq.type} · {eq.brand} {eq.model}
+                            {eq.ipAddress && eq.clientId && onOpenClient ? (
+                              <>
+                                {' · '}
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenClient(eq.clientId, 'equipment')}
+                                  className="font-mono text-blue-600 hover:underline"
+                                  title="Gestionar antena del abonado"
+                                >
+                                  {String(eq.ipAddress).split('/')[0]}
+                                </button>
+                              </>
+                            ) : (
+                              <> · {eq.ipAddress || 'sin IP'}</>
+                            )}
+                          </p>
+                          {eq.type === 'cpe' && eq.clientName && eq.clientId && onOpenClient && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenClient(eq.clientId, 'overview')}
+                              className="text-xs text-blue-600 mt-0.5 flex items-center gap-1 hover:underline"
+                            >
+                              <User className="h-3 w-3" /> {eq.clientName}
+                            </button>
+                          )}
+                          {eq.type === 'cpe' && eq.clientName && !onOpenClient && (
                             <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
                               <User className="h-3 w-3" /> Abonado: {eq.clientName}
                             </p>
@@ -493,72 +507,21 @@ export default function NetworkManager({ API, onBack }: Props) {
                           {eq.type === 'cpe' && !eq.clientName && (
                             <p className="text-xs text-amber-600 mt-0.5">Sin abonado asignado</p>
                           )}
-                          {/* Badge de detección MAC */}
-                          {eq.type === 'cpe' && (eq.credentials?.macDetection || macScanResult[eq.id]) && (() => {
-                            const det = macScanResult[eq.id] || eq.credentials?.macDetection
-                            if (!det || det.error || det.found === false) return null
-                            return (
-                              <div className="mt-1.5 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                                <Wifi className="h-3 w-3 text-amber-600 shrink-0" />
-                                <span className="text-xs text-amber-800 font-medium">
-                                  Detectado en <span className="font-mono">{det.ip}</span> vía {det.source === 'dhcp' ? 'DHCP' : 'ARP'} · {det.routerName}
-                                </span>
-                                <button onClick={() => dismissMacScan(eq)} className="ml-auto text-amber-500 hover:text-amber-700" title="Confirmar y descartar">
-                                  <XCircle className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            )
-                          })()}
-                          {eq.type === 'cpe' && macScanResult[eq.id]?.found === false && !macScanLoading[eq.id] && (
-                            <p className="text-xs text-gray-400 mt-1">MAC no encontrada en {macScanResult[eq.id].routersScanned} router(s)</p>
-                          )}
-                          {eq.type === 'cpe' && macScanResult[eq.id]?.error && (
-                            <p className="text-xs text-red-400 mt-1">{macScanResult[eq.id].error}</p>
-                          )}
-                          {eq.type === 'router' && isEdgeRouter(eq) && eq.agentConnected && (
-                            <BandwidthSparkline
-                              routerId={eq.id}
-                              API={API}
-                              className="mt-2 w-full max-w-[220px]"
-                              pollMs={4000}
-                            />
-                          )}
                         </div>
                         {eq.type === 'router' && (
-                          <div className="flex gap-1 shrink-0">
-                            {isEdgeRouter(eq) ? (
-                              <button onClick={() => setEdgeosManagerRouter(eq)}
-                                className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 flex items-center gap-1">
-                                <Settings className="h-3 w-3" /> Gestionar EdgeOS
-                              </button>
-                            ) : (
-                              <>
-                                <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
-                                  className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-                                  <Eye className="h-3 w-3" /> Abonados
-                                </button>
-                                <button onClick={() => loadRouterNetwork(eq, 'infra')}
-                                  className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
-                                  <Server className="h-3 w-3" /> DHCP/SNMP
-                                </button>
-                              </>
-                            )}
+                          <div className="flex gap-1">
+                            <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                              className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                              <Eye className="h-3 w-3" /> Abonados
+                            </button>
+                            <button onClick={() => loadRouterNetwork(eq, 'infra')}
+                              className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
+                              <Server className="h-3 w-3" /> DHCP/SNMP
+                            </button>
                           </div>
                         )}
                         {eq.type === 'cpe' && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            {eq.macAddress && eq.status !== 'online' && (
-                              <button
-                                onClick={() => scanForMac(eq)}
-                                disabled={macScanLoading[eq.id]}
-                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg disabled:opacity-50"
-                                title={`Buscar por MAC: ${eq.macAddress}`}
-                              >
-                                {macScanLoading[eq.id]
-                                  ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                  : <ScanSearch className="h-3.5 w-3.5" />}
-                              </button>
-                            )}
+                          <div className="flex items-center gap-1">
                             <button onClick={() => openEditCpe(eq)}
                               className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
                               title="Editar antena / abonado">
@@ -579,7 +542,7 @@ export default function NetworkManager({ API, onBack }: Props) {
                     <div>
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                         <Wifi className="h-4 w-4 text-green-600" />
-                        {selectedRouter ? selectedRouter.name : 'Abonados del nodo'}
+                        {selectedRouter ? selectedRouter.name : 'Router MikroTik'}
                       </h3>
                       {selectedRouter && (
                         <p className="text-xs text-gray-500 mt-0.5">
@@ -604,8 +567,8 @@ export default function NetworkManager({ API, onBack }: Props) {
                     {!selectedRouter ? (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         {siteRouters.length === 0
-                          ? <span>No hay routers MikroTik en este nodo.<br/>Los EdgeRouters se gestionan con el botón <strong className="text-emerald-600">Gestionar EdgeOS</strong>.</span>
-                          : 'Selecciona un router para ver sus abonados'}
+                          ? 'Agrega un router MikroTik a este nodo'
+                          : 'Selecciona un router para ver abonados'}
                         {siteRouters.length > 0 && (
                           <div className="mt-4 space-y-2">
                             {siteRouters.map((r: any) => (
@@ -1015,14 +978,6 @@ export default function NetworkManager({ API, onBack }: Props) {
             </div>
           </div>
         </div>
-      )}
-
-      {edgeosManagerRouter && (
-        <EdgeOSManager
-          API={API}
-          router={edgeosManagerRouter}
-          onClose={() => setEdgeosManagerRouter(null)}
-        />
       )}
     </div>
   )

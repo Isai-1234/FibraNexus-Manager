@@ -12,6 +12,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [activeTab, setActiveTab] = useState('dashboard')
   const [equipmentSubTab, setEquipmentSubTab] = useState('infrastructure')
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
+  const [clientInitialTab, setClientInitialTab] = useState('overview')
   const [showRouters, setShowRouters] = useState(false)
   const [showNetwork, setShowNetwork] = useState(false)
   const [showBillingSettings, setShowBillingSettings] = useState(false)
@@ -174,6 +175,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     } catch (err: any) { alert('Error: ' + (err.response?.data?.error || err.message)) }
   }
 
+  function openClientProfile(clientId: number, tab = 'overview') {
+    setClientInitialTab(tab)
+    setSelectedClientId(clientId)
+  }
+
   const menuSections = [
     {
       title: 'Tus abonados',
@@ -189,12 +195,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     },
     {
       title: 'Red e infraestructura',
-      hint: 'Equipos de tu ISP',
+      hint: 'Nodos, routers y adopciones',
       items: [
-        { id: 'network', label: 'Red ISP (sitios/nodos)', icon: Network },
-        { id: 'equipment', label: 'Equipos / Routers', icon: Server },
+        { id: 'network', label: 'Red ISP', icon: Network },
         { id: 'detected-devices', label: 'Dispositivos detectados', icon: Radar },
-        { id: 'ips', label: 'Gestión IP', icon: MapPin },
       ],
     },
     {
@@ -221,7 +225,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   const tabDescriptions: Record<string, string> = {
     dashboard: 'Alertas, deudas y acceso rápido a cada cuenta de abonado',
-    clients: 'Lista de abonados con plan, estado de red (PPPoE o antena) y alertas claras',
+    clients: 'Lista de abonados — clic en la IP para gestionar la antena',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
     equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
@@ -347,7 +351,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
           onTabClick={(id) => { setSelectedClientId(null); setActiveTab(id) }} />
-        <ClientDetail clientId={selectedClientId} API={API} onBack={() => { setSelectedClientId(null); setActiveTab('clients') }} />
+        <ClientDetail
+          clientId={selectedClientId}
+          API={API}
+          initialTab={clientInitialTab}
+          onBack={() => { setSelectedClientId(null); setClientInitialTab('overview'); setActiveTab('clients') }}
+        />
       </div>
     )
   }
@@ -369,7 +378,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
           onTabClick={(id) => { setShowNetwork(false); setActiveTab(id) }} />
-        <NetworkManager API={API} onBack={() => { setShowNetwork(false); setActiveTab('equipment') }} />
+        <NetworkManager
+          API={API}
+          onBack={() => { setShowNetwork(false); setActiveTab('dashboard') }}
+          onManageRouters={() => { setShowNetwork(false); setShowRouters(true) }}
+          onOpenInventory={() => { setShowNetwork(false); setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
+          onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
+        />
       </div>
     )
   }
@@ -380,7 +395,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
           onTabClick={(id) => { setShowRouters(false); setActiveTab(id) }} />
-        <RouterManager API={API} onBack={() => { setShowRouters(false); setActiveTab('equipment') }} />
+        <RouterManager API={API} onBack={() => { setShowRouters(false); setShowNetwork(true) }} />
       </div>
     )
   }
@@ -549,7 +564,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm">{c.overdueDays > 0 ? <span className="text-red-600 font-medium">{c.overdueDays} días</span> : '—'}</td>
                             <td className="p-4 text-sm">{c.openTickets || '—'}</td>
                             <td className="p-4">
-                              <button onClick={() => setSelectedClientId(c.id)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
+                              <button onClick={() => openClientProfile(c.id)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
                                 Gestionar cuenta
                               </button>
                             </td>
@@ -588,7 +603,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm">{formatDateCL(inv.dueDate)}</td>
                             <td className="p-4"><span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{inv.overdueDays} días</span></td>
                             <td className="p-4">
-                              <button onClick={() => setSelectedClientId(inv.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
+                              <button onClick={() => openClientProfile(inv.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
                             </td>
                           </tr>
                         ))}
@@ -631,8 +646,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               {c.planName || 'Sin plan'} · {c.city || 'Sin ciudad'}
                               {c.pendingAmount > 0 && ` · Saldo $${c.pendingAmount.toLocaleString('es-CL')}`}
                             </p>
+                            {c.ipAddress && (
+                              <button
+                                type="button"
+                                onClick={() => openClientProfile(c.id, 'equipment')}
+                                className="mt-1 inline-flex items-center gap-1 text-xs font-mono text-blue-600 hover:underline"
+                              >
+                                <Router className="h-3 w-3" /> {c.ipAddress}
+                              </button>
+                            )}
                           </div>
-                          <button onClick={() => setSelectedClientId(c.id)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Gestionar</button>
+                          <button onClick={() => openClientProfile(c.id)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Gestionar</button>
                         </div>
                       ))}
                     </div>
@@ -667,12 +691,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
           {/* DISPOSITIVOS DETECTADOS */}
           {activeTab === 'detected-devices' && (
-            <DetectedDevices API={API} onOpenClient={(id) => setSelectedClientId(id)} />
+            <DetectedDevices API={API} onOpenClient={(id) => openClientProfile(id, 'overview')} />
           )}
 
           {/* EQUIPOS con subtabs */}
           {activeTab === 'equipment' && (
             <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
+                <span><strong>Inventario global</strong> — todos los equipos del ISP. Para ver por nodo y torre, usa Red ISP.</span>
+                <button type="button" onClick={() => setShowNetwork(true)}
+                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
+                  Ir a Red ISP →
+                </button>
+              </div>
               {/* Subtabs */}
               <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
                 {[
@@ -806,9 +837,26 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-900 truncate">{item.fullName || 'Sin nombre'}</p>
                           <p className="text-sm text-gray-500 truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
-                          {item.ipAddress && (
-                            <p className="text-xs font-mono text-gray-400 mt-0.5">{item.ipAddress}</p>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            {item.siteName && (
+                              <span className="text-xs text-gray-500 inline-flex items-center gap-1">
+                                <MapPin className="h-3 w-3" /> {item.siteName}
+                              </span>
+                            )}
+                            {item.ipAddress ? (
+                              <button
+                                type="button"
+                                onClick={() => openClientProfile(item.id, 'equipment')}
+                                className="inline-flex items-center gap-1 text-xs font-mono text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition"
+                                title={item.equipmentName ? `Gestionar ${item.equipmentName}` : 'Abrir antena y equipos del abonado'}
+                              >
+                                <Router className="h-3 w-3 shrink-0" />
+                                {item.ipAddress}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">Sin IP asignada</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 lg:max-w-md">
@@ -853,7 +901,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Editar datos">
                           <Edit2 className="h-4 w-4" />
                         </button>
-                        <button onClick={() => setSelectedClientId(item.id)}
+                        <button onClick={() => openClientProfile(item.id)}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">
                           Abrir perfil
                         </button>
@@ -957,7 +1005,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <div className="flex items-center gap-1">
                               {activeTab === 'services' && (
                                 <>
-                                  <button onClick={() => setSelectedClientId(item.client?.id || item.clientId)}
+                                  <button onClick={() => openClientProfile(item.client?.id || item.clientId)}
                                     className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium flex items-center gap-1">
                                     <Eye className="h-3 w-3" /> Perfil
                                   </button>
@@ -973,7 +1021,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                 <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>
                               )}
                               {activeTab === 'clients' && (
-                                <button onClick={() => setSelectedClientId(item.id)} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">Gestionar</button>
+                                <button onClick={() => openClientProfile(item.id)} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">Gestionar</button>
                               )}
                               {canDelete.includes(activeTab) && activeTab !== 'services' && (
                                 <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>

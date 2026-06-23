@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import {
-  clients, clientServices, invoices, tickets, users, plans, equipment,
+  clients, clientServices, invoices, tickets, users, plans, equipment, sites,
 } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
@@ -70,10 +70,16 @@ export async function buildClientOverview(orgId) {
 
   const equipRows = await db.select({
     clientId: equipment.clientId,
+    equipmentId: equipment.id,
+    equipmentName: equipment.name,
     status: equipment.status,
     type: equipment.type,
+    ipAddress: equipment.ipAddress,
+    siteId: equipment.siteId,
+    siteName: sites.name,
   })
     .from(equipment)
+    .leftJoin(sites, eq(equipment.siteId, sites.id))
     .where(and(orgFilter(equipment, orgId), inArray(equipment.clientId, clientIds)));
 
   const equipByClient = new Map();
@@ -183,7 +189,11 @@ export async function buildClientOverview(orgId) {
       connectionStatus,
       connectionDetail,
       planName: activeSvc?.planName || suspendedSvc?.planName || null,
-      ipAddress: activeSvc?.ipAddress || null,
+      ipAddress: (cpe?.ipAddress?.split('/')[0] || activeSvc?.ipAddress || null),
+      equipmentId: cpe?.equipmentId || null,
+      equipmentName: cpe?.equipmentName || null,
+      siteId: cpe?.siteId || null,
+      siteName: cpe?.siteName || null,
       pppoeUsername: activeSvc?.pppoeUsername || null,
       antennaOnline: cpe?.status === 'online',
       openTickets: openTickets.length,
