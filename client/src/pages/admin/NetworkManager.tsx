@@ -14,8 +14,6 @@ import DeviceIpLink from '../../components/DeviceIpLink'
 interface Props {
   API: string
   onBack: () => void
-  onManageRouters?: () => void
-  onOpenInventory?: () => void
   onOpenClient?: (clientId: number, tab?: string) => void
 }
 
@@ -78,7 +76,7 @@ function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any
   )
 }
 
-export default function NetworkManager({ API, onBack, onManageRouters, onOpenInventory, onOpenClient }: Props) {
+export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [tree, setTree] = useState<any[]>([])
   const [unassigned, setUnassigned] = useState<any[]>([])
   const [stats, setStats] = useState<any>({})
@@ -345,23 +343,6 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
             <Network className="h-5 w-5 text-blue-600" /> Red ISP
           </h1>
           <p className="text-sm text-gray-500">Jerarquía de nodos, routers y antenas — desde aquí ves toda la red</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {onManageRouters && (
-            <button type="button" onClick={onManageRouters}
-              className="px-3 py-2 text-sm font-medium border border-purple-200 text-purple-800 bg-purple-50 rounded-lg hover:bg-purple-100 flex items-center gap-1.5">
-              <Router className="h-4 w-4" /> Routers y agentes
-            </button>
-          )}
-          {onOpenInventory && (
-            <button type="button" onClick={onOpenInventory}
-              className="px-3 py-2 text-sm font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-1.5">
-              <Server className="h-4 w-4" /> Inventario
-            </button>
-          )}
-          <button onClick={loadAll} className="p-2 hover:bg-gray-100 rounded-lg" title="Actualizar">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
         </div>
       </header>
 

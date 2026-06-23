@@ -63,7 +63,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         const endpoints: Record<string, string> = {
           clients: '/clients', plans: '/plans', services: '/services',
           invoices: '/invoices', tickets: '/tickets',
-          equipment: equipmentSubTab === 'routers' ? '/routers' : '/equipment',
+          equipment: '/equipment',
           ips: '/ip-management'
         }
         if (endpoints[activeTab]) {
@@ -193,9 +193,40 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setActiveTab('red-isp')
   }
 
+  function openInventory() {
+    setSelectedClientId(null)
+    setShowBillingSettings(false)
+    setShowRouters(false)
+    setShowRedIsp(false)
+    setActiveTab('equipment')
+    setEquipmentSubTab('infrastructure')
+  }
+
+  function openRouters() {
+    setSelectedClientId(null)
+    setShowBillingSettings(false)
+    setShowRedIsp(false)
+    setShowRouters(true)
+  }
+
+  function sidebarActiveTab() {
+    if (showRedIsp || activeTab === 'red-isp' || activeTab === 'network') return 'red-isp'
+    if (showRouters) return 'routers'
+    if (activeTab === 'equipment') return 'inventory'
+    return activeTab
+  }
+
   function navigateMenu(id: string) {
     if (isRedIspMenu(id)) {
       openRedIsp()
+      return
+    }
+    if (id === 'inventory') {
+      openInventory()
+      return
+    }
+    if (id === 'routers') {
+      openRouters()
       return
     }
     setShowRedIsp(false)
@@ -230,6 +261,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       hint: 'Nodos, routers y adopciones',
       items: [
         { id: 'red-isp', label: 'Red ISP', icon: Network },
+        { id: 'inventory', label: 'Inventario', icon: Server },
+        { id: 'routers', label: 'Routers y agentes', icon: Router },
         { id: 'detected-devices', label: 'Dispositivos detectados', icon: Radar },
       ],
     },
@@ -248,7 +281,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     clients: 'Abonados',
     services: 'Auditoría técnica (IPs y estados)',
     plans: 'Planes comerciales',
-    equipment: 'Equipos y routers',
+    equipment: 'Inventario global',
+    inventory: 'Inventario global',
     'detected-devices': 'Dispositivos detectados',
     ips: 'Gestión de IPs',
     invoices: 'Facturación',
@@ -260,7 +294,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     clients: 'Lista de abonados — clic en la IP para gestionar la antena',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
-    equipment: 'Infraestructura de red: routers MikroTik, switches, OLTs…',
+    inventory: 'Todos los equipos del ISP — switches, OLTs, antenas sueltas, etc.',
     'detected-devices': 'Dispositivos conectados a tus routers vía DHCP+ARP — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
@@ -384,7 +418,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   if (selectedClientId) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
+        <Sidebar menuSections={menuSections} activeTab={sidebarActiveTab()} user={user} logout={logout}
           onTabClick={navigateMenu} />
         <ClientDetail
           clientId={selectedClientId}
@@ -411,7 +445,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   if (showRouters) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
+        <Sidebar menuSections={menuSections} activeTab="routers" user={user} logout={logout}
           onTabClick={(id) => { setShowRouters(false); navigateMenu(id) }} />
         <RouterManager API={API} onBack={() => { setShowRouters(false); openRedIsp() }} />
       </div>
@@ -427,8 +461,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <NetworkManager
           API={API}
           onBack={() => { setShowRedIsp(false); setActiveTab('dashboard') }}
-          onManageRouters={() => setShowRouters(true)}
-          onOpenInventory={() => { setShowRedIsp(false); setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
           onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
         />
       </div>
@@ -489,7 +521,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         </div>
       )}
 
-      <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
+      <Sidebar menuSections={menuSections} activeTab={sidebarActiveTab()} user={user} logout={logout}
         onTabClick={navigateMenu} />
 
       {/* Main Content */}
@@ -504,9 +536,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         )}
         <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">{tabLabels[activeTab] || activeTab}</h1>
-            {tabDescriptions[activeTab] && (
-              <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab]}</p>
+            <h1 className="text-xl font-bold text-gray-900">{tabLabels[activeTab === 'equipment' ? 'inventory' : activeTab] || activeTab}</h1>
+            {tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab] && (
+              <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
             )}
             {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && (
               <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
@@ -542,7 +574,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   { label: 'Por cobrar', value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', tab: 'invoices' },
                   { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
                   { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' },
-                  { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', action: () => { setActiveTab('equipment'); setEquipmentSubTab('routers'); setShowRouters(true) } },
+                  { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', action: () => openRouters() },
                 ].map(s => (
                   <div key={s.label} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100"
                     onClick={() => s.action ? s.action() : setActiveTab(s.tab)}>
@@ -735,33 +767,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   Ir a Red ISP →
                 </button>
               </div>
-              {/* Subtabs */}
-              <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-                {[
-                  { id: 'infrastructure', label: '🖥️ Infraestructura' },
-                  { id: 'routers', label: '📡 Routers / Agentes' },
-                ].map(t => (
-                  <button key={t.id} onClick={() => { setEquipmentSubTab(t.id); if (t.id === 'routers') setShowRouters(true) }}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${equipmentSubTab === t.id ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                    {t.label}
-                  </button>
-                ))}
+
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-5 py-3 text-sm text-emerald-900">
+                <strong>Estado automático vía SNMP</strong> — Si la antena tiene IP y community configurada (ej. <code className="font-mono text-xs">internetsur-lab</code>),
+                el sistema la consulta cada ~3 min y al abrir esta lista. Verde = responde SNMP; gris/rojo = no responde.
               </div>
-
-              {equipmentSubTab === 'routers' && (
-                <div className="bg-sky-50 border border-sky-100 rounded-xl px-5 py-3 text-sm text-sky-900">
-                  <strong>Routers vía Cloudflare</strong> — MikroTik de borde con túnel + hostnames extra para nodos EdgeRouter aguas abajo.
-                  Estado Online = heartbeat (MikroTik) o consulta API cada ~3 min (EdgeRouter).
-                </div>
-              )}
-
-              {equipmentSubTab === 'infrastructure' && (
-                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-5 py-3 text-sm text-emerald-900">
-                  <strong>Estado automático vía SNMP</strong> — Si la antena tiene IP y community configurada (ej. <code className="font-mono text-xs">internetsur-lab</code>),
-                  el sistema la consulta cada ~3 min y al abrir esta lista. Verde = responde SNMP; gris/rojo = no responde.
-                  Activa SNMP en airOS con la misma community. No hace falta marcar &quot;Online&quot; a mano.
-                </div>
-              )}
 
               {/* Botón nuevo equipo */}
               <div className="flex justify-end">
