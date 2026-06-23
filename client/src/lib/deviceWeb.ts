@@ -1,16 +1,25 @@
-/** IP o hostname sin máscara CIDR */
+/** IP, hostname o URL de la interfaz web del equipo */
 export function cleanDeviceHost(ip?: string | null): string | null {
   if (!ip?.trim()) return null
-  const clean = ip.trim().split('/')[0].trim()
-  return clean || null
+  const raw = ip.trim()
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw)
+      return u.href.replace(/\/$/, '')
+    } catch {
+      return raw
+    }
+  }
+  const host = raw.split('/')[0].trim()
+  return host || null
 }
 
-/** URL HTTP(S) para abrir la interfaz web del equipo en la red */
-export function deviceWebUrl(ip?: string | null, https = false): string | null {
+/** URL HTTP(S) para abrir la interfaz web del equipo en la red local */
+export function deviceWebUrl(ip?: string | null): string | null {
   const host = cleanDeviceHost(ip)
   if (!host) return null
   if (/^https?:\/\//i.test(host)) return host
-  return `${https ? 'https' : 'http'}://${host}`
+  return `http://${host}`
 }
 
 export function openDeviceWeb(ip?: string | null) {

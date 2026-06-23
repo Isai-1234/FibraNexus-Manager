@@ -540,7 +540,7 @@ export default function NetworkManager({ API, onBack, onManageRouters, onOpenInv
                                 <DeviceIpLink
                                   ip={eq.ipAddress}
                                   className="font-mono text-blue-600 hover:underline"
-                                  title="Abrir interfaz web de la antena"
+                                  showIcon
                                 />
                               </>
                             ) : (

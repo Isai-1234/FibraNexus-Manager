@@ -666,8 +666,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             {c.ipAddress && (
                               <DeviceIpLink
                                 ip={c.ipAddress}
-                                className="mt-1 inline-flex items-center gap-1 text-xs font-mono text-blue-600 hover:underline"
-                                title="Abrir interfaz web de la antena"
+                                className="mt-1 text-xs font-mono text-blue-600 hover:underline"
+                                showIcon
                               >
                                 <Router className="h-3 w-3" /> {c.ipAddress}
                               </DeviceIpLink>
@@ -863,8 +863,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             {item.ipAddress ? (
                               <DeviceIpLink
                                 ip={item.ipAddress}
-                                className="inline-flex items-center gap-1 text-xs font-mono text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition"
-                                title={item.equipmentName ? `Abrir ${item.equipmentName} en el navegador` : 'Abrir antena en el navegador'}
+                                className="text-xs font-mono text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition"
+                                showIcon
                               >
                                 <Router className="h-3 w-3 shrink-0" />
                                 {item.ipAddress}
