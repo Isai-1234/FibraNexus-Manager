@@ -40,14 +40,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   useEffect(() => { if (!showRedIsp && activeTab !== 'red-isp' && activeTab !== 'network') loadData() }, [activeTab, equipmentSubTab, showRedIsp])
 
-  // Compat: activeTab legacy 'network' nunca debe mostrar tabla genérica
-  useEffect(() => {
-    if (activeTab === 'network' || activeTab === 'red-isp') {
-      setShowRedIsp(true)
-      if (activeTab === 'network') setActiveTab('red-isp')
-    }
-  }, [activeTab])
-
   useEffect(() => {
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
     api().get('/plans').then(r => setPlans(Array.isArray(r.data) ? r.data : [])).catch(() => {})
@@ -385,6 +377,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       }, {})
     : {}
 
+  // Red ISP nunca usa la vista genérica de pestañas (legacy activeTab 'network')
+  const redIspOpen = showRedIsp || activeTab === 'red-isp' || activeTab === 'network'
+
   // Vista detalle cliente
   if (selectedClientId) {
     return (
@@ -423,8 +418,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     )
   }
 
-  // Vista red ISP — showRedIsp es la única puerta (no confundir con pestaña de datos)
-  if (showRedIsp) {
+  // Vista red ISP — única pantalla (sin tabla "network" intermedia)
+  if (redIspOpen) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="red-isp" user={user} logout={logout}
