@@ -15,7 +15,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [clientInitialTab, setClientInitialTab] = useState('overview')
   const [showRouters, setShowRouters] = useState(false)
-  const [showNetwork, setShowNetwork] = useState(false)
   const [showBillingSettings, setShowBillingSettings] = useState(false)
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -38,14 +37,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     })
   }
 
-  useEffect(() => { loadData() }, [activeTab, equipmentSubTab])
-
-  // Red ISP no es una pestaña de datos: siempre abre NetworkManager
-  useEffect(() => {
-    if (activeTab === 'network' && !showNetwork && !showRouters && !showBillingSettings && !selectedClientId) {
-      setShowNetwork(true)
-    }
-  }, [activeTab, showNetwork, showRouters, showBillingSettings, selectedClientId])
+  useEffect(() => { if (activeTab !== 'network') loadData() }, [activeTab, equipmentSubTab])
 
   useEffect(() => {
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
@@ -186,6 +178,27 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   function openClientProfile(clientId: number, tab = 'overview') {
     setClientInitialTab(tab)
     setSelectedClientId(clientId)
+  }
+
+  function navigateMenu(id: string) {
+    if (id === 'network') {
+      setSelectedClientId(null)
+      setShowBillingSettings(false)
+      setShowRouters(false)
+      setActiveTab('network')
+      return
+    }
+    if (id === 'billing-settings') {
+      setSelectedClientId(null)
+      setShowBillingSettings(true)
+      return
+    }
+    setSelectedClientId(null)
+    setShowBillingSettings(false)
+    setShowRouters(false)
+    setActiveTab(id)
+    setData([])
+    setError('')
   }
 
   const menuSections = [
@@ -358,7 +371,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
-          onTabClick={(id) => { setSelectedClientId(null); setActiveTab(id) }} />
+          onTabClick={navigateMenu} />
         <ClientDetail
           clientId={selectedClientId}
           API={API}
@@ -374,44 +387,36 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="billing-settings" user={user} logout={logout}
-          onTabClick={(id) => { setShowBillingSettings(false); if (id === 'network') setShowNetwork(true); else setActiveTab(id) }} />
+          onTabClick={(id) => { setShowBillingSettings(false); navigateMenu(id) }} />
         <BillingSettings API={API} onBack={() => { setShowBillingSettings(false); setActiveTab('dashboard') }} />
       </div>
     )
   }
 
-  // Vista red ISP (sitios/nodos)
-  if (showNetwork) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex">
-        <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
-          onTabClick={(id) => {
-            if (id === 'network') return
-            setShowNetwork(false)
-            setActiveTab(id)
-          }} />
-        <NetworkManager
-          API={API}
-          onBack={() => { setShowNetwork(false); setActiveTab('dashboard') }}
-          onManageRouters={() => { setShowNetwork(false); setShowRouters(true) }}
-          onOpenInventory={() => { setShowNetwork(false); setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
-          onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
-        />
-      </div>
-    )
-  }
-
-  // Vista gestión de routers
+  // Vista gestión de routers (antes que Red ISP: se abre desde NetworkManager)
   if (showRouters) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="equipment" user={user} logout={logout}
-          onTabClick={(id) => {
-            if (id === 'network') { setShowRouters(false); setShowNetwork(true); return }
-            setShowRouters(false)
-            setActiveTab(id)
-          }} />
-        <RouterManager API={API} onBack={() => { setShowRouters(false); setShowNetwork(true) }} />
+          onTabClick={(id) => { setShowRouters(false); navigateMenu(id) }} />
+        <RouterManager API={API} onBack={() => { setShowRouters(false); setActiveTab('network') }} />
+      </div>
+    )
+  }
+
+  // Vista red ISP (sitios/nodos) — activeTab 'network', no vista de tabla genérica
+  if (activeTab === 'network') {
+    return (
+      <div className="min-h-screen bg-gray-100 flex">
+        <Sidebar menuSections={menuSections} activeTab="network" user={user} logout={logout}
+          onTabClick={navigateMenu} />
+        <NetworkManager
+          API={API}
+          onBack={() => setActiveTab('dashboard')}
+          onManageRouters={() => setShowRouters(true)}
+          onOpenInventory={() => { setActiveTab('equipment'); setEquipmentSubTab('infrastructure') }}
+          onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
+        />
       </div>
     )
   }
@@ -471,15 +476,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       )}
 
       <Sidebar menuSections={menuSections} activeTab={activeTab} user={user} logout={logout}
-        onTabClick={(id) => {
-          if (id === 'network') { setShowNetwork(true); return }
-          if (id === 'billing-settings') { setShowBillingSettings(true); return }
-          setShowNetwork(false)
-          setShowBillingSettings(false)
-          setActiveTab(id)
-          setData([])
-          setError('')
-        }} />
+        onTabClick={navigateMenu} />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto bg-gray-50">
@@ -719,7 +716,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
                 <span><strong>Inventario global</strong> — todos los equipos del ISP. Para ver por nodo y torre, usa Red ISP.</span>
-                <button type="button" onClick={() => setShowNetwork(true)}
+                <button type="button" onClick={() => setActiveTab('network')}
                   className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
                   Ir a Red ISP →
                 </button>
@@ -815,7 +812,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           )}
 
           {/* TABLAS GENERALES */}
-          {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && (
+          {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
             <div className="space-y-4">
               {activeTab === 'plans' && (
                 <div className="bg-purple-50 border border-purple-100 rounded-xl px-5 py-3 text-sm text-purple-900">
