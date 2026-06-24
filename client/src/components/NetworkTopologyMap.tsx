@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { MouseEvent } from 'react'
-import { ArrowLeft, ChevronRight, MapPin, Radio, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Radio, ZoomIn, ZoomOut } from 'lucide-react'
 import { cleanDeviceHost, openDeviceWeb } from '../lib/deviceWeb'
 
 type SiteNode = {
@@ -47,9 +47,10 @@ const ROUTER_W = 140
 const ROUTER_H = 52
 const CPE_W = 124
 const CPE_H = 54
-const COL_GAP = 32
-const ROW_GAP = 44
-const PAD = 56
+const COL_GAP = 40
+const ROW_GAP = 56
+const V_GAP = 32
+const PAD = 64
 
 function isOnline(eq: any) {
   return eq.agentConnected || eq.status === 'online'
@@ -115,7 +116,6 @@ function placeSiteNode(
   const id = `site-${site.id}`
   const cx = x + SITE_W / 2
   const bottom = y + SITE_H
-  const counts = countEquip(site)
 
   ctx.nodes.push({
     kind: 'site',
@@ -275,9 +275,9 @@ function placeRouterTree(
   let subtreeBottom = bottom
 
   if (routerCpes.length) {
-    const rowW = routerCpes.reduce((sum, c, i) => sum + CPE_W + (i ? 10 : 0), 0)
+    const rowW = routerCpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
     let cxPos = cx - rowW / 2
-    const cpeY = bottom + 28
+    const cpeY = bottom + V_GAP + 16
 
     for (const eq of routerCpes) {
       const hostCpe = cleanDeviceHost(eq.ipAddress)
@@ -298,7 +298,7 @@ function placeRouterTree(
         equip: eq,
       })
       ctx.edges.push({ fromId: id, toId: cpeId, dashed: true })
-      cxPos += CPE_W + 10
+      cxPos += CPE_W + COL_GAP
       ctx.maxX = Math.max(ctx.maxX, cxPos)
     }
     subtreeBottom = cpeY + CPE_H
@@ -308,7 +308,7 @@ function placeRouterTree(
   if (childRouters.length) {
     const branchW = childRouters.reduce((sum, r, i) => sum + measureRouterBranch(r, cpeMap, []) + (i ? COL_GAP : 0), 0)
     let childX = cx - branchW / 2
-    const childY = subtreeBottom + 28
+    const childY = subtreeBottom + V_GAP + 20
     const routerIds = new Set(allRouters.map((r) => r.id))
 
     for (const child of childRouters) {
@@ -338,7 +338,23 @@ function computeFocusLayout(site: SiteNode) {
   const cpes = (site.equipment || []).filter((e) => e.type === 'cpe')
   const routerIds = new Set(routers.map((r) => r.id))
 
+  const labelW = 260
+  const labelH = 48
   const labelId = `label-${site.id}`
+
+  const cpeMap = assignCpesToRouters(cpes, routers)
+  const roots = routers.filter((r) => !routerParentId(r, routerIds))
+  const branchW = roots.length
+    ? roots.reduce((sum, r, i) => {
+        const childRouters = routers.filter((x) => routerParentId(x, routerIds) === r.id)
+        const w = measureRouterBranch(r, cpeMap, childRouters)
+        return sum + w + (i ? COL_GAP : 0)
+      }, 0)
+    : cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
+
+  const canvasW = Math.max(720, branchW + PAD * 2)
+  const labelX = canvasW / 2 - labelW / 2
+
   ctx.nodes.push({
     kind: 'site-label',
     id: labelId,
@@ -346,21 +362,22 @@ function computeFocusLayout(site: SiteNode) {
     name: site.name,
     sub: site.city || site.type || 'nodo',
     online: siteOnline(site),
-    x: PAD,
+    x: labelX,
     y: PAD,
-    w: Math.max(SITE_W, 240),
-    h: 40,
+    w: labelW,
+    h: labelH,
     site,
   })
 
-  let y = PAD + 52
+  const routerY = PAD + labelH + ROW_GAP
 
   if (!routers.length && !cpes.length) {
-    ctx.maxY = y + 80
+    ctx.maxX = canvasW
+    ctx.maxY = routerY + 80
     return {
       nodes: ctx.nodes,
       edges: ctx.edges,
-      width: 640,
+      width: canvasW,
       height: 280,
       routerCount: 0,
       cpeCount: 0,
@@ -368,8 +385,8 @@ function computeFocusLayout(site: SiteNode) {
   }
 
   if (!routers.length) {
-    const rowW = cpes.reduce((sum, c, i) => sum + CPE_W + (i ? 10 : 0), 0)
-    let x = PAD + Math.max(0, (640 - rowW) / 2)
+    const rowW = cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
+    let x = canvasW / 2 - rowW / 2
     for (const eq of cpes) {
       const host = cleanDeviceHost(eq.ipAddress)
       const id = `cpe-${eq.id}`
@@ -383,36 +400,27 @@ function computeFocusLayout(site: SiteNode) {
         host,
         online: isOnline(eq),
         x,
-        y,
+        y: routerY,
         w: CPE_W,
         h: CPE_H,
         equip: eq,
       })
       ctx.edges.push({ fromId: labelId, toId: id, dashed: true })
-      x += CPE_W + 10
+      x += CPE_W + COL_GAP
     }
-    ctx.maxX = x + PAD
-    ctx.maxY = y + CPE_H + PAD
+    ctx.maxX = canvasW
+    ctx.maxY = routerY + CPE_H + PAD
     return {
       nodes: ctx.nodes,
       edges: ctx.edges,
-      width: Math.max(640, ctx.maxX),
-      height: Math.max(320, ctx.maxY),
+      width: canvasW,
+      height: Math.max(360, ctx.maxY),
       routerCount: 0,
       cpeCount: cpes.length,
     }
   }
 
-  const roots = routers.filter((r) => !routerParentId(r, routerIds))
-  const cpeMap = assignCpesToRouters(cpes, routers)
-
-  const branchW = roots.reduce((sum, r, i) => {
-    const w = measureRouterBranch(r, cpeMap, routers.filter((x) => routerParentId(x, routerIds) === r.id))
-    return sum + w + (i ? COL_GAP : 0)
-  }, 0)
-
-  let rx = PAD + Math.max(0, (Math.max(720, branchW + PAD * 2) - branchW) / 2)
-  const routerY = y
+  let rx = canvasW / 2 - branchW / 2
 
   for (const router of roots) {
     const childRouters = routers.filter((r) => routerParentId(r, routerIds) === router.id)
@@ -426,16 +434,18 @@ function computeFocusLayout(site: SiteNode) {
       rx + (branch - ROUTER_W) / 2,
       routerY,
       labelId,
-      { cx: PAD + 120, y: PAD + 40 },
+      { cx: canvasW / 2, y: PAD + labelH },
     )
     rx += branch + COL_GAP
   }
 
+  ctx.maxX = Math.max(ctx.maxX, canvasW)
+
   return {
     nodes: ctx.nodes,
     edges: ctx.edges,
-    width: Math.max(720, ctx.maxX + PAD),
-    height: Math.max(420, ctx.maxY + PAD),
+    width: canvasW,
+    height: Math.max(480, ctx.maxY + PAD),
     routerCount: routers.length,
     cpeCount: cpes.length,
   }
@@ -447,6 +457,72 @@ function nodeAnchor(n: LayoutNode) {
     top: n.y,
     bottom: n.y + n.h,
   }
+}
+
+/** Conexión ortogonal estilo n8n: baja → cruza → baja */
+function elbowPath(x1: number, y1: number, x2: number, y2: number, bendOffset = 22) {
+  const midY = y1 + bendOffset
+  if (Math.abs(x1 - x2) < 2) return `M ${x1} ${y1} L ${x2} ${y2}`
+  return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`
+}
+
+type DrawnPath = { d: string; dashed?: boolean; key: string }
+
+function buildConnectionPaths(edges: LayoutEdge[], nodes: LayoutNode[]): DrawnPath[] {
+  const posById = new Map(nodes.map((n) => [n.id, n]))
+  const byParent = new Map<string, LayoutEdge[]>()
+  for (const e of edges) {
+    if (!byParent.has(e.fromId)) byParent.set(e.fromId, [])
+    byParent.get(e.fromId)!.push(e)
+  }
+
+  const paths: DrawnPath[] = []
+
+  for (const [fromId, group] of byParent) {
+    const from = posById.get(fromId)
+    if (!from) continue
+    const fa = nodeAnchor(from)
+
+    const children = group
+      .map((e) => {
+        const to = posById.get(e.toId)
+        if (!to) return null
+        return { edge: e, ta: nodeAnchor(to) }
+      })
+      .filter(Boolean) as { edge: LayoutEdge; ta: ReturnType<typeof nodeAnchor> }[]
+
+    if (!children.length) continue
+
+    if (children.length === 1) {
+      const { edge, ta } = children[0]
+      paths.push({
+        key: `${fromId}-${edge.toId}`,
+        d: elbowPath(fa.cx, fa.bottom, ta.cx, ta.top),
+        dashed: edge.dashed,
+      })
+      continue
+    }
+
+    const busY = fa.bottom + V_GAP
+    const minCx = Math.min(...children.map((c) => c.ta.cx))
+    const maxCx = Math.max(...children.map((c) => c.ta.cx))
+
+    paths.push({
+      key: `${fromId}-trunk`,
+      d: `M ${fa.cx} ${fa.bottom} L ${fa.cx} ${busY} M ${minCx} ${busY} L ${maxCx} ${busY}`,
+      dashed: group[0].dashed,
+    })
+
+    for (const { edge, ta } of children) {
+      paths.push({
+        key: `${fromId}-${edge.toId}`,
+        d: `M ${ta.cx} ${busY} L ${ta.cx} ${ta.top}`,
+        dashed: edge.dashed,
+      })
+    }
+  }
+
+  return paths
 }
 
 function truncate(s: string, max: number) {
@@ -465,23 +541,20 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
     return computeOverviewLayout(tree)
   }, [tree, focusSite])
 
-  const edgesDrawn = useMemo(() => {
-    const posById = new Map(layout.nodes.map((n) => [n.id, n]))
-    return layout.edges.map((e) => {
-      const from = posById.get(e.fromId)
-      const to = posById.get(e.toId)
-      if (!from || !to) return null
-      const fa = nodeAnchor(from)
-      const ta = nodeAnchor(to)
-      return {
-        ...e,
-        x1: fa.cx,
-        y1: fa.bottom,
-        x2: ta.cx,
-        y2: ta.top,
-      }
-    }).filter(Boolean) as (LayoutEdge & { x1: number; y1: number; x2: number; y2: number })[]
-  }, [layout])
+  const connectionPaths = useMemo(
+    () => buildConnectionPaths(layout.edges, layout.nodes),
+    [layout],
+  )
+
+  const edgeTargets = useMemo(() => {
+    const ins = new Set<string>()
+    const outs = new Set<string>()
+    for (const e of layout.edges) {
+      outs.add(e.fromId)
+      ins.add(e.toId)
+    }
+    return { ins, outs }
+  }, [layout.edges])
 
   function enterSite(site: SiteNode) {
     setFocusSiteId(site.id)
@@ -567,17 +640,17 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
           style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: layout.width * zoom, height: layout.height * zoom }}
         >
           <g>
-            {edgesDrawn.map((e, i) => (
-              <line
-                key={`e-${i}`}
-                x1={e.x1}
-                y1={e.y1}
-                x2={e.x2}
-                y2={e.y2}
-                stroke={e.dashed ? '#94a3b8' : '#3b82f6'}
-                strokeWidth={e.dashed ? 1.5 : 2.5}
-                strokeDasharray={e.dashed ? '6 4' : undefined}
-                opacity={0.8}
+            {connectionPaths.map((p) => (
+              <path
+                key={p.key}
+                d={p.d}
+                fill="none"
+                stroke={p.dashed ? '#94a3b8' : '#6366f1'}
+                strokeWidth={p.dashed ? 1.75 : 2}
+                strokeDasharray={p.dashed ? '5 4' : undefined}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.85}
               />
             ))}
 
@@ -602,7 +675,23 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
                   onClick={(ev) => handleNodeClick(ev, n)}
                   className={n.kind === 'site' ? 'cursor-pointer' : n.host ? 'cursor-pointer' : 'cursor-default'}
                 >
-                  <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={10} fill={fill} stroke={stroke} strokeWidth={selected ? 2.5 : 1.5} />
+                  <rect
+                    x={n.x}
+                    y={n.y}
+                    width={n.w}
+                    height={n.h}
+                    rx={12}
+                    fill={fill}
+                    stroke={stroke}
+                    strokeWidth={selected ? 2.5 : 1.5}
+                    filter="drop-shadow(0 1px 2px rgb(0 0 0 / 0.06))"
+                  />
+                  {edgeTargets.ins.has(n.id) && (
+                    <circle cx={n.x + n.w / 2} cy={n.y} r={4} fill="#fff" stroke="#6366f1" strokeWidth={2} />
+                  )}
+                  {edgeTargets.outs.has(n.id) && (
+                    <circle cx={n.x + n.w / 2} cy={n.y + n.h} r={4} fill="#fff" stroke="#6366f1" strokeWidth={2} />
+                  )}
                   {(n.kind === 'site' || n.kind === 'router' || n.kind === 'cpe') && (
                     <circle cx={n.x + n.w - 12} cy={n.y + 12} r={5} fill={n.online ? '#22c55e' : '#94a3b8'} />
                   )}
