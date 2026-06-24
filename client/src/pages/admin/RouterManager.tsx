@@ -117,6 +117,15 @@ function isRouterOnline(router: any) {
   return Boolean(router.agentConnected) || router.status === 'online'
 }
 
+function resolveHost(router: any): string | null {
+  const creds = router.credentials || {}
+  const method = resolveConnectionMethod(router)
+  if (method === 'cloudflare_tunnel' && creds.tunnelHostname) {
+    return String(creds.tunnelHostname).trim() || null
+  }
+  return router.ipAddress?.trim() || creds.tunnelHostname?.trim() || null
+}
+
 export default function RouterManager({ API, onBack }: Props) {
   const [routers, setRouters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -733,6 +742,7 @@ export default function RouterManager({ API, onBack }: Props) {
               const MethodIcon = methodInfo?.icon || Globe
               const info = router.routerInfo || (router.firmware ? { version: router.firmware } : null)
               const online = isRouterOnline(router)
+              const host = resolveHost(router)
               return (
                 <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
@@ -767,7 +777,17 @@ export default function RouterManager({ API, onBack }: Props) {
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500">Host</span>
                       <span className="font-mono text-xs flex items-center gap-1">
-                        {resolveHost(router) || (
+                        {host ? (
+                          <a
+                            href={`https://${host}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {host}
+                          </a>
+                        ) : (
                           <button onClick={() => handleSetHost(router.id, null)} className="text-blue-600 hover:underline text-xs">+ Agregar host</button>
                         )}
                       </span>

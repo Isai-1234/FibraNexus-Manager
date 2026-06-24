@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
   ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User, Radar
+  Layers, Antenna, Network, Search, Pencil, User, Radar, Trash2
 } from 'lucide-react'
 import axios from 'axios'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
@@ -49,6 +49,31 @@ function statusDot(item: any) {
   return online ? 'bg-green-500' : 'bg-gray-400'
 }
 
+function flattenSites(nodes: any[], out: any[] = []): any[] {
+  for (const n of nodes) {
+    out.push(n)
+    if (n.children?.length) flattenSites(n.children, out)
+  }
+  return out
+}
+
+function collectDescendantIds(site: any, ids = new Set<number>()): Set<number> {
+  ids.add(site.id)
+  for (const c of site.children || []) collectDescendantIds(c, ids)
+  return ids
+}
+
+function findSiteInTree(nodes: any[], id: number): any | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    if (n.children?.length) {
+      const found = findSiteInTree(n.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any) {
   const isOpen = expanded.has(site.id)
   const hasChildren = site.children?.length > 0
@@ -84,6 +109,8 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [selectedSite, setSelectedSite] = useState<any>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [showSiteForm, setShowSiteForm] = useState(false)
+  const [siteFormMode, setSiteFormMode] = useState<'create' | 'edit'>('create')
+  const [editingSiteId, setEditingSiteId] = useState<number | null>(null)
   const [showEquipForm, setShowEquipForm] = useState(false)
   const [showRouterModal, setShowRouterModal] = useState(false)
   const [routerModalTab, setRouterModalTab] = useState<'link' | 'create'>('link')
@@ -171,10 +198,71 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
         ...siteForm,
         parentId: siteForm.parentId || selectedSite?.id || null,
       })
-      setShowSiteForm(false)
-      setSiteForm({ type: 'node' })
+      closeSiteForm()
       loadAll()
     } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function updateSite() {
+    if (!editingSiteId) return
+    try {
+      await api().patch(`/sites/${editingSiteId}`, {
+        name: siteForm.name,
+        type: siteForm.type,
+        city: siteForm.city,
+        address: siteForm.address,
+        latitude: siteForm.latitude || null,
+        longitude: siteForm.longitude || null,
+        parentId: siteForm.parentId || null,
+        notes: siteForm.notes,
+      })
+      closeSiteForm()
+      await loadAll()
+      await refreshSelectedSite()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function deleteSite() {
+    if (!editingSiteId) return
+    const site = findSiteInTree(tree, editingSiteId)
+    if (!site) return
+    if (!confirm(`¿Eliminar el nodo "${site.name}"? Los equipos quedarán sin nodo asignado.`)) return
+    try {
+      await api().delete(`/sites/${editingSiteId}`)
+      closeSiteForm()
+      setSelectedSite(null)
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  function closeSiteForm() {
+    setShowSiteForm(false)
+    setSiteFormMode('create')
+    setEditingSiteId(null)
+    setSiteForm({ type: 'node' })
+  }
+
+  function openCreateSite() {
+    setSiteForm({ type: 'node', parentId: selectedSite?.id || '' })
+    setSiteFormMode('create')
+    setEditingSiteId(null)
+    setShowSiteForm(true)
+  }
+
+  function openEditSite(site: any) {
+    setSiteForm({
+      name: site.name || '',
+      type: site.type || 'node',
+      city: site.city || '',
+      address: site.address || '',
+      latitude: site.latitude ?? '',
+      longitude: site.longitude ?? '',
+      parentId: site.parentId || '',
+      notes: site.notes || '',
+    })
+    setSiteFormMode('edit')
+    setEditingSiteId(site.id)
+    setShowSiteForm(true)
   }
 
   async function createEquipment() {
@@ -392,7 +480,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
         <aside className="w-72 flex-shrink-0 bg-white rounded-xl border flex flex-col overflow-hidden">
           <div className="p-3 border-b flex justify-between items-center">
             <span className="text-sm font-semibold text-gray-700">Jerarquía de red</span>
-            <button onClick={() => setShowSiteForm(true)} className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <button onClick={openCreateSite} className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Plus className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -451,7 +539,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </p>
                 <p className="text-sm mt-1">
                   {networkView === 'topology'
-                    ? 'Clic en torre para gestionar el nodo · clic en antena para abrir su interfaz web'
+                    ? 'Clic en un nodo para entrar y ver routers y antenas · clic en IP para abrir interfaz web'
                     : 'Desde aquí agregas routers, switches y antenas del nodo'}
                 </p>
                 {networkView === 'topology' && (
@@ -470,7 +558,17 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               <div className="bg-white rounded-xl border p-5">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h2 className="text-lg font-bold text-gray-900">{selectedSite.name}</h2>
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      {selectedSite.name}
+                      <button
+                        type="button"
+                        onClick={() => openEditSite(selectedSite)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                        title="Editar nodo"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </h2>
                     <p className="text-sm text-gray-500">{selectedSite.city || selectedSite.address || SITE_TYPES.find(t => t.value === selectedSite.type)?.label}</p>
                   </div>
                   <div className="flex gap-2">
@@ -705,10 +803,10 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
       {/* Modal sitio */}
       {showSiteForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between mb-4">
-              <h3 className="font-bold text-lg">Nuevo sitio / nodo</h3>
-              <button onClick={() => setShowSiteForm(false)}><X className="h-5 w-5" /></button>
+              <h3 className="font-bold text-lg">{siteFormMode === 'edit' ? 'Editar sitio / nodo' : 'Nuevo sitio / nodo'}</h3>
+              <button onClick={closeSiteForm}><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -723,6 +821,28 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                   {SITE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
+              {siteFormMode === 'edit' && (
+                <div>
+                  <label className="text-sm font-medium">Nodo padre</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 mt-1"
+                    value={siteForm.parentId || ''}
+                    onChange={e => setSiteForm({ ...siteForm, parentId: e.target.value ? parseInt(e.target.value, 10) : '' })}
+                  >
+                    <option value="">Sin padre (nodo raíz)</option>
+                    {flattenSites(tree)
+                      .filter((s) => {
+                        if (!editingSiteId) return true
+                        const blocked = collectDescendantIds(findSiteInTree(tree, editingSiteId) || { id: editingSiteId, children: [] })
+                        return !blocked.has(s.id)
+                      })
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Define la jerarquía: ej. Nodo2 depende de Torre Pangui.</p>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium">Ciudad</label>
                 <input className="w-full border rounded-lg px-3 py-2 mt-1" value={siteForm.city || ''}
@@ -752,8 +872,19 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               <p className="text-xs text-gray-500">Coordenadas opcionales para ubicar el nodo en mapas (Google Maps → clic derecho → copiar coordenadas).</p>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowSiteForm(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
-              <button onClick={createSite} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Crear</button>
+              {siteFormMode === 'edit' && (
+                <button type="button" onClick={deleteSite} className="py-2 px-3 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+              <button onClick={closeSiteForm} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button
+                onClick={siteFormMode === 'edit' ? updateSite : createSite}
+                disabled={!siteForm.name?.trim()}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {siteFormMode === 'edit' ? 'Guardar' : 'Crear'}
+              </button>
             </div>
           </div>
         </div>
