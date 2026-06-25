@@ -17,6 +17,8 @@ type Props = {
   tree: SiteNode[]
   selectedSiteId?: number | null
   onSelectSite: (site: SiteNode) => void
+  focusSiteId?: number | null
+  onFocusSiteChange?: (siteId: number | null) => void
 }
 
 type NodeKind = 'site' | 'router' | 'cpe' | 'site-label'
@@ -223,13 +225,22 @@ function assignCpesToRouters(cpes: any[], routers: any[]) {
   return map
 }
 
-function measureRouterBranch(router: any, cpeMap: Map<number, any[]>, childRouters: any[]): number {
+function measureRouterBranch(
+  router: any,
+  cpeMap: Map<number, any[]>,
+  allRouters: any[],
+  routerIds: Set<number>,
+): number {
   const cpes = cpeMap.get(router.id) || []
   const cpeW = cpes.length
-    ? cpes.reduce((sum, c, i) => sum + CPE_W + (i ? 10 : 0), 0)
+    ? cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
     : 0
-  const childW = childRouters.length
-    ? childRouters.reduce((sum, r, i) => sum + measureRouterBranch(r, cpeMap, []) + (i ? COL_GAP : 0), 0)
+  const children = allRouters.filter((r) => routerParentId(r, routerIds) === router.id)
+  const childW = children.length
+    ? children.reduce(
+      (sum, r, i) => sum + measureRouterBranch(r, cpeMap, allRouters, routerIds) + (i ? COL_GAP : 0),
+      0,
+    )
     : 0
   return Math.max(ROUTER_W, cpeW, childW)
 }
@@ -307,13 +318,16 @@ function placeRouterTree(
   }
 
   if (childRouters.length) {
-    const branchW = childRouters.reduce((sum, r, i) => sum + measureRouterBranch(r, cpeMap, []) + (i ? COL_GAP : 0), 0)
+    const branchW = childRouters.reduce(
+      (sum, r, i) => sum + measureRouterBranch(r, cpeMap, allRouters, routerIds) + (i ? COL_GAP : 0),
+      0,
+    )
     let childX = cx - branchW / 2
     const childY = subtreeBottom + V_GAP + 20
     const routerIds = new Set(allRouters.map((r) => r.id))
 
     for (const child of childRouters) {
-      const w = measureRouterBranch(child, cpeMap, [])
+      const w = measureRouterBranch(child, cpeMap, allRouters, routerIds)
       placeRouterTree(
         ctx,
         child,
@@ -333,91 +347,30 @@ function placeRouterTree(
   return subtreeBottom
 }
 
-function layoutRouterColumn(
-  ctx: BuildCtx,
-  router: any,
-  cpeMap: Map<number, any[]>,
-  allRouters: any[],
-  routerIds: Set<number>,
-  parentId: string,
-  centerX: number,
-  startY: number,
-): number {
-  const rx = centerX - ROUTER_W / 2
-  const id = `router-${router.id}`
-  const host = routerHost(router)
-
-  ctx.nodes.push({
-    kind: 'router',
-    id,
-    siteId: router.siteId,
-    name: router.name || 'Router',
-    sub: host || 'sin IP',
-    host,
-    online: isOnline(router),
-    x: rx,
-    y: startY,
-    w: ROUTER_W,
-    h: ROUTER_H,
-    equip: router,
-  })
-  ctx.edges.push({ fromId: parentId, toId: id, dashed: parentId.startsWith('router-') })
-
-  let bottom = startY + ROUTER_H
-  ctx.maxY = Math.max(ctx.maxY, bottom)
-
-  const routerCpes = cpeMap.get(router.id) || []
-  if (routerCpes.length) {
-    const rowW = routerCpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
-    let cxPos = centerX - rowW / 2
-    const cpeY = bottom + V_GAP
-
-    for (const eq of routerCpes) {
-      const hostCpe = cleanDeviceHost(eq.ipAddress)
-      const cpeId = `cpe-${eq.id}`
-      ctx.nodes.push({
-        kind: 'cpe',
-        id: cpeId,
-        siteId: router.siteId,
-        clientId: eq.clientId,
-        name: eq.clientName || eq.name,
-        sub: hostCpe || 'sin IP',
-        host: hostCpe,
-        online: isOnline(eq),
-        x: cxPos,
-        y: cpeY,
-        w: CPE_W,
-        h: CPE_H,
-        equip: eq,
-      })
-      ctx.edges.push({ fromId: id, toId: cpeId, dashed: true })
-      cxPos += CPE_W + COL_GAP
-    }
-    bottom = cpeY + CPE_H
-    ctx.maxY = bottom
-  }
-
-  const children = allRouters.filter((r) => routerParentId(r, routerIds) === router.id)
-  let childY = bottom + ROW_GAP
-  for (const child of children) {
-    childY = layoutRouterColumn(ctx, child, cpeMap, allRouters, routerIds, id, centerX, childY)
-    childY += ROW_GAP
-  }
-
-  return Math.max(bottom, childY - ROW_GAP)
-}
-
 function computeFocusLayout(site: SiteNode) {
   const ctx: BuildCtx = { nodes: [], edges: [], maxX: PAD, maxY: PAD }
   const routers = (site.equipment || []).filter((e) => e.type === 'router')
   const cpes = (site.equipment || []).filter((e) => e.type === 'cpe')
   const routerIds = new Set(routers.map((r) => r.id))
+  const cpeMap = assignCpesToRouters(cpes, routers)
+  const roots = routers.filter((r) => !routerParentId(r, routerIds))
 
   const labelW = 220
   const labelH = 52
   const labelId = `label-${site.id}`
-  const canvasW = 480
+
+  const rootsBranchW = roots.length
+    ? roots.reduce(
+      (sum, r, i) => sum + measureRouterBranch(r, cpeMap, routers, routerIds) + (i ? COL_GAP * 2 : 0),
+      0,
+    )
+    : cpes.length
+      ? cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
+      : 0
+
+  const canvasW = Math.max(720, rootsBranchW + PAD * 3)
   const centerX = canvasW / 2
+  const labelBottom = { cx: centerX, y: PAD + labelH }
 
   ctx.nodes.push({
     kind: 'site-label',
@@ -433,16 +386,14 @@ function computeFocusLayout(site: SiteNode) {
     site,
   })
 
-  const cpeMap = assignCpesToRouters(cpes, routers)
-  const roots = routers.filter((r) => !routerParentId(r, routerIds))
-  let cursorY = PAD + labelH + ROW_GAP
+  const startY = PAD + labelH + ROW_GAP
 
   if (!routers.length && !cpes.length) {
     return {
       nodes: ctx.nodes,
       edges: ctx.edges,
       width: canvasW,
-      height: cursorY + 80,
+      height: startY + 80,
       routerCount: 0,
       cpeCount: 0,
     }
@@ -464,7 +415,7 @@ function computeFocusLayout(site: SiteNode) {
         host,
         online: isOnline(eq),
         x,
-        y: cursorY,
+        y: startY,
         w: CPE_W,
         h: CPE_H,
         equip: eq,
@@ -472,25 +423,58 @@ function computeFocusLayout(site: SiteNode) {
       ctx.edges.push({ fromId: labelId, toId: id, dashed: true })
       x += CPE_W + COL_GAP
     }
-    ctx.maxY = cursorY + CPE_H + PAD
+    ctx.maxX = Math.max(ctx.maxX, x + PAD)
+    ctx.maxY = startY + CPE_H + PAD
     return {
       nodes: ctx.nodes,
       edges: ctx.edges,
-      width: canvasW,
+      width: Math.max(canvasW, ctx.maxX),
       height: ctx.maxY,
       routerCount: 0,
       cpeCount: cpes.length,
     }
   }
 
-  for (const root of roots) {
-    cursorY = layoutRouterColumn(ctx, root, cpeMap, routers, routerIds, labelId, centerX, cursorY) + ROW_GAP
+  if (roots.length === 1) {
+    const root = roots[0]
+    const w = measureRouterBranch(root, cpeMap, routers, routerIds)
+    const childRouters = routers.filter((r) => routerParentId(r, routerIds) === root.id)
+    placeRouterTree(
+      ctx,
+      root,
+      cpeMap,
+      childRouters,
+      routers,
+      centerX - ROUTER_W / 2,
+      startY,
+      labelId,
+      labelBottom,
+    )
+  } else {
+    let x = centerX - rootsBranchW / 2
+    for (const root of roots) {
+      const w = measureRouterBranch(root, cpeMap, routers, routerIds)
+      const childRouters = routers.filter((r) => routerParentId(r, routerIds) === root.id)
+      placeRouterTree(
+        ctx,
+        root,
+        cpeMap,
+        childRouters,
+        routers,
+        x + (w - ROUTER_W) / 2,
+        startY,
+        labelId,
+        labelBottom,
+      )
+      x += w + COL_GAP * 2
+      ctx.maxX = Math.max(ctx.maxX, x)
+    }
   }
 
   return {
     nodes: ctx.nodes,
     edges: ctx.edges,
-    width: canvasW,
+    width: Math.max(canvasW, ctx.maxX + PAD),
     height: Math.max(520, ctx.maxY + PAD * 2),
     routerCount: routers.length,
     cpeCount: cpes.length,
@@ -580,9 +564,17 @@ function truncate(s: string, max: number) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
-export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite }: Props) {
+export default function NetworkTopologyMap({
+  tree, selectedSiteId, onSelectSite, focusSiteId: focusSiteIdProp, onFocusSiteChange,
+}: Props) {
   const [zoom, setZoom] = useState(1)
-  const [focusSiteId, setFocusSiteId] = useState<number | null>(null)
+  const [internalFocusSiteId, setInternalFocusSiteId] = useState<number | null>(null)
+  const focusSiteId = focusSiteIdProp !== undefined ? focusSiteIdProp : internalFocusSiteId
+
+  function setFocusSiteId(id: number | null) {
+    if (onFocusSiteChange) onFocusSiteChange(id)
+    else setInternalFocusSiteId(id)
+  }
 
   const focusSite = focusSiteId ? findSite(tree, focusSiteId) : null
   const breadcrumb = focusSiteId ? sitePath(tree, focusSiteId) : []
@@ -596,6 +588,24 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
     () => buildConnectionPaths(layout.edges, layout.nodes),
     [layout],
   )
+
+  const siteZone = useMemo(() => {
+    if (!focusSite) return null
+    const inner = layout.nodes.filter((n) => n.kind !== 'site-label')
+    if (!inner.length) return null
+    const minX = Math.min(...inner.map((n) => n.x))
+    const minY = Math.min(...inner.map((n) => n.y))
+    const maxX = Math.max(...inner.map((n) => n.x + n.w))
+    const maxY = Math.max(...inner.map((n) => n.y + n.h))
+    const padX = 22
+    const padY = 14
+    return {
+      x: minX - padX,
+      y: minY - padY,
+      w: maxX - minX + padX * 2,
+      h: maxY - minY + padY * 2,
+    }
+  }, [layout.nodes, focusSite])
 
   const edgeTargets = useMemo(() => {
     const ins = new Set<string>()
@@ -691,6 +701,19 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
           style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', width: layout.width * zoom, height: layout.height * zoom }}
         >
           <g>
+            {siteZone && (
+              <rect
+                x={siteZone.x}
+                y={siteZone.y}
+                width={siteZone.w}
+                height={siteZone.h}
+                rx={14}
+                fill="#f8fafc"
+                stroke="#cbd5e1"
+                strokeWidth={1.5}
+                strokeDasharray="6 4"
+              />
+            )}
             {connectionPaths.map((p) => (
               <path
                 key={p.key}
@@ -748,15 +771,26 @@ export default function NetworkTopologyMap({ tree, selectedSiteId, onSelectSite 
                   )}
 
                   {n.kind === 'site-label' && (
-                    <text
-                      x={n.x + n.w / 2}
-                      y={n.y + 30}
-                      textAnchor="middle"
-                      fill="#111827"
-                      style={{ fontSize: 14, fontWeight: 700 }}
-                    >
-                      {truncate(n.name, 24)}
-                    </text>
+                    <>
+                      <text
+                        x={n.x + n.w / 2}
+                        y={n.y + 22}
+                        textAnchor="middle"
+                        fill="#111827"
+                        style={{ fontSize: 14, fontWeight: 700 }}
+                      >
+                        {truncate(n.name, 24)}
+                      </text>
+                      <text
+                        x={n.x + n.w / 2}
+                        y={n.y + 38}
+                        textAnchor="middle"
+                        fill="#6b7280"
+                        style={{ fontSize: 10 }}
+                      >
+                        {truncate(n.sub || '', 28)}
+                      </text>
+                    </>
                   )}
 
                   {n.kind === 'site' && n.site && (

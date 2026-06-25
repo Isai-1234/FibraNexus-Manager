@@ -630,13 +630,17 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
-    const { connectionMethod, tunnelHostname, location, name, routerUser, routerPass, routerPort } = req.body;
+    const { connectionMethod, tunnelHostname, location, name, routerUser, routerPass, routerPort, parentRouterId } = req.body;
     const creds = { ...router.credentials };
     if (connectionMethod) creds.connectionMethod = connectionMethod;
     if (tunnelHostname) creds.tunnelHostname = tunnelHostname;
     if (routerUser !== undefined) creds.routerUser = routerUser || null;
     if (routerPass !== undefined) creds.routerPass = routerPass || null;
     if (routerPort) creds.routerPort = routerPort;
+    if (parentRouterId !== undefined) {
+      if (parentRouterId) creds.parentRouterId = parseInt(parentRouterId, 10);
+      else delete creds.parentRouterId;
+    }
     // Blindaje: campos operacionales inmutables vía este endpoint
     if (router.credentials?.agentToken) creds.agentToken = router.credentials.agentToken;
     if (router.credentials?.lastHeartbeat) creds.lastHeartbeat = router.credentials.lastHeartbeat;
@@ -801,8 +805,13 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
     );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
-    const token = router.credentials?.agentToken;
-    if (!token) return res.status(400).json({ error: 'Router sin token de agente' });
+    let token = router.credentials?.agentToken;
+    if (!token) {
+      token = crypto.randomUUID();
+      const updatedCreds = { ...(router.credentials || {}), agentToken: token };
+      await db.update(equipment).set({ credentials: updatedCreds, updatedAt: new Date() })
+        .where(eq(equipment.id, router.id));
+    }
 
     const connectionMethod = inferConnectionMethod(router);
     const tunnelToken = router.credentials?.tunnelToken;

@@ -15,6 +15,23 @@ import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 
 export const sitesRouter = Router();
 
+async function resolveEquipmentParentRouter(orgId, parentId, siteId, equipmentId = null) {
+  if (parentId === undefined || parentId === null || parentId === '') return { parentId: null };
+  const pid = parseInt(parentId, 10);
+  if (!Number.isFinite(pid)) return { error: 'Router padre inválido', status: 400 };
+  if (equipmentId && pid === equipmentId) return { error: 'Un equipo no puede ser padre de sí mismo', status: 400 };
+  const [parent] = await db.select().from(equipment)
+    .where(and(eq(equipment.id, pid), orgFilter(equipment, orgId)))
+    .limit(1);
+  if (!parent) return { error: 'Router padre no encontrado', status: 404 };
+  if (parent.type !== 'router') return { error: 'El padre debe ser un router', status: 400 };
+  const resolvedSiteId = siteId != null ? parseInt(siteId, 10) : null;
+  if (resolvedSiteId && parent.siteId !== resolvedSiteId) {
+    return { error: 'El router padre debe estar en el mismo nodo', status: 400 };
+  }
+  return { parentId: pid };
+}
+
 function buildSiteTree(flatSites, equipmentList) {
   const byParent = new Map();
   for (const s of flatSites) {
@@ -195,8 +212,15 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const { name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId, connectionMode, pppoeUsername } = req.body;
+    const {
+      name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId,
+      connectionMode, pppoeUsername, parentId,
+    } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
+
+    const parsedSiteId = siteId ? parseInt(siteId, 10) : null;
+    const parentResult = await resolveEquipmentParentRouter(orgId, parentId, parsedSiteId);
+    if (parentResult.error) return res.status(parentResult.status).json({ error: parentResult.error });
 
     if (siteId) {
       const [site] = await db.select().from(sites)
@@ -213,7 +237,6 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       if (!clientRow) return res.status(404).json({ error: 'Abonado no encontrado' });
     }
 
-    const parsedSiteId = siteId ? parseInt(siteId, 10) : null;
     const resolvedMac = await enrichMacFromDhcp(orgId, {
       siteId: parsedSiteId,
       ipAddress,
@@ -223,10 +246,12 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
     const initCreds = {};
     if (connectionMode && connectionMode !== 'static') initCreds.connectionMode = connectionMode;
     if (pppoeUsername) initCreds.pppoeUsername = pppoeUsername;
+    if (parentResult.parentId) initCreds.routerId = parentResult.parentId;
 
     const [created] = await db.insert(equipment).values({
       organizationId: orgId,
       siteId: parsedSiteId,
+      parentId: parentResult.parentId,
       name,
       type,
       brand: brand || 'Generic',
@@ -263,8 +288,18 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
 
     const {
       name, brand, model, ipAddress, macAddress, snmpCommunity, notes, clientId, siteId,
-      connectionMode, pppoeUsername,
+      connectionMode, pppoeUsername, parentId,
     } = req.body;
+
+    const mergedSiteForParent = siteId !== undefined
+      ? (siteId ? parseInt(siteId, 10) : null)
+      : existing.siteId;
+    if (parentId !== undefined) {
+      const parentResult = await resolveEquipmentParentRouter(
+        orgId, parentId, mergedSiteForParent, equipmentId,
+      );
+      if (parentResult.error) return res.status(parentResult.status).json({ error: parentResult.error });
+    }
 
     const patch = { updatedAt: new Date() };
     if (name !== undefined) patch.name = name;
@@ -287,9 +322,17 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     if (notes !== undefined) patch.notes = notes || null;
     if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
 
-    if (connectionMode !== undefined || pppoeUsername !== undefined) {
+    if (parentId !== undefined) {
+      patch.parentId = parentId ? parseInt(parentId, 10) : null;
+    }
+
+    if (parentId !== undefined || connectionMode !== undefined || pppoeUsername !== undefined) {
       const currentCreds = existing.credentials || {};
       const mergedCreds = { ...currentCreds };
+      if (parentId !== undefined) {
+        if (patch.parentId) mergedCreds.routerId = patch.parentId;
+        else delete mergedCreds.routerId;
+      }
       if (connectionMode !== undefined) {
         if (connectionMode && connectionMode !== 'static') {
           mergedCreds.connectionMode = connectionMode;

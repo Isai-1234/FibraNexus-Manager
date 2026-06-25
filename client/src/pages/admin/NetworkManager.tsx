@@ -74,28 +74,75 @@ function findSiteInTree(nodes: any[], id: number): any | null {
   return null
 }
 
-function SiteNode({ site, depth, selectedId, onSelect, expanded, onToggle }: any) {
+function siteNameById(tree: any[], siteId: number | null | undefined): string {
+  if (!siteId) return 'Sin nodo'
+  return flattenSites(tree).find((s) => s.id === siteId)?.name || `Nodo #${siteId}`
+}
+
+function routerTypeLabel(r: any): string {
+  const t = String(r.credentials?.routerType || '')
+  if (t.startsWith('edgerouter')) return 'EdgeRouter'
+  if (t.startsWith('mikrotik')) return 'MikroTik'
+  return r.brand || 'Router'
+}
+
+function sortLinkableRouters(linkable: any[], site: any | null): any[] {
+  if (!site) return linkable
+  const parentId = site.parentId
+  const siteName = String(site.name || '').toLowerCase()
+  return [...linkable].sort((a, b) => {
+    const score = (r: any) => {
+      let s = 0
+      if (parentId && r.siteId === parentId) s -= 10
+      if (String(r.name || '').toLowerCase().includes(siteName)) s -= 5
+      if (!r.siteId) s -= 2
+      return s
+    }
+    return score(a) - score(b) || String(a.name).localeCompare(String(b.name))
+  })
+}
+
+function SiteNode({ site, depth, selectedId, onSelect, onEdit, expanded, onToggle }: any) {
   const isOpen = expanded.has(site.id)
   const hasChildren = site.children?.length > 0
   return (
-    <div>
-      <button
-        onClick={() => onSelect(site)}
-        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition ${selectedId === site.id ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-100 text-gray-700'}`}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
+    <div className="group/node">
+      <div
+        className={`flex items-center gap-0.5 rounded-lg ${selectedId === site.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
       >
-        {hasChildren ? (
-          <span onClick={(e) => { e.stopPropagation(); onToggle(site.id) }} className="p-0.5">
-            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </span>
-        ) : <span className="w-4" />}
-        <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
-        <span className="truncate font-medium">{site.name}</span>
-        <span className="ml-auto text-xs text-gray-400">{site.equipment?.length || 0}</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => onSelect(site)}
+          className={`flex-1 flex items-center gap-2 px-2 py-2 text-left text-sm min-w-0 ${selectedId === site.id ? 'text-blue-800' : 'text-gray-700'}`}
+        >
+          {hasChildren ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onToggle(site.id) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(site.id) } }}
+              className="p-0.5"
+            >
+              {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </span>
+          ) : <span className="w-4" />}
+          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
+          <span className="truncate font-medium">{site.name}</span>
+          <span className="ml-auto text-xs text-gray-400 flex-shrink-0">{site.equipment?.length || 0}</span>
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onEdit(site) }}
+          className="p-1.5 mr-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover/node:opacity-100 transition flex-shrink-0"
+          title="Editar nodo"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </div>
       {isOpen && site.children?.map((child: any) => (
         <SiteNode key={child.id} site={child} depth={depth + 1} selectedId={selectedId}
-          onSelect={onSelect} expanded={expanded} onToggle={onToggle} />
+          onSelect={onSelect} onEdit={onEdit} expanded={expanded} onToggle={onToggle} />
       ))}
     </div>
   )
@@ -126,7 +173,10 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [clients, setClients] = useState<any[]>([])
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
+  const [editingRouter, setEditingRouter] = useState<any>(null)
+  const [editRouterForm, setEditRouterForm] = useState<any>({})
   const [networkView, setNetworkView] = useState<NetworkView>('topology')
+  const [topologyFocusId, setTopologyFocusId] = useState<number | null>(null)
 
   function api() {
     return axios.create({
@@ -172,7 +222,14 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     setRouterNetwork(null)
     setRouterPanelTab('subscribers')
     setExpanded(prev => new Set(prev).add(site.id))
+    setTopologyFocusId(site.id)
   }
+
+  useEffect(() => {
+    if (networkView === 'topology' && selectedSite?.id) {
+      setTopologyFocusId(selectedSite.id)
+    }
+  }, [networkView, selectedSite?.id])
 
   async function refreshSelectedSite() {
     if (!selectedSite) return
@@ -271,6 +328,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
         ...equipForm,
         siteId: equipForm.siteId || selectedSite?.id,
         clientId: equipForm.clientId || null,
+        parentId: equipForm.parentId || null,
       })
       setShowEquipForm(false)
       setEquipForm({ type: 'cpe', brand: 'Ubiquiti' })
@@ -290,6 +348,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
       macAddress: eq.macAddress || '',
       snmpCommunity: eq.snmpCommunity || '',
       clientId: eq.clientId || '',
+      parentId: eq.parentId || eq.credentials?.routerId || '',
     })
     setIpSuggestHint('')
   }
@@ -300,6 +359,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
       await api().patch(`/sites/equipment/${editingEquip.id}`, {
         ...editEquipForm,
         clientId: editEquipForm.clientId || null,
+        parentId: editEquipForm.parentId || null,
       })
       setEditingEquip(null)
       setEditEquipForm({})
@@ -313,7 +373,8 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     const cleanIp = String(ip || '').split('/')[0].trim()
     if (!cleanIp || !siteId) return
     try {
-      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const formParentId = form === 'edit' ? editEquipForm.parentId : equipForm.parentId
+      const routerId = formParentId || siteRouters[0]?.id || selectedRouter?.id
       const q = routerId ? `&routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${siteId}/mac-for-ip?ip=${encodeURIComponent(cleanIp)}${q}`)
       if (!res.data.macAddress) return
@@ -332,7 +393,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     setSuggestingIp(true)
     setIpSuggestHint('')
     try {
-      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const routerId = editEquipForm.parentId || siteRouters[0]?.id || selectedRouter?.id
       const q = routerId ? `?routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
       setEditEquipForm((f: any) => ({
@@ -357,7 +418,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     setSuggestingIp(true)
     setIpSuggestHint('')
     try {
-      const routerId = siteRouters[0]?.id || selectedRouter?.id
+      const routerId = equipForm.parentId || siteRouters[0]?.id || selectedRouter?.id
       const q = routerId ? `?routerId=${routerId}` : ''
       const res = await api().get(`/network/sites/${siteId}/next-free-ip${q}`)
       setEquipForm((f: any) => ({
@@ -390,15 +451,87 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
 
   async function linkExistingRouter() {
     if (!linkRouterId || !selectedSite) return
-    await assignToSite(Number(linkRouterId), selectedSite.id)
-    setShowRouterModal(false)
-    setLinkRouterId('')
+    const linkedId = Number(linkRouterId)
+    try {
+      await assignToSite(linkedId, selectedSite.id)
+      const orphans = (selectedSite.equipment || []).filter(
+        (e: any) => e.type === 'cpe' && !e.parentId && !e.credentials?.routerId,
+      )
+      for (const cpe of orphans) {
+        await api().patch(`/sites/equipment/${cpe.id}`, { parentId: linkedId })
+      }
+      setShowRouterModal(false)
+      setLinkRouterId('')
+      if (orphans.length) {
+        alert(`Router vinculado. ${orphans.length} antena(s) CPE asignada(s) automáticamente a este router.`)
+      }
+      await refreshSelectedSite()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function quickLinkRouter(routerId: number) {
+    if (!selectedSite) return
+    try {
+      await assignToSite(routerId, selectedSite.id)
+      const orphans = (selectedSite.equipment || []).filter(
+        (e: any) => e.type === 'cpe' && !e.parentId && !e.credentials?.routerId,
+      )
+      for (const cpe of orphans) {
+        await api().patch(`/sites/equipment/${cpe.id}`, { parentId: routerId })
+      }
+      await refreshSelectedSite()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  function openEditRouter(eq: any) {
+    setEditingRouter(eq)
+    setEditRouterForm({
+      name: eq.name || '',
+      siteId: eq.siteId || '',
+      parentRouterId: eq.credentials?.parentRouterId || '',
+    })
+  }
+
+  async function saveEditRouter() {
+    if (!editingRouter) return
+    try {
+      const newSiteId = editRouterForm.siteId ? Number(editRouterForm.siteId) : null
+      if (newSiteId !== editingRouter.siteId) {
+        await api().post(`/sites/equipment/${editingRouter.id}/assign`, { siteId: newSiteId })
+      }
+      if (editRouterForm.name?.trim() && editRouterForm.name !== editingRouter.name) {
+        await api().patch(`/sites/equipment/${editingRouter.id}`, { name: editRouterForm.name.trim() })
+      }
+      const prevParent = editingRouter.credentials?.parentRouterId || null
+      const newParent = editRouterForm.parentRouterId ? Number(editRouterForm.parentRouterId) : null
+      if (String(prevParent || '') !== String(newParent || '')) {
+        await api().patch(`/routers/${editingRouter.id}`, { parentRouterId: newParent })
+      }
+      setEditingRouter(null)
+      setEditRouterForm({})
+      await refreshSelectedSite()
+      loadAll()
+    } catch (e: any) { alert(e.response?.data?.error || e.message) }
+  }
+
+  async function unlinkRouterFromSite(eq: any) {
+    if (!confirm(`¿Quitar "${eq.name}" de este nodo? El router seguirá en tu inventario (sin nodo asignado).`)) return
+    await assignToSite(eq.id, null)
   }
 
   function openRouterModal() {
-    const linkable = routers.filter((r) => r.siteId !== selectedSite?.id)
+    const linkable = sortLinkableRouters(
+      routers.filter((r) => r.siteId !== selectedSite?.id),
+      selectedSite,
+    )
+    const suggested = linkable.find((r) => {
+      const n = String(selectedSite?.name || '').toLowerCase()
+      return n && String(r.name || '').toLowerCase().includes(n)
+    })
     setRouterModalTab(linkable.length > 0 ? 'link' : 'create')
-    setLinkRouterId(linkable.length === 1 ? linkable[0].id : '')
+    setLinkRouterId(suggested?.id || (linkable.length === 1 ? linkable[0].id : ''))
     setEquipForm({ ...equipForm, siteId: selectedSite?.id, type: 'router', brand: 'MikroTik' })
     setShowRouterModal(true)
   }
@@ -419,8 +552,15 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const siteEquipment = selectedSite?.equipment || []
   const siteRouters = siteEquipment.filter((e: any) => e.type === 'router')
   const siteCpe = siteEquipment.filter((e: any) => e.type === 'cpe')
-  const linkableRouters = routers.filter((r) => r.siteId !== selectedSite?.id)
+  const linkableRouters = sortLinkableRouters(
+    routers.filter((r) => r.siteId !== selectedSite?.id),
+    selectedSite,
+  )
   const unassignedRouters = unassigned.filter((e) => e.type === 'router')
+  const allSites = flattenSites(tree)
+  const upstreamRouters = routers.filter(
+    (r) => r.id !== editingRouter?.id && String(r.credentials?.routerType || '').startsWith('mikrotik'),
+  )
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 min-h-screen">
@@ -493,7 +633,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
             )}
             {tree.map(site => (
               <SiteNode key={site.id} site={site} depth={0} selectedId={selectedSite?.id}
-                onSelect={selectSite} expanded={expanded} onToggle={toggleExpand} />
+                onSelect={selectSite} onEdit={openEditSite} expanded={expanded} onToggle={toggleExpand} />
             ))}
           </div>
           {unassigned.length > 0 && (
@@ -525,6 +665,8 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               tree={tree}
               selectedSiteId={selectedSite?.id}
               onSelectSite={selectSite}
+              focusSiteId={topologyFocusId}
+              onFocusSiteChange={setTopologyFocusId}
             />
           </div>
         )}
@@ -576,7 +718,18 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                       className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 flex items-center gap-1">
                       <Router className="h-3.5 w-3.5" /> Router
                     </button>
-                    <button onClick={() => { setEquipForm({ ...equipForm, siteId: selectedSite.id, type: 'cpe', brand: 'Ubiquiti' }); setIpSuggestHint(''); setShowEquipForm(true) }}
+                    <button onClick={() => {
+                      const routers = (selectedSite?.equipment || []).filter((e: any) => e.type === 'router')
+                      setEquipForm({
+                        ...equipForm,
+                        siteId: selectedSite.id,
+                        type: 'cpe',
+                        brand: 'Ubiquiti',
+                        parentId: routers.length === 1 ? routers[0].id : '',
+                      })
+                      setIpSuggestHint('')
+                      setShowEquipForm(true)
+                    }}
                       className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 flex items-center gap-1">
                       <Antenna className="h-3.5 w-3.5" /> Antena CPE
                     </button>
@@ -592,6 +745,46 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 {/* Equipos del sitio */}
                 <div className="bg-white rounded-xl border flex flex-col overflow-hidden">
                   <div className="p-4 border-b font-semibold text-gray-800">Equipos en este nodo</div>
+                  {siteRouters.length === 0 && linkableRouters.length > 0 && (
+                    <div className="p-4 border-b bg-amber-50 space-y-3">
+                      <p className="text-sm text-amber-900 font-medium">
+                        Este nodo no tiene router asignado
+                        {siteCpe.length > 0 ? ` (${siteCpe.length} antena(s) sin router local)` : ''}
+                      </p>
+                      <p className="text-xs text-amber-800">
+                        Si el EdgeRouter o MikroTik de este sector está registrado en otro nodo (ej. torre padre), muévelo aquí.
+                        Las antenas CPE se vincularán automáticamente.
+                      </p>
+                      <div className="space-y-2">
+                        {linkableRouters.slice(0, 4).map((r: any) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => quickLinkRouter(r.id)}
+                            className="w-full flex items-center gap-2 p-2.5 bg-white border border-amber-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 text-left text-sm transition"
+                          >
+                            <Router className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                            <span className="flex-1 min-w-0">
+                              <span className="font-medium block truncate">{r.name}</span>
+                              <span className="text-xs text-gray-500">
+                                {routerTypeLabel(r)} · {siteNameById(tree, r.siteId)}
+                                {r.credentials?.tunnelHostname || r.ipAddress
+                                  ? ` · ${r.credentials?.tunnelHostname || r.ipAddress}` : ''}
+                              </span>
+                            </span>
+                            <span className="text-xs font-medium text-purple-700 flex-shrink-0">Mover aquí →</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openRouterModal}
+                        className="text-xs text-purple-700 hover:underline font-medium"
+                      >
+                        Ver todos los routers disponibles…
+                      </button>
+                    </div>
+                  )}
                   <div className="flex-1 overflow-y-auto divide-y">
                     {siteEquipment.length === 0 ? (
                       <div className="p-6 text-center text-gray-400 text-sm space-y-3">
@@ -612,7 +805,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">{eq.name}</p>
                           <p className="text-xs text-gray-500">
-                            {eq.type} · {eq.brand} {eq.model}
+                            {eq.type === 'router' ? routerTypeLabel(eq) : eq.type} · {eq.brand} {eq.model}
                             {eq.ipAddress ? (
                               <>
                                 {' · '}
@@ -643,16 +836,35 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                           {eq.type === 'cpe' && !eq.clientName && (
                             <p className="text-xs text-amber-600 mt-0.5">Sin abonado asignado</p>
                           )}
+                          {eq.type === 'cpe' && (() => {
+                            const rid = eq.parentId || eq.credentials?.routerId
+                            const r = rid ? siteRouters.find((x: any) => x.id === rid) : null
+                            return r ? (
+                              <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                                <Router className="h-3 w-3" /> Router: {r.name}
+                              </p>
+                            ) : siteRouters.length > 1 ? (
+                              <p className="text-xs text-amber-600 mt-0.5">Sin router asignado (topología usará fallback)</p>
+                            ) : null
+                          })()}
                         </div>
                         {eq.type === 'router' && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 items-center">
+                            <button
+                              type="button"
+                              onClick={() => openEditRouter(eq)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="Editar router / cambiar nodo"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
                             <button onClick={() => loadRouterNetwork(eq, 'subscribers')}
                               className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
                               <Eye className="h-3 w-3" /> Abonados
                             </button>
                             <button onClick={() => loadRouterNetwork(eq, 'infra')}
                               className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 flex items-center gap-1">
-                              <Server className="h-3 w-3" /> DHCP/SNMP
+                              <Server className="h-3 w-3" /> DHCP
                             </button>
                           </div>
                         )}
@@ -678,12 +890,16 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                     <div>
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                         <Wifi className="h-4 w-4 text-green-600" />
-                        {selectedRouter ? selectedRouter.name : 'Router MikroTik'}
+                        {selectedRouter ? selectedRouter.name : 'Router del nodo'}
                       </h3>
                       {selectedRouter && (
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {routerPanelTab === 'subscribers' ? 'Colas y PPPoE de abonados' : 'DHCP, perfiles PPPoE y SNMP'}
+                          {routerTypeLabel(selectedRouter)}
+                          {routerPanelTab === 'subscribers' ? ' · Colas y PPPoE' : ' · DHCP y SNMP'}
                         </p>
+                      )}
+                      {!selectedRouter && siteRouters.length === 0 && (
+                        <p className="text-xs text-gray-500 mt-0.5">MikroTik, EdgeRouter u otro</p>
                       )}
                     </div>
                     {selectedRouter && (
@@ -701,10 +917,34 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 min-h-0">
                     {!selectedRouter ? (
-                      <div className="text-center py-8 text-gray-400 text-sm">
-                        {siteRouters.length === 0
-                          ? 'Agrega un router MikroTik a este nodo'
-                          : 'Selecciona un router para ver abonados'}
+                      <div className="text-center py-8 text-gray-400 text-sm space-y-3">
+                        {siteRouters.length === 0 ? (
+                          <>
+                            <p>No hay router en este nodo</p>
+                            <p className="text-xs text-gray-500 max-w-xs mx-auto">
+                              Vincula un EdgeRouter o MikroTik ya registrado, o créalo en <strong>Routers y agentes</strong> y asígnalo aquí.
+                            </p>
+                            {linkableRouters.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={openRouterModal}
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
+                              >
+                                Vincular router ({linkableRouters.length})
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={openRouterModal}
+                                className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-50"
+                              >
+                                + Agregar router
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <p>Selecciona un router para ver abonados y DHCP</p>
+                        )}
                         {siteRouters.length > 0 && (
                           <div className="mt-4 space-y-2">
                             {siteRouters.map((r: any) => (
@@ -712,6 +952,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                                 className="block w-full p-3 border rounded-xl hover:bg-gray-50 text-left transition">
                                 <span className={`inline-block w-2 h-2 rounded-full mr-2 ${statusDot(r)}`} />
                                 <span className="font-medium">{r.name}</span>
+                                <span className="text-xs text-gray-500 ml-2">{routerTypeLabel(r)}</span>
                               </button>
                             ))}
                           </div>
@@ -821,28 +1062,30 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                   {SITE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
-              {siteFormMode === 'edit' && (
-                <div>
-                  <label className="text-sm font-medium">Nodo padre</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 mt-1"
-                    value={siteForm.parentId || ''}
-                    onChange={e => setSiteForm({ ...siteForm, parentId: e.target.value ? parseInt(e.target.value, 10) : '' })}
-                  >
-                    <option value="">Sin padre (nodo raíz)</option>
-                    {flattenSites(tree)
-                      .filter((s) => {
-                        if (!editingSiteId) return true
-                        const blocked = collectDescendantIds(findSiteInTree(tree, editingSiteId) || { id: editingSiteId, children: [] })
-                        return !blocked.has(s.id)
-                      })
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">Define la jerarquía: ej. Nodo2 depende de Torre Pangui.</p>
-                </div>
-              )}
+              <div>
+                <label className="text-sm font-medium">Nodo padre</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 mt-1"
+                  value={siteForm.parentId || ''}
+                  onChange={e => setSiteForm({ ...siteForm, parentId: e.target.value ? parseInt(e.target.value, 10) : '' })}
+                >
+                  <option value="">Sin padre (nodo raíz)</option>
+                  {flattenSites(tree)
+                    .filter((s) => {
+                      if (siteFormMode !== 'edit' || !editingSiteId) return true
+                      const blocked = collectDescendantIds(findSiteInTree(tree, editingSiteId) || { id: editingSiteId, children: [] })
+                      return !blocked.has(s.id)
+                    })
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {siteFormMode === 'edit'
+                    ? 'Define la jerarquía: ej. Nodo2 depende de Torre Pangui.'
+                    : 'Opcional: crea este nodo como hijo de una torre o POP existente.'}
+                </p>
+              </div>
               <div>
                 <label className="text-sm font-medium">Ciudad</label>
                 <input className="w-full border rounded-lg px-3 py-2 mt-1" value={siteForm.city || ''}
@@ -920,17 +1163,20 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                   </p>
                 ) : (
                   <>
-                    <p className="text-sm text-gray-500">Selecciona un router ya registrado en tu ISP (ej. L009 con túnel Cloudflare):</p>
+                    <p className="text-sm text-gray-500">
+                      Mueve un router registrado a <strong>{selectedSite.name}</strong>. Si está en la torre padre, solo cambia el nodo — el túnel Cloudflare sigue igual.
+                    </p>
                     <select
-                      className="w-full border rounded-lg px-3 py-2 bg-white"
+                      className="w-full border rounded-lg px-3 py-2 bg-white text-sm"
                       value={linkRouterId}
                       onChange={(e) => setLinkRouterId(e.target.value ? Number(e.target.value) : '')}
                     >
                       <option value="">Elegir router…</option>
                       {linkableRouters.map((r: any) => (
                         <option key={r.id} value={r.id}>
-                          {r.name} — {r.credentials?.tunnelHostname || r.ipAddress || 'sin host'}
-                          {r.siteId ? ' (en otro nodo)' : ' (sin nodo)'}
+                          {r.name} · {routerTypeLabel(r)} — {siteNameById(tree, r.siteId)}
+                          {r.credentials?.tunnelHostname || r.ipAddress
+                            ? ` (${r.credentials?.tunnelHostname || r.ipAddress})` : ''}
                           {r.agentConnected || r.status === 'online' ? ' · online' : ''}
                         </option>
                       ))}
@@ -973,7 +1219,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                     onChange={e => setEquipForm({ ...equipForm, ipAddress: e.target.value })} />
                 </div>
                 <p className="text-xs text-gray-500">
-                  Para MikroTik con túnel Cloudflare y scripts, usa <strong>Gestión Routers</strong> y luego vincúlalo aquí.
+                  Para <strong>EdgeRouter</strong> o MikroTik con túnel Cloudflare, créalo en <strong>Routers y agentes</strong> (menú lateral) y luego vincúlalo aquí en «Vincular existente».
                 </p>
                 <div className="flex gap-3 mt-4">
                   <button onClick={() => setShowRouterModal(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
@@ -1053,6 +1299,20 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               </div>
               {equipForm.type === 'cpe' && (
                 <>
+                  {siteRouters.length > 0 && (
+                    <div>
+                      <label className="text-sm font-medium">Router del nodo</label>
+                      <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                        value={equipForm.parentId || ''}
+                        onChange={e => setEquipForm({ ...equipForm, parentId: e.target.value ? Number(e.target.value) : '' })}>
+                        <option value="">Automático (único router o primero)</option>
+                        {siteRouters.map((r: any) => (
+                          <option key={r.id} value={r.id}>{r.name}{r.ipAddress ? ` · ${r.ipAddress}` : ''}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Define bajo qué router aparece la antena en la topología y el pool DHCP para IP libre.</p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-sm font-medium">Abonado</label>
                     <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
@@ -1131,6 +1391,19 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                   ))}
                 </select>
               </div>
+              {siteRouters.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">Router del nodo</label>
+                  <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                    value={editEquipForm.parentId || ''}
+                    onChange={e => setEditEquipForm({ ...editEquipForm, parentId: e.target.value ? Number(e.target.value) : '' })}>
+                    <option value="">Automático (único router o primero)</option>
+                    {siteRouters.map((r: any) => (
+                      <option key={r.id} value={r.id}>{r.name}{r.ipAddress ? ` · ${r.ipAddress}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium">IP / hostname</label>
                 <div className="flex gap-2 mt-1">
@@ -1162,6 +1435,69 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
             <div className="flex gap-3 mt-6">
               <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }} className="flex-1 py-2 border rounded-lg">Cancelar</button>
               <button onClick={saveEditEquipment} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar router */}
+      {editingRouter && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-lg">Editar router</h3>
+                <p className="text-sm text-gray-500">{routerTypeLabel(editingRouter)} · {editingRouter.brand} {editingRouter.model}</p>
+              </div>
+              <button type="button" onClick={() => setEditingRouter(null)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Nombre</label>
+                <input className="w-full border rounded-lg px-3 py-2 mt-1" value={editRouterForm.name || ''}
+                  onChange={e => setEditRouterForm({ ...editRouterForm, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Nodo / sitio</label>
+                <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white"
+                  value={editRouterForm.siteId || ''}
+                  onChange={e => setEditRouterForm({ ...editRouterForm, siteId: e.target.value ? Number(e.target.value) : '' })}>
+                  <option value="">Sin nodo (inventario)</option>
+                  {allSites.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Ej: mover el EdgeRouter de Torre Pangui a Nodo2.</p>
+              </div>
+              {String(editingRouter.credentials?.routerType || '').startsWith('edgerouter') && upstreamRouters.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">MikroTik de borde (upstream)</label>
+                  <select className="w-full border rounded-lg px-3 py-2 mt-1 bg-white text-sm"
+                    value={editRouterForm.parentRouterId || ''}
+                    onChange={e => setEditRouterForm({ ...editRouterForm, parentRouterId: e.target.value || '' })}>
+                    <option value="">— Ninguno —</option>
+                    {upstreamRouters.map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({siteNameById(tree, r.siteId)})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">El túnel Cloudflare sigue en el MikroTik; el EdgeRouter es la IP local del sector.</p>
+                </div>
+              )}
+              {editingRouter.siteId === selectedSite?.id && (
+                <button
+                  type="button"
+                  onClick={() => { unlinkRouterFromSite(editingRouter); setEditingRouter(null) }}
+                  className="w-full py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                >
+                  Quitar de este nodo
+                </button>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button type="button" onClick={() => setEditingRouter(null)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button type="button" onClick={saveEditRouter} className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
             </div>
           </div>
         </div>

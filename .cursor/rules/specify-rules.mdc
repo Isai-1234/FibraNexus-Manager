@@ -18,11 +18,12 @@ Plataforma SaaS multi-tenant para ISPs (FibraNexus). Producción: https://app.fi
 Este repo usa **GitHub Spec Kit**. Flujo:
 1. `/speckit-constitution` — principios (`.specify/memory/constitution.md`)
 2. `/speckit-specify` — spec en `specs/<feature>/spec.md`
-3. `/speckit-plan` — plan técnico
-4. `/speckit-tasks` — tareas
+3. `/speckit-plan` — plan técnico → `specs/001-red-isp-topology/plan.md`
+4. `/speckit-tasks` — tareas → `specs/001-red-isp-topology/tasks.md`
 5. `/speckit-implement` — código
 
-Feature activa: leer `.specify/feature.json` o rama `specs/001-red-isp-topology`.
+Feature activa: `specs/001-red-isp-topology` (plan + tasks generados 2026-06-10).
+Pendiente validación lab: T008–T009, T025–T027. Enhancement: T031 (edge case routers).
 
 ## Convenciones
 - Diffs mínimos; no mezclar refactors no relacionados

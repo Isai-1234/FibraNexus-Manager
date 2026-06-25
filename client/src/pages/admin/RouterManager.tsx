@@ -140,6 +140,10 @@ export default function RouterManager({ API, onBack }: Props) {
   const [testResult, setTestResult] = useState<any>(null)
   const [mikrotikScript, setMikrotikScript] = useState<any>(null)
   const [editingRouter, setEditingRouter] = useState<any>(null)
+  const [routerModalTab, setRouterModalTab] = useState<'credentials' | 'script'>('credentials')
+  const [routerScript, setRouterScript] = useState<any>(null)
+  const [scriptLoading, setScriptLoading] = useState(false)
+  const [scriptError, setScriptError] = useState('')
   const [credForm, setCredForm] = useState<any>({})
   const [credSaving, setCredSaving] = useState(false)
   const [credTesting, setCredTesting] = useState(false)
@@ -169,12 +173,16 @@ export default function RouterManager({ API, onBack }: Props) {
     try {
       const res = await api().post('/routers', form)
       setNewRouter(res.data)
-      // Si es Mikrotik, obtener el script automáticamente
-      if (form.routerType?.startsWith('mikrotik') && res.data.id) {
+      if (res.data.id) {
         try {
-          const scriptRes = await api().get(`/routers/${res.data.id}/mikrotik-script`)
-          setMikrotikScript(scriptRes.data)
-        } catch { }
+          if (form.routerType?.startsWith('mikrotik')) {
+            const scriptRes = await api().get(`/routers/${res.data.id}/mikrotik-script`)
+            setMikrotikScript({ kind: 'mikrotik', ...scriptRes.data })
+          } else if (form.routerType?.startsWith('edgerouter')) {
+            const scriptRes = await api().get(`/routers/${res.data.id}/edgeos-script`)
+            setMikrotikScript({ kind: 'edgeos', ...scriptRes.data })
+          }
+        } catch { /* script opcional */ }
       }
       setStep(4)
       loadRouters()
@@ -210,16 +218,116 @@ export default function RouterManager({ API, onBack }: Props) {
     } catch (e: any) { alert('Error: ' + (e.response?.data?.error || e.message)) }
   }
 
-  function openCredentials(router: any) {
+  function openCredentials(router: any, tab: 'credentials' | 'script' = 'credentials') {
     setEditingRouter(router)
+    setRouterModalTab(tab)
+    setRouterScript(null)
+    setScriptError('')
     setCredForm({
-      routerUser: router.credentials?.routerUser || 'admin',
+      routerUser: router.credentials?.routerUser || (String(router.credentials?.routerType || '').startsWith('edgerouter') ? 'ubnt' : 'admin'),
       routerPass: router.credentials?.routerPass || '',
-      tunnelHostname: router.credentials?.tunnelHostname || router.ipAddress || '',
+      tunnelHostname: router.credentials?.tunnelHostname
+        || (String(router.ipAddress || '').includes('fibranexus.cl') ? router.ipAddress : '')
+        || '',
       routerPort: router.credentials?.routerPort || '443',
       connectionMethod: resolveConnectionMethod(router),
+      parentRouterId: router.credentials?.parentRouterId || '',
     })
     setCredTestResult(null)
+    if (tab === 'script') loadRouterScript(router)
+  }
+
+  async function loadRouterScript(router: any) {
+    if (!router?.id) return
+    setScriptLoading(true)
+    setScriptError('')
+    setRouterScript(null)
+    try {
+      const rt = String(router.credentials?.routerType || '')
+      if (rt.startsWith('mikrotik')) {
+        const res = await api().get(`/routers/${router.id}/mikrotik-script`)
+        setRouterScript({ kind: 'mikrotik', ...res.data })
+      } else if (rt.startsWith('edgerouter')) {
+        const res = await api().get(`/routers/${router.id}/edgeos-script`)
+        setRouterScript({ kind: 'edgeos', ...res.data })
+      } else {
+        setScriptError('Este tipo de equipo no tiene script automático. Usa MikroTik o EdgeRouter.')
+      }
+    } catch (e: any) {
+      setScriptError(e.response?.data?.error || e.message)
+    }
+    setScriptLoading(false)
+  }
+
+  function routerScriptText(script: any): string {
+    if (!script) return ''
+    if (script.kind === 'edgeos') return script.installScript || script.heartbeatScript || ''
+    return script.fullSetupScript || script.script || ''
+  }
+
+  function renderScriptPanel(script: any, router?: any, opts?: { compact?: boolean }) {
+    if (!script) return null
+    const scriptKey = `panel-${script.kind}`
+    const method = router ? resolveConnectionMethod(router) : script.connectionMethod
+    const isEdge = script.kind === 'edgeos' || String(router?.credentials?.routerType || '').startsWith('edgerouter')
+
+    return (
+      <div className="space-y-4">
+        {isEdge && method === 'cloudflare_tunnel' && (
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+            <p className="font-semibold text-sky-900 text-sm mb-2">Cloudflare (MikroTik de borde)</p>
+            <p className="text-xs text-sky-800 mb-2">El túnel sigue en tu MikroTik. Publica el EdgeRouter con un hostname nuevo:</p>
+            <ol className="space-y-1.5 text-xs text-gray-700">
+              <li>Zero Trust → Tunnels → tu túnel del MikroTik → Public Hostname</li>
+              <li>URL: <code className="font-mono bg-white px-1 rounded">https://{router?.credentials?.routerLocalIp || credForm.tunnelHostname || router?.ipAddress || '172.16.11.254'}:443</code></li>
+              <li>Hostname: <strong>{router?.credentials?.tunnelHostname || credForm.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
+            </ol>
+          </div>
+        )}
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="font-semibold text-blue-900 text-sm mb-1 flex items-center gap-2">
+            <Terminal className="h-4 w-4" />
+            {script.kind === 'edgeos'
+              ? 'Script EdgeOS — antenas Ubiquiti (SNMP) + heartbeat'
+              : 'Script MikroTik — heartbeat y monitoreo'}
+          </p>
+          <p className="text-xs text-blue-700">
+            {script.kind === 'edgeos'
+              ? 'SSH al EdgeRouter (ubnt@IP) → pegar script completo → Enter. Poll SNMP de CPEs AirMax en la LAN.'
+              : 'Winbox → New Terminal → pegar → Enter. Incluye heartbeat hacia FibraNexus.'}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Script completo</label>
+          <div className={`bg-gray-900 rounded-lg p-3 relative overflow-y-auto ${opts?.compact ? 'max-h-48' : 'max-h-72'}`}>
+            <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{routerScriptText(script)}</code>
+            <button
+              type="button"
+              onClick={() => copyText(routerScriptText(script), scriptKey)}
+              className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded"
+            >
+              {copied === scriptKey ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
+            </button>
+          </div>
+        </div>
+
+        {script.installInstructions?.length > 0 && (
+          <div className="bg-gray-50 rounded-lg p-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Pasos</p>
+            <ol className="space-y-1.5">
+              {script.installInstructions.map((step: string, i: number) => (
+                <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                  <span className="font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{i + 1}</span>
+                  {step.replace(/^\d+\.\s*/, '')}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+    )
   }
 
   async function saveCredentials() {
@@ -236,6 +344,7 @@ export default function RouterManager({ API, onBack }: Props) {
         tunnelHostname: credForm.tunnelHostname,
         routerPort: credForm.routerPort,
         connectionMethod: credForm.connectionMethod,
+        parentRouterId: credForm.parentRouterId || null,
       })
       setEditingRouter(null)
       loadRouters()
@@ -256,6 +365,7 @@ export default function RouterManager({ API, onBack }: Props) {
           tunnelHostname: credForm.tunnelHostname,
           routerPort: credForm.routerPort,
           connectionMethod: credForm.connectionMethod,
+          parentRouterId: credForm.parentRouterId || null,
         })
       }
       const res = await api().post(`/routers/${editingRouter.id}/test-connection`)
@@ -596,44 +706,18 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   </div>
 
-                  {/* Mikrotik RouterScript — la opción más elegante */}
-                  {form.routerType?.startsWith('mikrotik') && mikrotikScript ? (
-                    <div className="space-y-4">
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="font-semibold text-blue-900 text-sm mb-1 flex items-center gap-2">
-                          📡 Script único — pegar en Terminal del MikroTik
-                        </p>
-                        <p className="text-xs text-blue-700">
-                          {form.connectionMethod === 'cloudflare_tunnel'
-                            ? 'Caso avanzado L009/container: script con túnel + heartbeat + arranque automático.'
-                            : 'Script de heartbeat para monitoreo desde el propio router MikroTik.'}
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Script completo (Winbox → New Terminal → pegar → Enter)</label>
-                        <div className="bg-gray-900 rounded-lg p-3 relative max-h-64 overflow-y-auto">
-                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{mikrotikScript.fullSetupScript || mikrotikScript.script}</code>
-                          <button onClick={() => copyText(mikrotikScript.fullSetupScript || mikrotikScript.script, 'script')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded sticky">
-                            {copied === 'script' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                          <Terminal className="h-4 w-4" /> Pasos de instalación en Winbox
-                        </p>
-                        <ol className="space-y-1.5">
-                          {mikrotikScript.installInstructions.map((step: string, i: number) => (
-                            <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                              <span className="font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{i + 1}</span>
-                              {step.replace(/^\d+\. /, '')}
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    </div>
+                  {/* Script de instalación */}
+                  {mikrotikScript ? (
+                    renderScriptPanel(mikrotikScript, {
+                      ...newRouter,
+                      credentials: {
+                        ...newRouter.credentials,
+                        routerType: form.routerType,
+                        connectionMethod: form.connectionMethod,
+                        tunnelHostname: form.tunnelHostname,
+                        routerLocalIp: form.routerIp,
+                      },
+                    })
                   ) : form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter ? (
                     <div className="space-y-4">
                       <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
@@ -821,10 +905,19 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   </div>
                   <div className="flex gap-2 mb-3">
-                    <button onClick={() => openCredentials(router)}
+                    <button onClick={() => openCredentials(router, 'credentials')}
                       className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
+                    {(String(router.credentials?.routerType || '').startsWith('mikrotik')
+                      || String(router.credentials?.routerType || '').startsWith('edgerouter')) && (
+                      <button
+                        onClick={() => openCredentials(router, 'script')}
+                        className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-purple-700 border-purple-200 flex items-center justify-center gap-1"
+                      >
+                        <Terminal className="h-3.5 w-3.5" /> Script
+                      </button>
+                    )}
                   </div>
                   <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${online ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
                     {online ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
@@ -844,21 +937,57 @@ export default function RouterManager({ API, onBack }: Props) {
 
       {editingRouter && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+          <div className={`bg-white rounded-xl p-6 w-full shadow-2xl max-h-[90vh] overflow-y-auto ${routerModalTab === 'script' ? 'max-w-2xl' : 'max-w-md'}`}>
             <div className="flex justify-between mb-4">
               <div>
-                <h3 className="font-bold text-lg">Credenciales API — {editingRouter.name}</h3>
-                <p className="text-sm text-gray-500">Usuario/contraseña API del router para provisionar y monitorear</p>
+                <h3 className="font-bold text-lg">{editingRouter.name}</h3>
+                <p className="text-sm text-gray-500">
+                  {routerModalTab === 'script'
+                    ? 'Script para pegar en el router (heartbeat + SNMP antenas)'
+                    : 'Credenciales API para provisionar y monitorear'}
+                </p>
               </div>
-              <button onClick={() => setEditingRouter(null)}><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => { setEditingRouter(null); setRouterModalTab('credentials') }}><X className="h-5 w-5" /></button>
             </div>
+
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+              <button
+                type="button"
+                onClick={() => setRouterModalTab('credentials')}
+                className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'credentials' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}
+              >
+                Credenciales API
+              </button>
+              {(String(editingRouter.credentials?.routerType || '').startsWith('mikrotik')
+                || String(editingRouter.credentials?.routerType || '').startsWith('edgerouter')) && (
+                <button
+                  type="button"
+                  onClick={() => { setRouterModalTab('script'); if (!routerScript) loadRouterScript(editingRouter) }}
+                  className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'script' ? 'bg-white shadow text-purple-700' : 'text-gray-500'}`}
+                >
+                  Script de instalación
+                </button>
+              )}
+            </div>
+
+            {routerModalTab === 'credentials' ? (
             <div className="space-y-3">
               <div>
-                <label className="text-sm font-medium">Host túnel / IP</label>
+                <label className="text-sm font-medium">
+                  {String(editingRouter.credentials?.routerType || '').startsWith('edgerouter')
+                    ? 'Hostname Cloudflare (acceso FibraNexus)'
+                    : 'Host túnel / IP'}
+                </label>
                 <input className="w-full border rounded-lg px-3 py-2 mt-1 font-mono text-sm"
-                  placeholder="l009-test.fibranexus.cl"
+                  placeholder={String(editingRouter.credentials?.routerType || '').startsWith('edgerouter') ? 'nodo2-isp.fibranexus.cl' : 'l009-test.fibranexus.cl'}
                   value={credForm.tunnelHostname || ''}
                   onChange={e => setCredForm({ ...credForm, tunnelHostname: e.target.value })} />
+                {String(editingRouter.credentials?.routerType || '').startsWith('edgerouter') && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    IP local del EdgeRouter (LAN): <span className="font-mono">{editingRouter.credentials?.routerLocalIp || editingRouter.ipAddress || '—'}</span>
+                    {' '}— se configura al registrar el router, no en este campo.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium">Usuario API *</label>
@@ -878,23 +1007,73 @@ export default function RouterManager({ API, onBack }: Props) {
                   value={credForm.routerPort || '443'}
                   onChange={e => setCredForm({ ...credForm, routerPort: e.target.value })} />
               </div>
+              {routers.filter(r => r.id !== editingRouter.id && String(r.credentials?.routerType || '').startsWith('mikrotik')).length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">Router upstream (borde)</label>
+                  <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+                    value={credForm.parentRouterId || ''}
+                    onChange={e => setCredForm({ ...credForm, parentRouterId: e.target.value || null })}>
+                    <option value="">— Ninguno (router raíz) —</option>
+                    {routers.filter(r => r.id !== editingRouter.id && String(r.credentials?.routerType || '').startsWith('mikrotik')).map(r => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.credentials?.tunnelHostname || r.ipAddress})</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Para EdgeRouter detrás de MikroTik: indica el router de borde en la topología.</p>
+                </div>
+              )}
               {credTestResult && (
                 <div className={`text-sm p-3 rounded-lg ${credTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
                   {credTestResult.success ? 'Conexión OK — router responde' : credTestResult.error}
                 </div>
               )}
             </div>
+            ) : (
+              <div className="space-y-3">
+                {scriptLoading && (
+                  <div className="text-center py-8 text-gray-500 text-sm">Generando script…</div>
+                )}
+                {scriptError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scriptError}</div>
+                )}
+                {!scriptLoading && routerScript && renderScriptPanel(routerScript, editingRouter, { compact: false })}
+                {!scriptLoading && !routerScript && !scriptError && (
+                  <button
+                    type="button"
+                    onClick={() => loadRouterScript(editingRouter)}
+                    className="w-full py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 text-sm font-medium"
+                  >
+                    Cargar script
+                  </button>
+                )}
+              </div>
+            )}
+
+            {routerModalTab === 'credentials' ? (
             <div className="flex gap-2 mt-6">
-              <button onClick={() => setEditingRouter(null)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
-              <button onClick={testStoredCredentials} disabled={credTesting}
+              <button type="button" onClick={() => { setEditingRouter(null); setRouterModalTab('credentials') }} className="flex-1 py-2 border rounded-lg">Cancelar</button>
+              <button type="button" onClick={testStoredCredentials} disabled={credTesting}
                 className="flex-1 py-2 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50">
                 {credTesting ? 'Probando…' : 'Probar'}
               </button>
-              <button onClick={saveCredentials} disabled={credSaving}
+              <button type="button" onClick={saveCredentials} disabled={credSaving}
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {credSaving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
+            ) : (
+            <div className="flex gap-2 mt-6">
+              <button type="button" onClick={() => setRouterModalTab('credentials')} className="flex-1 py-2 border rounded-lg">← Credenciales</button>
+              <button
+                type="button"
+                onClick={() => routerScript && copyText(routerScriptText(routerScript), 'modal-script')}
+                disabled={!routerScript}
+                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                <Copy className="h-4 w-4" /> Copiar script
+              </button>
+              <button type="button" onClick={() => { setEditingRouter(null); setRouterModalTab('credentials') }} className="flex-1 py-2 border rounded-lg">Cerrar</button>
+            </div>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 {
   "name": "fibranexus-server",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
