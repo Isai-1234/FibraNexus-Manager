@@ -6,8 +6,6 @@ import { orgFilter } from './tenant.js';
 import {
   upsertPppoeSecret,
   upsertSimpleQueue,
-  setPppoeSecretDisabled,
-  disableSimpleQueue,
   removeSimpleQueue,
   findSimpleQueueByTarget,
   buildQueueLimits,
@@ -158,41 +156,13 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
 }
 
 export async function suspendServiceNetwork(serviceId, orgId) {
-  const ctx = await loadServiceContext(serviceId, orgId);
-  if (!ctx?.service.routerId) {
-    return { skipped: true, reason: 'Sin provisión de red' };
-  }
-
-  const router = await loadRouter(ctx.service.routerId, orgId);
-  if (!router) return { skipped: true, reason: 'Router no encontrado' };
-
-  if (ctx.service.pppoeUsername) {
-    await setPppoeSecretDisabled(router, ctx.service.pppoeUsername, true);
-  }
-  if (ctx.service.queueName) {
-    await disableSimpleQueue(router, ctx.service.queueName, true);
-  }
-
-  return { success: true };
+  const { suspendSubscriberNetwork } = await import('./subscriberSuspend.js');
+  return suspendSubscriberNetwork(serviceId, orgId);
 }
 
 export async function reactivateServiceNetwork(serviceId, orgId) {
-  const ctx = await loadServiceContext(serviceId, orgId);
-  if (!ctx?.service.routerId) {
-    return { skipped: true, reason: 'Sin provisión de red' };
-  }
-
-  const router = await loadRouter(ctx.service.routerId, orgId);
-  if (!router) return { skipped: true, reason: 'Router no encontrado' };
-
-  if (ctx.service.pppoeUsername) {
-    await setPppoeSecretDisabled(router, ctx.service.pppoeUsername, false);
-  }
-  if (ctx.service.queueName) {
-    await disableSimpleQueue(router, ctx.service.queueName, false);
-  }
-
-  return { success: true };
+  const { reactivateSubscriberNetwork } = await import('./subscriberSuspend.js');
+  return reactivateSubscriberNetwork(serviceId, orgId);
 }
 
 /** Actualiza nombre y comentario de cola en MikroTik segun datos actuales del abonado (sin cambiar limites). */

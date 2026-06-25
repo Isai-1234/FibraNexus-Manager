@@ -57,7 +57,15 @@ paymentsRouter.post('/', requireRole('admin'), async (req, res) => {
       .set({ status: 'paid', paidDate: new Date(), updatedAt: new Date() })
       .where(and(eq(invoices.id, inv.id), orgFilter(invoices, orgId)));
 
-    res.status(201).json(payment);
+    let reactivation = null;
+    try {
+      const { tryAutoReactivateAfterPayment } = await import('../lib/subscriberSuspend.js');
+      reactivation = await tryAutoReactivateAfterPayment(inv, orgId);
+    } catch (reactErr) {
+      reactivation = { error: reactErr.message };
+    }
+
+    res.status(201).json({ ...payment, reactivation });
   } catch (error) {
     res.status(500).json({ error: 'Error al registrar pago: ' + error.message });
   }

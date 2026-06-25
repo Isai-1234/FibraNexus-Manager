@@ -14,6 +14,7 @@ import {
 } from '../lib/edgeosCommands.js';
 import { edgeosLogin, edgeosDataGet, getRouterCredentials, resolveHost, resolvePort } from '../lib/edgeosClient.js';
 import { mikrotikRequest } from '../lib/mikrotikClient.js';
+import { appendPendingCmd } from '../lib/edgeosPending.js';
 
 // Caché de sesiones EdgeOS en memoria (evita login por cada poll)
 const sessionCache = new Map(); // routerId → { cookie, csrfToken, host, port, createdAt }
@@ -43,18 +44,7 @@ async function getEdgeRouter(routerId, orgId) {
   return router || null;
 }
 
-async function appendPendingCmd(routerId, cmd, extraCredFields = {}) {
-  const [current] = await db.select().from(equipment).where(eq(equipment.id, routerId)).limit(1);
-  if (!current) throw new Error('Router no encontrado');
-  const creds = current.credentials || {};
-  const pending = [...(creds.pendingCmds || []), cmd];
-  console.log(`[EdgeOS] CMD ENCOLADO router=${routerId} id=${cmd.id} type=${cmd.type} total_cola=${pending.length}`);
-  await db.update(equipment).set({
-    credentials: { ...creds, pendingCmds: pending, ...extraCredFields },
-    updatedAt: new Date(),
-  }).where(eq(equipment.id, routerId));
-  return cmd;
-}
+// appendPendingCmd importado desde lib/edgeosPending.js
 
 // GET /api/edgeos/:routerId/bandwidth — ancho de banda en tiempo real
 // Fuente 1: heartbeat (siempre disponible, ~28s de resolución) — prioridad si es fresco (<35s)

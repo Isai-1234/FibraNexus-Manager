@@ -582,7 +582,7 @@ export async function agentCmdResultHandler(req, res) {
       updatedAt: new Date(),
     }).where(eq(equipment.id, router.id));
 
-    // Actualizar estado de queue en clientServices si aplica
+    // Actualizar estado de queue / suspensión en clientServices si aplica
     if (done?.meta?.serviceId) {
       const { clientServices } = await import('../db/schema.js');
       const [svc] = await db.select().from(clientServices).where(eq(clientServices.id, done.meta.serviceId)).limit(1);
@@ -594,6 +594,22 @@ export async function agentCmdResultHandler(req, res) {
           networkMeta: { ...svc.networkMeta, edgeosQueue: queueUpdate },
           updatedAt: new Date(),
         }).where(eq(clientServices.id, done.meta.serviceId));
+      } else if (svc?.networkMeta?.suspendState?.cmdId === cmdId) {
+        if (done.type === 'reactivate_client' && success) {
+          const meta = { ...svc.networkMeta };
+          delete meta.suspendState;
+          await db.update(clientServices).set({ networkMeta: meta, updatedAt: new Date() }).where(eq(clientServices.id, done.meta.serviceId));
+        } else {
+          const suspendState = {
+            ...svc.networkMeta.suspendState,
+            status: success ? (done.type === 'reactivate_client' ? 'removing' : 'active') : 'error',
+          };
+          if (success && done.type === 'suspend_client') suspendState.appliedAt = new Date().toISOString();
+          await db.update(clientServices).set({
+            networkMeta: { ...svc.networkMeta, suspendState },
+            updatedAt: new Date(),
+          }).where(eq(clientServices.id, done.meta.serviceId));
+        }
       }
     }
 

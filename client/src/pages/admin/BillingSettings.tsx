@@ -9,6 +9,8 @@ type BillingSettingsData = {
   autoSuspendEnabled: boolean
   stopBillingWhenSuspended: boolean
   autoMarkOverdue: boolean
+  autoReactivateOnPayment: boolean
+  suspendPortalUrl: string
 }
 
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
@@ -134,14 +136,21 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
 
             <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
               <h2 className="font-semibold text-gray-900">Morosos y suspensión</h2>
-              <p className="text-sm text-gray-500">Marca facturas vencidas y suspende en router tras días de gracia.</p>
+              <p className="text-sm text-gray-500">
+                Marca facturas vencidas y suspende la IP del abonado (antena CPE o router en casa) en el EdgeRouter/MikroTik del nodo.
+                No se suspende el router del sitio — solo el tráfico del cliente moroso con acceso al portal de pago.
+              </p>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={settings.autoMarkOverdue} onChange={() => toggle('autoMarkOverdue')} className="rounded" />
                 <span className="text-sm">Marcar facturas pendientes como vencidas automáticamente</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={settings.autoSuspendEnabled} onChange={() => toggle('autoSuspendEnabled')} className="rounded" />
-                <span className="text-sm">Suspender servicio en router por mora</span>
+                <span className="text-sm">Suspender IP del abonado por mora (walled garden)</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={settings.autoReactivateOnPayment} onChange={() => toggle('autoReactivateOnPayment')} className="rounded" />
+                <span className="text-sm">Reactivar automáticamente al registrar un pago</span>
               </label>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Días de gracia antes de suspender</label>
@@ -149,6 +158,16 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   onChange={(e) => setSettings({ ...settings, graceDaysBeforeSuspend: parseInt(e.target.value, 10) || 0 })}
                   className="w-32 border rounded-lg px-3 py-2" />
                 <p className="text-xs text-gray-400 mt-1">Ej: 5 = suspende si la factura lleva 5+ días vencida</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL pantalla de mora (cautiva)</label>
+                <input type="url" value={settings.suspendPortalUrl || ''}
+                  placeholder="https://app.fibranexus.cl/suspended"
+                  onChange={(e) => setSettings({ ...settings, suspendPortalUrl: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-400 mt-1">
+                  Página a la que el abonado suspendido puede acceder para pagar. Deja vacío para usar /suspended por defecto.
+                </p>
               </div>
             </section>
           </div>

@@ -118,6 +118,64 @@ export function buildRemoveQueueScript({ iface, serviceId }) {
   ].join('\n');
 }
 
+/** Número base de reglas FORWARD por servicio (evita colisiones entre abonados) */
+export function suspendRuleBase(serviceId) {
+  return 5000 + (Math.abs(serviceId) % 3500) * 10;
+}
+
+/**
+ * Walled garden en EdgeRouter: bloquea tráfico del abonado salvo DNS y portal de pago.
+ * No toca el router del nodo ni las colas de ancho de banda.
+ */
+export function buildSuspendClientScript({ serviceId, clientIp, portalHostIps = [] }) {
+  const base = suspendRuleBase(serviceId);
+  const lines = [
+    'source /opt/vyatta/etc/functions/script-template',
+    'configure',
+    `set firewall name FORWARD rule ${base} action accept`,
+    `set firewall name FORWARD rule ${base} source address ${clientIp}/32`,
+    `set firewall name FORWARD rule ${base} protocol udp`,
+    `set firewall name FORWARD rule ${base} destination port 53`,
+    `set firewall name FORWARD rule ${base + 1} action accept`,
+    `set firewall name FORWARD rule ${base + 1} source address ${clientIp}/32`,
+    `set firewall name FORWARD rule ${base + 1} protocol tcp`,
+    `set firewall name FORWARD rule ${base + 1} destination port 53`,
+  ];
+  let idx = 2;
+  for (const ip of portalHostIps.slice(0, 6)) {
+    lines.push(
+      `set firewall name FORWARD rule ${base + idx} action accept`,
+      `set firewall name FORWARD rule ${base + idx} source address ${clientIp}/32`,
+      `set firewall name FORWARD rule ${base + idx} destination address ${ip}/32`,
+    );
+    idx += 1;
+  }
+  lines.push(
+    `set firewall name FORWARD rule ${base + idx} action accept`,
+    `set firewall name FORWARD rule ${base + idx} source address ${clientIp}/32`,
+    `set firewall name FORWARD rule ${base + idx} protocol tcp`,
+    `set firewall name FORWARD rule ${base + idx} destination port 443`,
+    `set firewall name FORWARD rule ${base + idx + 1} action drop`,
+    `set firewall name FORWARD rule ${base + idx + 1} source address ${clientIp}/32`,
+    'commit', 'save', 'exit',
+  );
+  return lines.join('\n');
+}
+
+/** Quita reglas de suspensión del abonado en EdgeRouter */
+export function buildReactivateClientScript({ serviceId }) {
+  const base = suspendRuleBase(serviceId);
+  const lines = [
+    'source /opt/vyatta/etc/functions/script-template',
+    'configure',
+  ];
+  for (let r = base; r <= base + 9; r += 1) {
+    lines.push(`delete firewall name FORWARD rule ${r}`);
+  }
+  lines.push('commit', 'save', 'exit');
+  return lines.join('\n');
+}
+
 /** Empaqueta un script como pendingCmd para almacenar en credentials JSONB */
 export function makePendingCmd(type, script, meta = {}, { maxRetries = 3 } = {}) {
   return {

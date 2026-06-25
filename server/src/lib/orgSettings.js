@@ -7,6 +7,8 @@ export const DEFAULT_ORG_SETTINGS = {
   autoSuspendEnabled: true,
   stopBillingWhenSuspended: true,
   autoMarkOverdue: true,
+  autoReactivateOnPayment: true,
+  suspendPortalUrl: '',
 };
 
 export function mergeOrgSettings(raw) {

@@ -33,6 +33,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
     const allowed = [
       'billingAutoEnabled', 'billingHour', 'graceDaysBeforeSuspend',
       'autoSuspendEnabled', 'stopBillingWhenSuspended', 'autoMarkOverdue',
+      'autoReactivateOnPayment', 'suspendPortalUrl',
     ];
     const patch = {};
     for (const key of allowed) {
