@@ -104,7 +104,7 @@ async function queueEdgeosSuspend(router, { serviceId, clientIp, portalUrl, orgI
   };
   await db.update(clientServices).set({ networkMeta: meta, updatedAt: new Date() }).where(eq(clientServices.id, serviceId));
 
-  return { queued: true, cmdId: cmd.id, clientIp, portalUrl, routerType: 'edgeos' };
+  return { queued: true, cmdId: cmd.id, clientIp, portalUrl, routerId: router.id, routerType: 'edgeos' };
 }
 
 async function queueEdgeosReactivate(router, { serviceId }) {
@@ -121,7 +121,7 @@ async function queueEdgeosReactivate(router, { serviceId }) {
     await db.update(clientServices).set({ networkMeta: meta, updatedAt: new Date() }).where(eq(clientServices.id, serviceId));
   }
 
-  return { queued: true, cmdId: cmd.id, routerType: 'edgeos' };
+  return { queued: true, cmdId: cmd.id, routerId: router.id, routerType: 'edgeos' };
 }
 
 export async function suspendSubscriberNetwork(serviceId, orgId) {
@@ -163,7 +163,7 @@ export async function suspendSubscriberNetwork(serviceId, orgId) {
     updatedAt: new Date(),
   }).where(eq(clientServices.id, serviceId));
 
-  return { ...result, clientIp, portalUrl, routerType: 'mikrotik' };
+  return { ...result, clientIp, portalUrl, routerId: router.id, routerType: 'mikrotik' };
 }
 
 export async function reactivateSubscriberNetwork(serviceId, orgId) {

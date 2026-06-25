@@ -4,6 +4,7 @@ import axios from 'axios'
 import { formatDateCL, todayISO } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
+import NetworkSuspendStatus, { suspendToastMessage } from '../../components/NetworkSuspendStatus'
 import CpeLinkVisualizer, { computeLinkScore, linkTheme } from '../../components/CpeLinkVisualizer'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
@@ -209,6 +210,16 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   useEffect(() => { loadAll() }, [clientId])
 
   useEffect(() => {
+    const hasPendingNetwork = services.some((s) => {
+      const st = s.networkMeta?.suspendState?.status
+      return st === 'pending' || st === 'removing'
+    })
+    if (!hasPendingNetwork) return
+    const timer = window.setInterval(() => { loadAll() }, 15000)
+    return () => window.clearInterval(timer)
+  }, [services, clientId])
+
+  useEffect(() => {
     setActiveTab(initialTab)
   }, [clientId, initialTab])
 
@@ -404,8 +415,51 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       const action = currentStatus === 'active' ? 'suspend' : 'reactivate'
       const res = await api().put(`/services/${serviceId}/${action}`)
       const net = res.data.network
-      if (net?.error) toast('Servicio actualizado pero red: ' + net.error, 'warning')
-      else if (net?.skipped) toast('Servicio actualizado (sin provisión en router)', 'info')
+      const toastMsg = suspendToastMessage(net, action as 'suspend' | 'reactivate')
+      if (toastMsg) toast(toastMsg.text, toastMsg.type)
+      else if (net?.error) toast('Servicio actualizado pero red: ' + net.error, 'warning')
+      else toast(action === 'suspend' ? 'Servicio suspendido' : 'Servicio reactivado', 'success')
+
+      const updated = res.data.service
+      if (updated) {
+        setServices((prev) => prev.map((s) => {
+          if (s.id !== serviceId) return s
+          let suspendState = s.networkMeta?.suspendState
+          if (!net?.skipped && !net?.error) {
+            if (net?.queued) {
+              suspendState = {
+                mode: 'walled-garden',
+                clientIp: net.clientIp,
+                portalUrl: net.portalUrl,
+                routerId: net.routerId,
+                cmdId: net.cmdId,
+                status: action === 'suspend' ? 'pending' : 'removing',
+                queuedAt: new Date().toISOString(),
+              }
+            } else if (net?.success && action === 'suspend') {
+              suspendState = {
+                mode: 'walled-garden',
+                clientIp: net.clientIp,
+                portalUrl: net.portalUrl,
+                routerId: net.routerId ?? s.routerId,
+                status: 'active',
+                appliedAt: new Date().toISOString(),
+              }
+            } else if (net?.success && action === 'reactivate') {
+              suspendState = undefined
+            }
+          }
+          return {
+            ...s,
+            ...updated,
+            plan: s.plan,
+            networkMeta: {
+              ...s.networkMeta,
+              suspendState,
+            },
+          }
+        }))
+      }
       loadAll()
     } catch (e: any) { toast('Error: ' + (e.response?.data?.error || e.message), 'error') }
   }
@@ -1482,10 +1536,28 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           <p className="text-gray-500">${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                       </div>
+                      <div className="flex flex-col items-end gap-2">
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-gray-100'}`}>
                         {statusLabel[s.status] || s.status}
                       </span>
+                      {(s.status === 'suspended' || s.status === 'cut' || s.networkMeta?.suspendState) && (
+                        <NetworkSuspendStatus
+                          serviceStatus={s.status}
+                          suspendState={s.networkMeta?.suspendState}
+                          compact
+                        />
+                      )}
+                      </div>
                     </div>
+
+                      {(s.status === 'suspended' || s.status === 'cut' || s.networkMeta?.suspendState) && (
+                        <div className="mb-4">
+                          <NetworkSuspendStatus
+                            serviceStatus={s.status}
+                            suspendState={s.networkMeta?.suspendState}
+                          />
+                        </div>
+                      )}
 
                       {(s.queueName || s.networkMeta?.maxLimit || s.plan) && (
                         <div className="mb-4 max-w-md">
