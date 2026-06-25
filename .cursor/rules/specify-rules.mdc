@@ -1,0 +1,36 @@
+---
+alwaysApply: true
+---
+
+<!-- SPECKIT START -->
+# FibraNexus Manager — contexto para el agente
+
+## Producto
+Plataforma SaaS multi-tenant para ISPs (FibraNexus). Producción: https://app.fibranexus.cl
+
+## Stack
+- **Client**: React + Vite + TS + Tailwind → `client/src/`
+- **Server**: Express + Drizzle → `server/src/`
+- **Deploy**: Render, `npm run build` en server compila también client
+- **Versión app**: `server/package.json` + `server/src/lib/healthCheck.js`
+
+## Spec-Driven Development
+Este repo usa **GitHub Spec Kit**. Flujo:
+1. `/speckit-constitution` — principios (`.specify/memory/constitution.md`)
+2. `/speckit-specify` — spec en `specs/<feature>/spec.md`
+3. `/speckit-plan` — plan técnico
+4. `/speckit-tasks` — tareas
+5. `/speckit-implement` — código
+
+Feature activa: leer `.specify/feature.json` o rama `specs/001-red-isp-topology`.
+
+## Convenciones
+- Diffs mínimos; no mezclar refactors no relacionados
+- IPs de antenas/routers → `DeviceIpLink` / `openDeviceWeb` (no perfil abonado)
+- Menú Red ISP: Topología | Árbol | Detectados en `NetworkManager.tsx`
+- Topología: `NetworkTopologyMap.tsx`
+- Commit/push solo cuando el usuario lo pida explícitamente
+
+## Lab
+ISP Internetsur — Torre Pangui, Nodo2, CPEs 192.168.126.x, túneles `*.fibranexus.cl`
+<!-- SPECKIT END -->
