@@ -12,7 +12,7 @@ Cambios de producto significativos pasan por Spec Kit: `/speckit-specify` → `/
 Preferir el cambio más pequeño que resuelva el problema. No mezclar refactors masivos del server con UX del client en el mismo commit. Reutilizar patrones existentes (`DeviceIpLink`, `NetworkManager`, rutas `/sites`).
 
 ### IV. Deploy Awareness
-Producción vive en Render (`app.fibranexus.cl`). Cambios en `client/` requieren build + push a `main` para verse en la nube. Verificar con `/api/health` (`version` en `server/package.json`).
+Producción: API en Render, frontend en Vercel (`app.fibranexus.cl`). Cambios en `client/` requieren build + deploy para verse en la nube. Verificar con `/api/health` (`version` en `server/package.json`).
 
 ### V. Multi-Tenant Safety
 Todo acceso a datos filtra por `organizationId`. Nunca exponer credenciales de routers en logs. IPs de antenas abren interfaz web del equipo; perfiles de abonado son otra navegación.
@@ -24,7 +24,7 @@ Todo acceso a datos filtra por `organizationId`. Nunca exponer credenciales de r
 | Frontend | React + Vite + TypeScript + Tailwind |
 | Backend | Node.js + Express + Drizzle ORM |
 | DB | PostgreSQL (Supabase) |
-| Deploy | Render (build incluye `client/dist`) |
+| Deploy | Render (API) + Vercel (UI en `app.fibranexus.cl`) |
 | Lab ISP | Internetsur — MikroTik + EdgeRouter + CPE Ubiquiti |
 
 Estructura clave:
@@ -41,7 +41,7 @@ Estructura clave:
 
 ## Quality Gates
 
-- Build client sin errores: `cd client && npm run build`
+- Build client sin errores: `pnpm --filter fibranexus-client build` (desde la raíz del repo)
 - No commitear `.env`, `.env.local`, credenciales
 - Probar en lab Internetsur cuando toque routers/túneles Cloudflare
 - Bump `version` en `server/package.json` + `healthCheck.js` en releases visibles

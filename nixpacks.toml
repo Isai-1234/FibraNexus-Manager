@@ -3,8 +3,8 @@ nixPkgs = ["nodejs_20"]
 
 [phases.build]
 cmds = [
-  "cd server && npm install && npm run build"
+  "corepack enable && pnpm install --frozen-lockfile && pnpm --filter fibranexus-server run build"
 ]
 
 [start]
-cmd = "cd server && node src/index.js"
+cmd = "pnpm --filter fibranexus-server start"

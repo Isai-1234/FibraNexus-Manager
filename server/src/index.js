@@ -96,7 +96,7 @@ if (clientDist) {
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 } else {
-  console.warn('Frontend build not found — run: cd server && npm run build');
+  console.warn('Frontend build not found — run: pnpm run build from repo root');
 }
 
 app.use(errorHandler);
@@ -113,7 +113,7 @@ async function start() {
   startScheduler();
 
   if (!runsApi()) {
-    console.log('HTTP API disabled (PROCESS_ROLE=%s). Use npm run worker or set PROCESS_ROLE=all|api', config.processRole);
+    console.log('HTTP API disabled (PROCESS_ROLE=%s). Use pnpm run worker or set PROCESS_ROLE=all|api', config.processRole);
     return;
   }
 

@@ -9,7 +9,7 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "worker": "node src/worker.js",
-    "build": "cd ../client && npm install --include=dev && npm run build",
+    "build": "corepack pnpm --filter fibranexus-client build",
     "db:push": "drizzle-kit push",
     "db:seed": "node src/seed.js",
     "lab:detected": "node ../scripts/lab-detected-check.mjs"
