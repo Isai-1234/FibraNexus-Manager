@@ -1,0 +1,13 @@
+{
+  "name": "fibranexus-manager",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev:server": "pnpm --filter fibranexus-server dev",
+    "dev:client": "pnpm --filter fibranexus-client dev",
+    "build:client": "pnpm --filter fibranexus-client build",
+    "build:server": "pnpm --filter fibranexus-server build",
+    "build": "pnpm run build:client && pnpm run build:server",
+    "start": "pnpm --filter fibranexus-server start"
+  }
+}
