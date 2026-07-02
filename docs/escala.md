@@ -75,7 +75,7 @@ Ver `server/.env.example`. Lo crítico:
 1. Crear Redis (Upstash free → paid).
 2. En Render, segundo servicio:
    - Mismo repo, root `server`
-   - Start: `npm run worker`
+   - Start: `pnpm --filter fibranexus-server run worker`
    - Env: `PROCESS_ROLE=worker`, `REDIS_URL=...`, `USE_JOB_QUEUE=true`
 3. En servicio API:
    - `PROCESS_ROLE=api`, `USE_JOB_QUEUE=true`
@@ -93,7 +93,7 @@ Hoy los jobs corren **síncronos** (mismo comportamiento). La capa `dispatch()` 
 | Supabase → Neon/RDS | 2–4 h | `pg_dump` / restore, nueva URL |
 | Render → Railway/Fly | 1–2 h | Nuevo deploy, env, DNS |
 | Vercel → otro static | 1 h | Build Vite, env `VITE_API_URL` |
-| Monolito → API + worker | 1–2 sem | Redis + `npm run worker` |
+| Monolito → API + worker | 1–2 sem | Redis + `pnpm --filter fibranexus-server run worker` |
 
 ---
 
