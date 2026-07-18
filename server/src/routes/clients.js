@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, users, invoices, tickets, clientServices, payments, equipment, detectedDevices } from '../db/schema.js';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { clients, users, invoices, tickets, clientServices, equipment, detectedDevices } from '../db/schema.js';
+import { and, eq, inArray, sql, isNull } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
@@ -15,10 +15,12 @@ import {
   isPollable,
 } from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
+import { assertWithinClientLimit } from '../lib/orgLimits.js';
+import { loadOrganization } from '../lib/tenant.js';
 
 export const clientsRouter = Router();
 
-clientsRouter.get('/overview', requireRole('admin', 'technician'), async (req, res) => {
+clientsRouter.get('/overview', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -28,7 +30,7 @@ clientsRouter.get('/overview', requireRole('admin', 'technician'), async (req, r
   }
 });
 
-clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
+clientsRouter.get('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -41,14 +43,16 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
       user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
     };
 
+    const activeFilter = and(orgFilter(clients, orgId), isNull(clients.deletedAt));
+
     if (paginated) {
       const [{ total }] = await db.select({ total: sql`count(*)::int` })
         .from(clients)
-        .where(orgFilter(clients, orgId));
+        .where(activeFilter);
       const rows = await db.select(baseSelect)
         .from(clients)
         .leftJoin(users, eq(clients.userId, users.id))
-        .where(orgFilter(clients, orgId))
+        .where(activeFilter)
         .limit(limit)
         .offset(offset);
       return res.json({ items: rows, pagination: paginationMeta(total, page, limit) });
@@ -57,7 +61,7 @@ clientsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
     const allClients = await db.select(baseSelect)
       .from(clients)
       .leftJoin(users, eq(clients.userId, users.id))
-      .where(orgFilter(clients, orgId))
+      .where(activeFilter)
       .limit(50);
     res.json(allClients);
   } catch (error) {
@@ -131,7 +135,7 @@ clientsRouter.post('/:id/equipment/refresh', requireRole('admin', 'technician'),
   }
 });
 
-clientsRouter.get('/:id', requireRole('admin', 'technician'), async (req, res) => {
+clientsRouter.get('/:id', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -150,12 +154,21 @@ clientsRouter.get('/:id', requireRole('admin', 'technician'), async (req, res) =
   }
 });
 
-clientsRouter.post('/', requireRole('admin'), async (req, res) => {
+clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
+    const org = req.organization || await loadOrganization(orgId);
+    await assertWithinClientLimit(org);
+
     const { email, password, fullName, phone, clientType, rut, address, city, region } = req.body;
-    const hashedPassword = await bcrypt.hash(password || '123456', 10);
+    if (!email || !fullName) {
+      return res.status(400).json({ error: 'Email y nombre son requeridos' });
+    }
+    const plainPass = password && String(password).length >= 10
+      ? password
+      : cryptoRandomPassword();
+    const hashedPassword = await bcrypt.hash(plainPass, 12);
     const [user] = await db.insert(users).values({
       organizationId: orgId,
       email, password: hashedPassword, fullName, phone, role: 'client',
@@ -165,13 +178,22 @@ clientsRouter.post('/', requireRole('admin'), async (req, res) => {
       userId: user.id, clientType: clientType || 'individual', rut, address, city, region,
     }).returning();
     const { password: _, ...userData } = user;
-    res.status(201).json({ ...client, user: userData });
+    res.status(201).json({
+      ...client,
+      user: userData,
+      temporaryPassword: password ? undefined : plainPass,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Error al crear cliente: ' + error.message });
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message || 'Error al crear cliente' });
   }
 });
 
-clientsRouter.put('/:id', requireRole('admin'), async (req, res) => {
+function cryptoRandomPassword() {
+  return `Fn${Date.now().toString(36)}A1!`;
+}
+
+clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -212,6 +234,9 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
     if (!existing.length) return res.status(404).json({ error: 'Abonado no encontrado' });
+    if (existing[0].deletedAt) {
+      return res.status(400).json({ error: 'El abonado ya está dado de baja' });
+    }
 
     const svcRows = await db.select({ id: clientServices.id })
       .from(clientServices).where(eq(clientServices.clientId, clientId));
@@ -224,23 +249,43 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
       await db.update(equipment)
         .set({ clientId: null, detectedDeviceId: null, updatedAt: new Date() })
         .where(and(eq(equipment.clientId, clientId), orgFilter(equipment, orgId)));
+      await db.update(clientServices)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(clientServices.clientId, clientId));
     }
 
-    const clientInvoices = await db.select({ id: invoices.id })
-      .from(invoices).where(eq(invoices.clientId, clientId));
-    const invoiceIds = clientInvoices.map((i) => i.id);
+    // Anular solo facturas abiertas; preservar pagadas/parciales y todos los pagos
+    await db.update(invoices)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(and(
+        eq(invoices.clientId, clientId),
+        inArray(invoices.status, ['pending', 'overdue', 'partial']),
+      ));
 
-    if (invoiceIds.length) {
-      await db.delete(payments).where(inArray(payments.invoiceId, invoiceIds));
-      await db.delete(invoices).where(eq(invoices.clientId, clientId));
-    }
-    await db.delete(tickets).where(eq(tickets.clientId, clientId));
-    await db.delete(clientServices).where(eq(clientServices.clientId, clientId));
-    await db.delete(clients).where(eq(clients.id, clientId));
-    await db.delete(users).where(eq(users.id, existing[0].userId));
+    await db.update(clients)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(clients.id, clientId));
 
-    res.json({ message: 'Abonado eliminado junto con servicios, facturas y tickets' });
+    await db.update(users)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(users.id, existing[0].userId));
+
+    const { writeAuditLog, clientIp } = await import('../lib/auditLog.js');
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'client.soft_delete',
+      entity: 'client',
+      entityId: clientId,
+      ipAddress: clientIp(req),
+      details: { preservedInvoices: true },
+    });
+
+    res.json({
+      message: 'Abonado dado de baja. Facturas pagadas/parciales y pagos se conservan.',
+      softDelete: true,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar: ' + error.message });
+    res.status(500).json({ error: 'Error al dar de baja: ' + error.message });
   }
 });

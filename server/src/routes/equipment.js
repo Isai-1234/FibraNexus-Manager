@@ -44,7 +44,14 @@ async function patchEquipmentRow(orgId, equipmentId, body) {
   if (serialNumber !== undefined) patch.serialNumber = serialNumber || null;
   if (location !== undefined) patch.location = location || null;
   if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
-  if (snmpCommunity !== undefined) patch.snmpCommunity = snmpCommunity || null;
+  if (snmpCommunity !== undefined) {
+    if (!snmpCommunity) {
+      patch.snmpCommunity = null;
+    } else {
+      const { encryptSecret } = await import('../lib/secrets.js');
+      patch.snmpCommunity = encryptSecret(snmpCommunity);
+    }
+  }
   if (notes !== undefined) patch.notes = notes || null;
   // Estado manual solo si no es detectable por SNMP
   if (status !== undefined && !isPollable({ ...existing, ...patch })) {
@@ -79,11 +86,14 @@ equipmentRouter.post('/', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { name, type, brand, model, ipAddress, location, siteId, macAddress, snmpCommunity } = req.body;
+    const { encryptSecret } = await import('../lib/secrets.js');
+    const { assertWithinEquipmentLimit } = await import('../lib/orgLimits.js');
+    await assertWithinEquipmentLimit(req.organization || { maxRouters: 5, maxClients: 100 });
     const [created] = await db.insert(equipment).values({
       organizationId: orgId,
       siteId: siteId ? parseInt(siteId, 10) : null,
       name, type, brand, model, ipAddress, macAddress: macAddress || null,
-      snmpCommunity: snmpCommunity || null,
+      snmpCommunity: snmpCommunity ? encryptSecret(snmpCommunity) : null,
       location, status: 'offline',
     }).returning();
     res.status(201).json(attachSnmpDisplay(created));

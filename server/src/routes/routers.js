@@ -271,6 +271,7 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
       and(eq(equipment.type, 'router'), orgFilter(equipment, orgId)),
     ).limit(50);
     const refreshed = await refreshStaleRouters(routers, orgId);
+    const { sanitizeEquipmentRow } = await import('../lib/secrets.js');
     const routersWithStatus = refreshed.map(r => {
       const agent = connectedAgents.get(r.id.toString());
       const connectionMethod = inferConnectionMethod(r);
@@ -278,12 +279,12 @@ routersRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
         || (r.credentials?.lastHeartbeat
           ? Date.now() - new Date(r.credentials.lastHeartbeat).getTime() < 120_000
           : r.status === 'online');
+      const safe = sanitizeEquipmentRow(r);
       return {
-        ...r,
+        ...safe,
         status: agentConnected ? 'online' : r.status,
         connectionMethod,
         hasApiCredentials: !!(r.credentials?.routerUser && r.credentials?.routerPass),
-        credentials: { ...r.credentials, connectionMethod },
         agentConnected,
         agentLastSeen: agent?.lastSeen || r.credentials?.lastHeartbeat || r.lastSeen || null,
         routerInfo: agent?.routerInfo || r.credentials?.lastRouterInfo || null,
@@ -319,7 +320,11 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       return res.status(400).json({ error: 'IP local del EdgeRouter requerida (ej: 172.16.11.254)' });
     }
     const agentToken = crypto.randomUUID();
-    const credentials = {
+    const { encryptCredentialsObject, encryptSecret, sanitizeEquipmentRow } = await import('../lib/secrets.js');
+    const { assertWithinRouterLimit } = await import('../lib/orgLimits.js');
+    await assertWithinRouterLimit(req.organization || { id: orgId, maxRouters: 5 });
+
+    const credentials = encryptCredentialsObject({
       agentToken,
       routerType,
       connectionMethod: method,
@@ -333,8 +338,7 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       lanSubnet: lanSubnet || null,
       lanInterface: lanInterface || null,
       dhcpSharedNetwork: dhcpSharedNetwork || null,
-      encryptedAt: new Date().toISOString(),
-    };
+    });
     const [router] = await db.insert(equipment).values({
       organizationId: orgId,
       name,
@@ -344,12 +348,25 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       ipAddress: method === 'cloudflare_tunnel' ? (tunnelHostname || routerIp || null) : (routerIp || tunnelHostname || null),
       location,
       status: 'offline',
-      snmpCommunity,
+      snmpCommunity: snmpCommunity ? encryptSecret(snmpCommunity) : null,
       credentials,
     }).returning();
-    res.status(201).json({ ...router, agentToken });
+
+    const { writeAuditLog, clientIp } = await import('../lib/auditLog.js');
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'router.create',
+      entity: 'equipment',
+      entityId: router.id,
+      ipAddress: clientIp(req),
+    });
+
+    // agentToken solo en creación (one-shot)
+    res.status(201).json({ ...sanitizeEquipmentRow(router), agentToken });
   } catch (error) {
-    res.status(500).json({ error: 'Error al registrar router: ' + error.message });
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message || 'Error al registrar router' });
   }
 });
 
@@ -517,7 +534,7 @@ export async function agentHeartbeatHandler(req, res) {
       snmpTargets = pollable
         .map(c => `${c.ipAddress.trim().split('/')[0]},${c.snmpCommunity.trim()},${c.id}`)
         .join(';');
-      console.log(`[heartbeat-snmp-targets] router=${router.id} org=${router.organizationId} cpes_total=${cpes.length} pollable=${pollable.length} targets="${snmpTargets}"`);
+      console.log(`[heartbeat-snmp-targets] router=${router.id} org=${router.organizationId} cpes_total=${cpes.length} pollable=${pollable.length}`);
     }
 
     res.json({ status: 'ok', routerId: router.id, routerName: router.name, pendingCommands: toSend, snmpTargets });
@@ -646,27 +663,33 @@ routersRouter.patch('/:id', requireRole('admin'), async (req, res) => {
     );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
-    const { connectionMethod, tunnelHostname, location, name, routerUser, routerPass, routerPort, parentRouterId } = req.body;
+    const { connectionMethod, tunnelHostname, location, name, routerUser, routerPass, routerPort, parentRouterId, tunnelToken } = req.body;
+    const { encryptSecret, encryptCredentialsObject, sanitizeEquipmentRow } = await import('../lib/secrets.js');
     const creds = { ...router.credentials };
     if (connectionMethod) creds.connectionMethod = connectionMethod;
     if (tunnelHostname) creds.tunnelHostname = tunnelHostname;
     if (routerUser !== undefined) creds.routerUser = routerUser || null;
-    if (routerPass !== undefined) creds.routerPass = routerPass || null;
+    // Solo actualizar password si el cliente envía un valor no vacío (no precargar)
+    if (routerPass !== undefined && routerPass !== null && String(routerPass).length > 0) {
+      creds.routerPass = encryptSecret(routerPass);
+    }
+    if (tunnelToken !== undefined && tunnelToken !== null && String(tunnelToken).length > 0) {
+      creds.tunnelToken = encryptSecret(tunnelToken);
+    }
     if (routerPort) creds.routerPort = routerPort;
     if (parentRouterId !== undefined) {
       if (parentRouterId) creds.parentRouterId = parseInt(parentRouterId, 10);
       else delete creds.parentRouterId;
     }
-    // Blindaje: campos operacionales inmutables vía este endpoint
     if (router.credentials?.agentToken) creds.agentToken = router.credentials.agentToken;
     if (router.credentials?.lastHeartbeat) creds.lastHeartbeat = router.credentials.lastHeartbeat;
     if (router.credentials?.lastRouterInfo) creds.lastRouterInfo = router.credentials.lastRouterInfo;
-    const updates = { credentials: creds, updatedAt: new Date() };
+    const updates = { credentials: encryptCredentialsObject(creds), updatedAt: new Date() };
     if (location !== undefined) updates.location = location;
     if (name !== undefined) updates.name = name;
     if (tunnelHostname !== undefined) updates.ipAddress = tunnelHostname || router.ipAddress;
     const [updated] = await db.update(equipment).set(updates).where(eq(equipment.id, routerId)).returning();
-    res.json(updated);
+    res.json(sanitizeEquipmentRow(updated));
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar router: ' + error.message });
   }
@@ -766,9 +789,7 @@ routersRouter.post('/test-connection', requireRole('admin'), async (req, res) =>
   }
 });
 
-// Endpoint idempotente: devuelve el token existente si lo hay.
-// Solo genera uno nuevo si: (a) el router no tiene token, o (b) force=true enviado explícitamente.
-// force=true requiere confirmación del usuario en el frontend antes de llamarse.
+// Rotación / creación de agentToken. El token en claro solo se devuelve al crear o con force=true.
 routersRouter.post('/:id/token', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -781,33 +802,65 @@ routersRouter.post('/:id/token', requireRole('admin'), async (req, res) => {
 
     const existingToken = router.credentials?.agentToken;
     const force = req.body?.force === true;
+    const { writeAuditLog, clientIp } = await import('../lib/auditLog.js');
+    const { redactToken } = await import('../lib/secrets.js');
 
-    // Sin token existente → generar uno (primera vez)
     if (!existingToken) {
       const newToken = crypto.randomUUID();
-      const updatedCreds = { ...(router.credentials || {}), agentToken: newToken };
+      const rotatedAt = new Date().toISOString();
+      const updatedCreds = {
+        ...(router.credentials || {}),
+        agentToken: newToken,
+        agentTokenRotatedAt: rotatedAt,
+        agentTokenRotatedBy: req.user.id,
+      };
       await db.update(equipment)
         .set({ credentials: updatedCreds, updatedAt: new Date() })
         .where(eq(equipment.id, router.id));
-      console.log(`[token] router ${routerId} token generado (nuevo)`);
-      return res.json({ agentToken: newToken, created: true });
+      await writeAuditLog({
+        organizationId: orgId,
+        userId: req.user.id,
+        action: 'router.agent_token_create',
+        entity: 'equipment',
+        entityId: routerId,
+        details: { tokenPreview: redactToken(newToken) },
+        ipAddress: clientIp(req),
+      });
+      return res.json({ agentToken: newToken, created: true, rotatedAt });
     }
 
-    // Token existente + sin force → devolver el mismo, NUNCA sobreescribir
     if (!force) {
-      return res.json({ agentToken: existingToken, created: false });
+      return res.json({
+        hasAgentToken: true,
+        created: false,
+        agentTokenRotatedAt: router.credentials?.agentTokenRotatedAt || null,
+        message: 'Token existente. Envía force=true para rotar (invalidará el agente actual).',
+      });
     }
 
-    // Token existente + force=true (usuario confirmó explícitamente en UI) → regenerar
     const newToken = crypto.randomUUID();
-    const updatedCreds = { ...(router.credentials || {}), agentToken: newToken };
+    const rotatedAt = new Date().toISOString();
+    const updatedCreds = {
+      ...(router.credentials || {}),
+      agentToken: newToken,
+      agentTokenRotatedAt: rotatedAt,
+      agentTokenRotatedBy: req.user.id,
+    };
     await db.update(equipment)
       .set({ credentials: updatedCreds, updatedAt: new Date() })
       .where(eq(equipment.id, router.id));
-    console.log(`[token] router ${routerId} token REGENERADO por solicitud explícita`);
-    res.json({ agentToken: newToken, created: true });
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'router.agent_token_rotate',
+      entity: 'equipment',
+      entityId: routerId,
+      details: { tokenPreview: redactToken(newToken), force: true },
+      ipAddress: clientIp(req),
+    });
+    res.json({ agentToken: newToken, created: true, rotatedAt });
   } catch (error) {
-    res.status(500).json({ error: 'Error generando token: ' + error.message });
+    res.status(500).json({ error: 'Error generando token' });
   }
 });
 

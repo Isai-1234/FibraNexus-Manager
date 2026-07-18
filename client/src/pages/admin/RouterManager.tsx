@@ -225,7 +225,8 @@ export default function RouterManager({ API, onBack }: Props) {
     setScriptError('')
     setCredForm({
       routerUser: router.credentials?.routerUser || (String(router.credentials?.routerType || '').startsWith('edgerouter') ? 'ubnt' : 'admin'),
-      routerPass: router.credentials?.routerPass || '',
+      routerPass: '',
+      tunnelToken: '',
       tunnelHostname: router.credentials?.tunnelHostname
         || (String(router.ipAddress || '').includes('fibranexus.cl') ? router.ipAddress : '')
         || '',
@@ -332,20 +333,27 @@ export default function RouterManager({ API, onBack }: Props) {
 
   async function saveCredentials() {
     if (!editingRouter) return
-    if (!credForm.routerUser || !credForm.routerPass) {
-      alert('Usuario y contraseña API son obligatorios')
+    if (!credForm.routerUser) {
+      alert('Usuario API es obligatorio')
+      return
+    }
+    const hasStored = editingRouter.hasApiCredentials || editingRouter.credentials?.hasRouterPass
+    if (!credForm.routerPass && !hasStored) {
+      alert('Contraseña API es obligatoria (o deja la existente)')
       return
     }
     setCredSaving(true)
     try {
-      await api().patch(`/routers/${editingRouter.id}`, {
+      const payload: Record<string, unknown> = {
         routerUser: credForm.routerUser,
-        routerPass: credForm.routerPass,
         tunnelHostname: credForm.tunnelHostname,
         routerPort: credForm.routerPort,
         connectionMethod: credForm.connectionMethod,
         parentRouterId: credForm.parentRouterId || null,
-      })
+      }
+      if (credForm.routerPass) payload.routerPass = credForm.routerPass
+      if (credForm.tunnelToken) payload.tunnelToken = credForm.tunnelToken
+      await api().patch(`/routers/${editingRouter.id}`, payload)
       setEditingRouter(null)
       loadRouters()
       alert('Credenciales API guardadas')
@@ -996,8 +1004,9 @@ export default function RouterManager({ API, onBack }: Props) {
                   onChange={e => setCredForm({ ...credForm, routerUser: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium">Contraseña API *</label>
-                <input type="password" className="w-full border rounded-lg px-3 py-2 mt-1"
+                <label className="text-sm font-medium">Contraseña API {editingRouter.hasApiCredentials || editingRouter.credentials?.hasRouterPass ? '(dejar vacío para no cambiar)' : '*'}</label>
+                <input type="password" autoComplete="new-password" className="w-full border rounded-lg px-3 py-2 mt-1"
+                  placeholder={editingRouter.hasApiCredentials || editingRouter.credentials?.hasRouterPass ? '••••••••' : ''}
                   value={credForm.routerPass || ''}
                   onChange={e => setCredForm({ ...credForm, routerPass: e.target.value })} />
               </div>

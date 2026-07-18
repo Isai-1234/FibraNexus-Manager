@@ -22,12 +22,8 @@ export const JobNames = {
  */
 export async function dispatch(jobName, payload) {
   if (shouldUseJobQueue()) {
-    try {
-      return await enqueueRedis(jobName, payload);
-    } catch (err) {
-      console.warn('Redis enqueue failed, falling back to inline execution: %s', err.message);
-      return runTask(jobName, payload);
-    }
+    // No degradar en silencio: en producción la cola debe estar implementada
+    return enqueueRedis(jobName, payload);
   }
   return runTask(jobName, payload);
 }

@@ -138,7 +138,7 @@ export function attachSnmpDisplay(item) {
   const metricsFromHeartbeat = isMetricsFresh(lastMetrics)
     && Boolean(lastMetrics?.signal)
     && (!lastSnmp?.wireless?.signalDbm || (lastSnmp?.pollMethod === 'edgerouter-arp'));
-  return {
+  const display = {
     ...item,
     snmpOnline: item.status === 'online',
     snmpUptime: lastSnmp?.uptime || null,
@@ -155,6 +155,37 @@ export function attachSnmpDisplay(item) {
     wirelessWarnings: wireless?.warnings || [],
     wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
+  };
+  // Sanitizar secretos al final (mantiene flags hasSnmpCommunity / hasRouterPass)
+  return sanitizeDisplay(display);
+}
+
+function sanitizeDisplay(display) {
+  const { snmpCommunity, credentials, ...rest } = display;
+  const creds = credentials && typeof credentials === 'object' ? credentials : {};
+  const {
+    routerPass: _rp,
+    agentToken: _at,
+    tunnelToken: _tt,
+    snmpCommunity: _sc,
+    pendingCmds,
+    cmdHistory,
+    heartbeatArp,
+    heartbeatDhcp,
+    ...safeCreds
+  } = creds;
+  return {
+    ...rest,
+    hasSnmpCommunity: !!(snmpCommunity && String(snmpCommunity).length > 0),
+    snmpCommunitySet: !!(snmpCommunity && String(snmpCommunity).length > 0),
+    credentials: {
+      ...safeCreds,
+      hasRouterPass: !!(creds.routerUser && creds.routerPass),
+      hasAgentToken: !!creds.agentToken,
+      hasTunnelToken: !!creds.tunnelToken,
+      agentTokenRotatedAt: creds.agentTokenRotatedAt || null,
+      pendingCmdCount: Array.isArray(pendingCmds) ? pendingCmds.length : 0,
+    },
   };
 }
 

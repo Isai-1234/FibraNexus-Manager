@@ -346,7 +346,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
       model: eq.model || '',
       ipAddress: eq.ipAddress || '',
       macAddress: eq.macAddress || '',
-      snmpCommunity: eq.snmpCommunity || '',
+      snmpCommunity: '',
       clientId: eq.clientId || '',
       parentId: eq.parentId || eq.credentials?.routerId || '',
     })

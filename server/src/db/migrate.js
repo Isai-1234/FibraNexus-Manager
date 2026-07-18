@@ -201,8 +201,7 @@ export async function runMigrations(connectionString) {
       )
     `;
     await sql`CREATE INDEX IF NOT EXISTS idx_device_metrics_equip_time ON device_metrics(equipment_id, sampled_at DESC)`;
-    // Limpieza automática: métricas > 7 días (idempotente en cada arranque)
-    await sql`DELETE FROM device_metrics WHERE sampled_at < NOW() - INTERVAL '7 days'`;
+    // Limpieza de métricas antiguas: NO en el arranque (usar job/cron separado)
 
     await sql`
       CREATE TABLE IF NOT EXISTS ticket_messages (

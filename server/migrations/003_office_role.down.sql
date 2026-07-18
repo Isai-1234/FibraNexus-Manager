@@ -1,0 +1,3 @@
+-- PostgreSQL no permite quitar un valor de enum de forma segura.
+-- Rollback operativo: reasignar usuarios office a technician o admin antes
+-- de restaurar la base desde un respaldo previo a 003_office_role.

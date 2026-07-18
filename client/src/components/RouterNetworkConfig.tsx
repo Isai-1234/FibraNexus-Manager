@@ -353,7 +353,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                     <span className={`w-2.5 h-2.5 rounded-full ${eq.status === 'online' ? 'bg-green-500' : 'bg-gray-300'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{eq.name}</p>
-                      <p className="text-xs text-gray-500 font-mono">{eq.ipAddress || 'sin IP'} · community: {eq.snmpCommunity || '—'}</p>
+                      <p className="text-xs text-gray-500 font-mono">{eq.ipAddress || 'sin IP'} · community: {eq.hasSnmpCommunity || eq.snmpCommunitySet ? '••••' : '—'}</p>
                       {eq.credentials?.lastSnmp && (
                         <p className="text-xs text-emerald-700 mt-0.5">
                           {eq.credentials.lastSnmp.sysName} · up {eq.credentials.lastSnmp.uptime}
@@ -361,7 +361,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                         </p>
                       )}
                     </div>
-                    <button onClick={() => pollOne(eq.id)} disabled={!eq.ipAddress || !eq.snmpCommunity}
+                    <button onClick={() => pollOne(eq.id)} disabled={!eq.ipAddress || !(eq.snmpCommunity || eq.hasSnmpCommunity || eq.snmpCommunitySet)}
                       className="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50 disabled:opacity-40">
                       SNMP
                     </button>

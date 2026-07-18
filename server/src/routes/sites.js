@@ -318,7 +318,12 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     });
     if (dhcpMac && !mergedMac) patch.macAddress = dhcpMac;
 
-    if (snmpCommunity !== undefined) patch.snmpCommunity = snmpCommunity || null;
+    if (snmpCommunity !== undefined && String(snmpCommunity).length > 0) {
+      const { encryptSecret } = await import('../lib/secrets.js');
+      patch.snmpCommunity = encryptSecret(snmpCommunity);
+    } else if (snmpCommunity === '' || snmpCommunity === null) {
+      // no borrar community existente si el form envía vacío (UI no precarga)
+    }
     if (notes !== undefined) patch.notes = notes || null;
     if (siteId !== undefined) patch.siteId = siteId ? parseInt(siteId, 10) : null;
 

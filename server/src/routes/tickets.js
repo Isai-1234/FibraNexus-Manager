@@ -13,7 +13,7 @@ import {
 
 export const ticketsRouter = Router();
 
-ticketsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.get('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -41,7 +41,7 @@ ticketsRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
   }
 });
 
-ticketsRouter.get('/:id', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.get('/:id', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -54,7 +54,7 @@ ticketsRouter.get('/:id', requireRole('admin', 'technician'), async (req, res) =
   }
 });
 
-ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.post('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -89,7 +89,7 @@ ticketsRouter.post('/', requireRole('admin', 'technician'), async (req, res) => 
   }
 });
 
-ticketsRouter.patch('/:id', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.patch('/:id', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -106,7 +106,7 @@ ticketsRouter.patch('/:id', requireRole('admin', 'technician'), async (req, res)
   }
 });
 
-ticketsRouter.put('/:id', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.put('/:id', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -123,7 +123,7 @@ ticketsRouter.put('/:id', requireRole('admin', 'technician'), async (req, res) =
   }
 });
 
-ticketsRouter.post('/:id/messages', requireRole('admin', 'technician'), async (req, res) => {
+ticketsRouter.post('/:id/messages', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;

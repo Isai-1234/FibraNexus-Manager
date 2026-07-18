@@ -809,7 +809,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                 <span className={`w-2 h-2 rounded-full ${item.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
                                 {statusLabel[item.status] || item.status}
                               </span>
-                              {item.snmpCommunity && item.status !== 'online' && item.type !== 'router' && (
+                              {(item.hasSnmpCommunity || item.snmpCommunitySet) && item.status !== 'online' && item.type !== 'router' && (
                                 <p className="text-xs text-amber-600 mt-1">Revisar SNMP en antena</p>
                               )}
                               {item.type === 'router' && item.status !== 'online' && item.credentials?.routerType?.startsWith('edgerouter') && (

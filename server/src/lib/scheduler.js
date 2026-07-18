@@ -72,6 +72,34 @@ export function startScheduler() {
   // CPE offline: si last_seen > 10 min sin ARP/SNMP, marcar offline
   setTimeout(() => markStaleCpes(), 90_000);
   setInterval(() => markStaleCpes(), 5 * 60 * 1000);
+
+  // Retención de métricas por org (Fase 1 SaaS)
+  setTimeout(() => purgeOldMetrics(), 120_000);
+  setInterval(() => purgeOldMetrics(), 6 * 60 * 60 * 1000);
+}
+
+async function purgeOldMetrics() {
+  try {
+    const { db } = await import('../db/index.js');
+    const { organizations, equipment, deviceMetrics } = await import('../db/schema.js');
+    const { eq, and, lt } = await import('drizzle-orm');
+    const orgs = await db.select({
+      id: organizations.id,
+      metricsRetentionDays: organizations.metricsRetentionDays,
+    }).from(organizations);
+    for (const org of orgs) {
+      const days = org.metricsRetentionDays || 7;
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const eqs = await db.select({ id: equipment.id }).from(equipment)
+        .where(eq(equipment.organizationId, org.id));
+      for (const e of eqs) {
+        await db.delete(deviceMetrics)
+          .where(and(eq(deviceMetrics.equipmentId, e.id), lt(deviceMetrics.sampledAt, cutoff)));
+      }
+    }
+  } catch (err) {
+    console.error('[scheduler:metrics-retention] error: %s', err.message);
+  }
 }
 
 async function triggerIpResolveRound(label) {

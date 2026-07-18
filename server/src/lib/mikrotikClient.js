@@ -1,5 +1,6 @@
 import https from 'https';
 import { inferConnectionMethod } from './tenant.js';
+import { decryptSecret } from './secrets.js';
 
 function resolveHost(router) {
   const creds = router.credentials || {};
@@ -21,10 +22,11 @@ function resolvePort(router) {
 export function getRouterCredentials(router) {
   const creds = router.credentials || {};
   const user = creds.routerUser;
-  const pass = creds.routerPass;
+  let pass = creds.routerPass;
   if (!user || !pass) {
     throw new Error('Router sin credenciales API. Edita el router y guarda usuario/contraseña.');
   }
+  pass = decryptSecret(pass);
   return { user, pass };
 }
 

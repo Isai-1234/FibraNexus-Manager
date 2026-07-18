@@ -12,7 +12,10 @@
     "build": "corepack pnpm --filter fibranexus-client build",
     "db:push": "drizzle-kit push",
     "db:seed": "node src/seed.js",
-    "lab:detected": "node ../scripts/lab-detected-check.mjs"
+    "lab:detected": "node ../scripts/lab-detected-check.mjs",
+    "test": "node --test src/lib/__tests__/*.test.js",
+    "migrate": "node ../scripts/run-migrations.mjs",
+    "migrate:encrypt-secrets": "node ../scripts/migrate-encrypt-secrets.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

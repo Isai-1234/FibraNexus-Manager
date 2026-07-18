@@ -20,6 +20,7 @@ import { sitesRouter } from './routes/sites.js';
 import { routersRouter, agentHeartbeatHandler, agentCmdResultHandler, buildEdgeosHeartbeatScript } from './routes/routers.js';
 import { edgeosRouter } from './routes/edgeos.js';
 import { devicesRouter } from './routes/devices.js';
+import { staffRouter } from './routes/staff.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireActiveOrg } from './lib/tenant.js';
@@ -32,14 +33,50 @@ import { startScheduler } from './lib/scheduler.js';
 import { db } from './db/index.js';
 import { equipment } from './db/schema.js';
 import { eq } from 'drizzle-orm';
+import { rateLimit } from './lib/rateLimit.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '10000');
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*', credentials: true }));
-app.use(express.json());
+// Guardrail: cola Redis no implementada
+if (process.env.USE_JOB_QUEUE === 'true') {
+  console.error('FATAL: USE_JOB_QUEUE=true pero la cola Redis es un stub. Desactiva la flag o implementa bullmq.');
+  process.exit(1);
+}
+
+// CORS estricto: solo FRONTEND_URL (lista separada por comas) o localhost en desarrollo
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (!allowedOrigins.length && process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173');
+}
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // same-origin / curl / agent
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '1mb' }));
+
+// Cabeceras de seguridad básicas
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 
 app.use('/api/auth', authRouter);
 app.use('/api/clients', authenticateToken, requireActiveOrg, clientsRouter);
@@ -50,11 +87,19 @@ app.use('/api/invoices', authenticateToken, requireActiveOrg, invoicesRouter);
 app.use('/api/payments', authenticateToken, requireActiveOrg, paymentsRouter);
 app.use('/api/tickets', authenticateToken, requireActiveOrg, ticketsRouter);
 app.use('/api/dashboard', authenticateToken, requireActiveOrg, dashboardRouter);
-app.use('/api/portal', portalRouter);
+app.use('/api/portal', rateLimit({ name: 'portal', windowMs: 60_000, max: 120 }), portalRouter);
 app.use('/api/platform', platformRouter);
 app.use('/api/ip-management', authenticateToken, requireActiveOrg, ipManagementRouter);
-app.post('/api/routers/agent/heartbeat', agentHeartbeatHandler);
-app.post('/api/routers/agent/cmd-result', agentCmdResultHandler);
+app.post(
+  '/api/routers/agent/heartbeat',
+  rateLimit({ name: 'agent_hb', windowMs: 60_000, max: 180 }),
+  agentHeartbeatHandler,
+);
+app.post(
+  '/api/routers/agent/cmd-result',
+  rateLimit({ name: 'agent_cmd', windowMs: 60_000, max: 120 }),
+  agentCmdResultHandler,
+);
 // Ruta corta sin query params para descargar heartbeat.sh desde EdgeRouter (evita autocorrect mobile)
 // Uso: curl https://app.fibranexus.cl/hs/TOKEN | sudo tee /config/scripts/fibranexus/heartbeat.sh
 app.get('/hs/:token', async (req, res) => {
@@ -73,6 +118,7 @@ app.use('/api/routers', authenticateToken, requireActiveOrg, routersRouter);
 app.use('/api/edgeos', authenticateToken, requireActiveOrg, edgeosRouter);
 app.use('/api/sites', authenticateToken, requireActiveOrg, sitesRouter);
 app.use('/api/settings', authenticateToken, requireActiveOrg, settingsRouter);
+app.use('/api/staff', authenticateToken, requireActiveOrg, staffRouter);
 app.use('/api/network', authenticateToken, requireActiveOrg, networkRouter);
 app.use('/api/devices', authenticateToken, requireActiveOrg, devicesRouter);
 

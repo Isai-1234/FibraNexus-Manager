@@ -10,7 +10,7 @@ import { getOrgSettings } from '../lib/billingScheduler.js';
 
 export const dashboardRouter = Router();
 
-dashboardRouter.get('/admin', requireRole('admin', 'technician'), async (req, res) => {
+dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;

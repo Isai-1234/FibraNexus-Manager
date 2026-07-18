@@ -59,6 +59,10 @@ export default function PlatformDashboard({ user, API }: { user: any; API: strin
         isActive: res.data.isActive,
         maxRouters: res.data.maxRouters ?? 5,
         maxClients: res.data.maxClients ?? 100,
+        maxUsers: res.data.maxUsers ?? 5,
+        maxEquipment: res.data.maxEquipment ?? 500,
+        metricsRetentionDays: res.data.metricsRetentionDays ?? 7,
+        subscriptionStatus: res.data.subscriptionStatus || 'trial',
       })
       setSelectedOrgId(id)
     } catch (e: any) {
@@ -83,8 +87,58 @@ export default function PlatformDashboard({ user, API }: { user: any; API: strin
     if (!selectedOrgId) return
     try {
       const res = await api().post(`/platform/organizations/${selectedOrgId}/extend-trial`, { days })
-      setOrgDetail({ ...orgDetail, ...res.data, staff: orgDetail.staff })
-      setEditForm((f: any) => ({ ...f, trialEndsAt: res.data.trialEndsAt?.slice(0, 10), plan: 'trial' }))
+      setOrgDetail({ ...orgDetail, ...res.data, staff: orgDetail.staff, activity: orgDetail.activity, saasInvoices: orgDetail.saasInvoices })
+      setEditForm((f: any) => ({ ...f, trialEndsAt: res.data.trialEndsAt?.slice(0, 10), plan: 'trial', subscriptionStatus: 'trial' }))
+      await loadDashboard()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error')
+    }
+  }
+
+  async function suspendOrg() {
+    if (!selectedOrgId) return
+    const reason = prompt('Motivo de suspensión:', 'Morosidad SaaS / revisión') || 'Suspendido por FibraNexus'
+    try {
+      const res = await api().post(`/platform/organizations/${selectedOrgId}/suspend`, { reason })
+      setOrgDetail({ ...orgDetail, ...res.data, staff: orgDetail.staff, activity: orgDetail.activity, saasInvoices: orgDetail.saasInvoices })
+      setEditForm((f: any) => ({ ...f, isActive: false, subscriptionStatus: 'suspended' }))
+      await loadDashboard()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al suspender')
+    }
+  }
+
+  async function reactivateOrg() {
+    if (!selectedOrgId) return
+    try {
+      const res = await api().post(`/platform/organizations/${selectedOrgId}/reactivate`)
+      setOrgDetail({ ...orgDetail, ...res.data, staff: orgDetail.staff, activity: orgDetail.activity, saasInvoices: orgDetail.saasInvoices })
+      setEditForm((f: any) => ({ ...f, isActive: true, subscriptionStatus: res.data.subscriptionStatus }))
+      await loadDashboard()
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error al reactivar')
+    }
+  }
+
+  async function createSaasInvoice() {
+    if (!selectedOrgId) return
+    const amountStr = prompt('Monto factura SaaS (CLP):', '29990')
+    if (!amountStr) return
+    try {
+      await api().post(`/platform/organizations/${selectedOrgId}/saas-invoices`, {
+        amount: Number(amountStr),
+        dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+      })
+      await loadOrgDetail(selectedOrgId)
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Error')
+    }
+  }
+
+  async function markSaasPaid(id: number) {
+    try {
+      await api().post(`/platform/saas-invoices/${id}/mark-paid`)
+      if (selectedOrgId) await loadOrgDetail(selectedOrgId)
       await loadDashboard()
     } catch (e: any) {
       alert(e.response?.data?.error || 'Error')
@@ -239,17 +293,43 @@ export default function PlatformDashboard({ user, API }: { user: any; API: strin
             </div>
 
             <div className="p-6 space-y-6">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Abonados', value: orgDetail.clientCount },
-                  { label: 'Routers', value: orgDetail.routerCount },
-                  { label: 'Tickets', value: orgDetail.openTickets },
+                  { label: 'Abonados', value: `${orgDetail.clientCount}/${orgDetail.maxClients ?? '—'}` },
+                  { label: 'Routers', value: `${orgDetail.routerCount}/${orgDetail.maxRouters ?? '—'}` },
+                  { label: 'Staff', value: `${orgDetail.staffCount}/${orgDetail.maxUsers ?? '—'}` },
+                  { label: 'Equipos', value: `${orgDetail.equipmentCount ?? 0}/${orgDetail.maxEquipment ?? '—'}` },
                 ].map((m) => (
                   <div key={m.label} className="bg-slate-800 rounded-lg p-3 text-center">
-                    <p className="text-2xl font-bold">{m.value}</p>
+                    <p className="text-lg font-bold">{m.value}</p>
                     <p className="text-[10px] text-slate-400 uppercase">{m.label}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className={`px-2 py-1 rounded border ${planColors[orgDetail.plan] || ''}`}>
+                  {planLabels[orgDetail.plan] || orgDetail.plan}
+                </span>
+                <span className="px-2 py-1 rounded bg-slate-800 text-slate-300">
+                  Estado: {orgDetail.subscriptionStatus || '—'}
+                </span>
+                {orgDetail.lastActivityAt && (
+                  <span className="px-2 py-1 rounded bg-slate-800 text-slate-400">
+                    Última actividad: {new Date(orgDetail.lastActivityAt).toLocaleString('es-CL')}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button type="button" onClick={suspendOrg}
+                  className="flex-1 py-2 text-sm bg-red-900/40 hover:bg-red-900/70 border border-red-800 rounded-lg">
+                  Suspender ISP
+                </button>
+                <button type="button" onClick={reactivateOrg}
+                  className="flex-1 py-2 text-sm bg-emerald-900/40 hover:bg-emerald-900/70 border border-emerald-800 rounded-lg">
+                  Reactivar
+                </button>
               </div>
 
               <div className="space-y-4">
@@ -307,11 +387,70 @@ export default function PlatformDashboard({ user, API }: { user: any; API: strin
                     <input type="number" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
                       value={editForm.maxClients} onChange={(e) => setEditForm({ ...editForm, maxClients: e.target.value })} />
                   </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Máx. staff</label>
+                    <input type="number" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                      value={editForm.maxUsers} onChange={(e) => setEditForm({ ...editForm, maxUsers: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Máx. equipos</label>
+                    <input type="number" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                      value={editForm.maxEquipment} onChange={(e) => setEditForm({ ...editForm, maxEquipment: e.target.value })} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-500 block mb-1">Retención métricas (días)</label>
+                    <input type="number" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                      value={editForm.metricsRetentionDays} onChange={(e) => setEditForm({ ...editForm, metricsRetentionDays: e.target.value })} />
+                  </div>
                 </div>
                 <button onClick={saveOrg} disabled={saving}
                   className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-lg font-medium flex items-center justify-center gap-2">
                   <Save className="h-4 w-4" /> {saving ? 'Guardando…' : 'Guardar cambios'}
                 </button>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="font-semibold text-sm text-slate-300">Facturas SaaS</h4>
+                  <button type="button" onClick={createSaasInvoice} className="text-xs text-violet-400 hover:underline">+ Crear</button>
+                </div>
+                {!orgDetail.saasInvoices?.length ? (
+                  <p className="text-sm text-slate-500">Sin facturas SaaS (cobro manual / gateway futuro)</p>
+                ) : (
+                  <div className="space-y-2">
+                    {orgDetail.saasInvoices.map((inv: any) => (
+                      <div key={inv.id} className="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2 text-sm">
+                        <div>
+                          <p className="font-mono text-xs">{inv.invoiceNumber}</p>
+                          <p className="text-slate-400">${Number(inv.amount).toLocaleString('es-CL')} · {inv.status}</p>
+                        </div>
+                        {inv.status === 'pending' && (
+                          <button type="button" onClick={() => markSaasPaid(inv.id)} className="text-xs text-emerald-400 hover:underline">
+                            Marcar pagada
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-sm text-slate-300 mb-3">Actividad reciente</h4>
+                {!orgDetail.activity?.length ? (
+                  <p className="text-sm text-slate-500">Sin eventos de auditoría</p>
+                ) : (
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {orgDetail.activity.map((a: any) => (
+                      <div key={a.id} className="text-xs text-slate-400 border-b border-slate-800 py-1.5">
+                        <span className="text-slate-200">{a.action}</span>
+                        {' · '}
+                        {a.entity}
+                        {a.createdAt && ` · ${new Date(a.createdAt).toLocaleString('es-CL')}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -385,8 +524,14 @@ function OrgTable({ orgs, onSelect, compact }: { orgs: any[]; onSelect: (id: num
             <td className="p-4 text-sm">{org.routerCount}</td>
             {!compact && <td className="p-4 text-sm">{org.staffCount}</td>}
             <td className="p-4">
-              <span className={`text-xs px-2 py-0.5 rounded-full ${org.isActive ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'}`}>
-                {org.isActive ? 'Activo' : 'Off'}
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                org.subscriptionStatus === 'suspended' || !org.isActive
+                  ? 'bg-red-900/50 text-red-300'
+                  : org.subscriptionStatus === 'trial'
+                    ? 'bg-amber-900/50 text-amber-300'
+                    : 'bg-green-900/50 text-green-300'
+              }`}>
+                {org.subscriptionStatus || (org.isActive ? 'Activo' : 'Off')}
               </span>
             </td>
             <td className="p-4"><ChevronRight className="h-4 w-4 text-slate-600" /></td>

@@ -1,0 +1,66 @@
+# Avance de fases MVP
+
+Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-implementacion.md).
+
+---
+
+## Fase 0 — Base segura y confiable
+
+**Estado:** Hecho  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- Validación de remediación P0 (setup eliminado, secretos, pagos parciales, tenant, auth).
+- Suite de pruebas seguridad/tenant en verde (25).
+- Build client OK.
+- Docs: roadmap, plan-implementacion, modulos actualizados.
+
+### Archivos / migraciones
+- Sin código nuevo de producto en este cierre (validación + docs).
+- Migraciones P0 ya existentes: `001_security_hardening.sql`.
+
+### Pruebas
+- `node --test server/src/lib/__tests__/*.test.js` → **25 pass**
+- `pnpm --filter fibranexus-client build` → **OK**
+
+### Riesgos / pendientes
+- Deploy prod: `CREDENTIALS_ENCRYPTION_KEY` + `run-migrations.mjs` + encrypt secrets.
+- Rate limit/JWT revoke in-memory.
+- `migrate.js` legacy aún en boot.
+
+### Siguiente fase recomendada
+**Fase 1 — SaaS de FibraNexus**
+
+---
+
+## Fase 1 — SaaS de FibraNexus
+
+**Estado:** Hecho  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- Catálogo `saas_plans` (trial/starter/pro/enterprise) con límites.
+- Org: `subscriptionStatus`, suspensión/reactivación, `lastActivityAt`, límites ampliados.
+- Panel plataforma: uso vs límites, suspender/reactivar, actividad, facturas SaaS manuales.
+- API staff ISP (`/api/staff`) con tope `maxUsers`.
+- Retención de métricas por org en scheduler.
+- Registro aplica plan trial con límites.
+
+### Archivos / migraciones
+- `server/migrations/002_saas_platform.sql` (+ down)
+- `server/src/db/schema.js`, `routes/platform.js`, `routes/staff.js`, `lib/saasPlans.js`, `lib/orgLimits.js`, `lib/tenant.js`, `lib/scheduler.js`, `routes/auth.js`, `index.js`
+- `client/src/pages/platform/PlatformDashboard.tsx`
+- Tests: `saas-platform.unit.test.js`
+
+### Pruebas
+- Suite completa → **34 pass**
+- Build client → **OK**
+
+### Riesgos / pendientes
+- Aplicar migración 002 en Supabase/prod antes de usar columnas nuevas.
+- Si columnas no existen aún, API fallará al leer org — desplegar migración primero.
+- Gateway SaaS real sigue pendiente (Fase 3).
+- UI ISP para gestionar staff (listado en panel admin) aún mínima (solo API).
+
+### Siguiente fase recomendada
+**Fase 2 — CRM y ciclo de vida del abonado**

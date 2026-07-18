@@ -9,7 +9,7 @@ import { createInvoiceForService, previewInvoiceForService } from '../lib/invoic
 
 export const invoicesRouter = Router();
 
-invoicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
+invoicesRouter.get('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
@@ -82,7 +82,7 @@ invoicesRouter.post('/service/:serviceId', requireRole('admin'), async (req, res
   }
 });
 
-invoicesRouter.get('/preview/:serviceId', requireRole('admin', 'technician'), async (req, res) => {
+invoicesRouter.get('/preview/:serviceId', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;

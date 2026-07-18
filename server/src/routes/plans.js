@@ -7,7 +7,7 @@ import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 
 export const plansRouter = Router();
 
-plansRouter.get('/', requireRole('admin', 'technician'), async (req, res) => {
+plansRouter.get('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;

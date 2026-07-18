@@ -1,6 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { organizations, users, clients, clientServices, plans, invoices } from '../db/schema.js';
+import { organizations, clients, clientServices, plans, invoices } from '../db/schema.js';
 
 export function getOrganizationId(req) {
   const id = req.user?.organizationId;
@@ -42,8 +42,16 @@ export function trialDaysLeft(org) {
 }
 
 export function isOrganizationActive(org) {
-  if (!org?.isActive) return false;
-  if (org.plan === 'trial' && org.trialEndsAt && new Date(org.trialEndsAt) < new Date()) return false;
+  if (!org) return false;
+  if (!org.isActive) return false;
+  const status = org.subscriptionStatus || (org.plan === 'trial' ? 'trial' : 'active');
+  if (status === 'suspended' || status === 'cancelled') return false;
+  if (status === 'trial' || org.plan === 'trial') {
+    if (org.trialEndsAt && new Date(org.trialEndsAt) < new Date()) return false;
+  }
+  if (status === 'past_due' && org.subscriptionEndsAt && new Date(org.subscriptionEndsAt) < new Date()) {
+    return false;
+  }
   return true;
 }
 
@@ -60,28 +68,9 @@ export function inferConnectionMethod(router) {
   return 'direct';
 }
 
+/** @deprecated Eliminada auto-promoción client→admin (SEC-10). Se mantiene stub por compatibilidad de imports. */
 export async function ensureOrgStaffAccess(user) {
-  if (!user?.organizationId || user.role !== 'client' || user.role === 'superadmin') return user;
-
-  const abonado = await db.query.clients.findFirst({ where: eq(clients.userId, user.id) });
-  if (abonado) return user;
-
-  const staff = await db.query.users.findMany({
-    where: and(
-      eq(users.organizationId, user.organizationId),
-      inArray(users.role, ['admin', 'technician']),
-      eq(users.isActive, true),
-    ),
-  });
-
-  const hasActiveStaff = staff.some((s) => s.lastLogin != null);
-  if (hasActiveStaff) return user;
-
-  const [updated] = await db.update(users)
-    .set({ role: 'admin', updatedAt: new Date() })
-    .where(eq(users.id, user.id))
-    .returning();
-  return updated || user;
+  return user;
 }
 
 export async function getClientInOrg(clientId, orgId) {
@@ -129,10 +118,18 @@ export async function requireActiveOrg(req, res, next) {
     const org = await loadOrganization(orgId);
     if (!org) return res.status(403).json({ error: 'Organización no encontrada' });
     if (!isOrganizationActive(org)) {
+      const suspended = org.subscriptionStatus === 'suspended' || !org.isActive;
       return res.status(402).json({
-        error: 'Trial expirado. Actualiza tu plan para continuar.',
-        code: 'TRIAL_EXPIRED',
-        organization: { plan: org.plan, trialEndsAt: org.trialEndsAt },
+        error: suspended
+          ? 'Cuenta suspendida. Contacta a FibraNexus para reactivar.'
+          : 'Trial expirado o suscripción inactiva. Actualiza tu plan para continuar.',
+        code: suspended ? 'ORG_SUSPENDED' : 'TRIAL_EXPIRED',
+        organization: {
+          plan: org.plan,
+          subscriptionStatus: org.subscriptionStatus,
+          trialEndsAt: org.trialEndsAt,
+          suspendedReason: org.suspendedReason || null,
+        },
       });
     }
     req.organization = org;

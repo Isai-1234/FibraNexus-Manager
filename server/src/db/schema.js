@@ -1,15 +1,42 @@
 import { pgTable, serial, varchar, text, timestamp, boolean, integer, decimal, pgEnum, json, jsonb, date, index, unique } from 'drizzle-orm/pg-core';
 
-export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'technician', 'client']);
+export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'office', 'technician', 'client']);
 export const clientTypeEnum = pgEnum('client_type', ['individual', 'business']);
 export const serviceTypeEnum = pgEnum('service_type', ['fiber', 'wisp', 'copper', 'wireless']);
 export const serviceStatusEnum = pgEnum('service_status', ['active', 'suspended', 'cancelled', 'pending', 'cut']);
-export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'paid', 'overdue', 'cancelled']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
 export const ticketPriorityEnum = pgEnum('ticket_priority', ['low', 'medium', 'high', 'critical']);
 export const equipmentTypeEnum = pgEnum('equipment_type', ['router', 'switch', 'olt', 'ont', 'ap', 'cpe', 'server', 'other']);
 export const equipmentStatusEnum = pgEnum('equipment_status', ['online', 'offline', 'maintenance', 'error', 'installing']);
+
+export const subscriptionStatusEnum = pgEnum('subscription_status', [
+  'trial', 'active', 'past_due', 'suspended', 'cancelled',
+]);
+
+export const saasInvoiceStatusEnum = pgEnum('saas_invoice_status', [
+  'pending', 'paid', 'overdue', 'cancelled',
+]);
+
+/** Catálogo de planes SaaS (FibraNexus → ISP) */
+export const saasPlans = pgTable('saas_plans', {
+  id: serial('id').primaryKey(),
+  slug: varchar('slug', { length: 50 }).notNull().unique(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  priceMonthly: decimal('price_monthly', { precision: 12, scale: 2 }).notNull().default('0'),
+  currency: varchar('currency', { length: 3 }).notNull().default('CLP'),
+  maxClients: integer('max_clients').notNull().default(100),
+  maxUsers: integer('max_users').notNull().default(5),
+  maxRouters: integer('max_routers').notNull().default(5),
+  maxEquipment: integer('max_equipment').notNull().default(500),
+  metricsRetentionDays: integer('metrics_retention_days').notNull().default(7),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 export const organizations = pgTable('organizations', {
   id: serial('id').primaryKey(),
@@ -17,11 +44,38 @@ export const organizations = pgTable('organizations', {
   slug: varchar('slug', { length: 100 }).notNull().unique(),
   email: varchar('email', { length: 255 }),
   plan: varchar('plan', { length: 50 }).notNull().default('trial'),
+  saasPlanId: integer('saas_plan_id').references(() => saasPlans.id),
+  subscriptionStatus: subscriptionStatusEnum('subscription_status').notNull().default('trial'),
+  subscriptionEndsAt: timestamp('subscription_ends_at'),
   trialEndsAt: timestamp('trial_ends_at'),
   isActive: boolean('is_active').default(true).notNull(),
+  suspendedAt: timestamp('suspended_at'),
+  suspendedReason: text('suspended_reason'),
+  lastActivityAt: timestamp('last_activity_at'),
   maxRouters: integer('max_routers').default(5),
   maxClients: integer('max_clients').default(100),
+  maxUsers: integer('max_users').default(5),
+  maxEquipment: integer('max_equipment').default(500),
+  metricsRetentionDays: integer('metrics_retention_days').default(7),
   settings: jsonb('settings'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/** Facturas SaaS FibraNexus → ISP (cobro manual por ahora; gateway después) */
+export const saasInvoices = pgTable('saas_invoices', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id).notNull(),
+  saasPlanId: integer('saas_plan_id').references(() => saasPlans.id),
+  invoiceNumber: varchar('invoice_number', { length: 50 }).notNull().unique(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull().default('CLP'),
+  status: saasInvoiceStatusEnum('status').notNull().default('pending'),
+  periodStart: date('period_start'),
+  periodEnd: date('period_end'),
+  dueDate: date('due_date').notNull(),
+  paidAt: timestamp('paid_at'),
+  notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -53,6 +107,7 @@ export const clients = pgTable('clients', {
   longitude: decimal('longitude', { precision: 11, scale: 8 }),
   notes: text('notes'),
   tags: jsonb('tags'),
+  deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -199,7 +254,7 @@ export const ticketMessages = pgTable('ticket_messages', {
 export const ipAddresses = pgTable('ip_addresses', {
   id: serial('id').primaryKey(),
   organizationId: integer('organization_id').references(() => organizations.id),
-  address: varchar('address', { length: 45 }).notNull().unique(),
+  address: varchar('address', { length: 45 }).notNull(),
   subnet: varchar('subnet', { length: 45 }),
   gateway: varchar('gateway', { length: 45 }),
   vlan: integer('vlan'),
@@ -209,7 +264,9 @@ export const ipAddresses = pgTable('ip_addresses', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  uniqOrgAddress: unique('uq_ip_addresses_org_address').on(table.organizationId, table.address),
+}));
 
 export const detectedDevices = pgTable('detected_devices', {
   id: serial('id').primaryKey(),
@@ -254,5 +311,14 @@ export const activityLog = pgTable('activity_log', {
   entityId: integer('entity_id'),
   details: jsonb('details'),
   ipAddress: varchar('ip_address', { length: 45 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tokenHash: varchar('token_hash', { length: 128 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

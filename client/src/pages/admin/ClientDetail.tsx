@@ -588,7 +588,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       type: eq.type || 'cpe',
       ipAddress: eq.ipAddress || '',
       macAddress: eq.macAddress || '',
-      snmpCommunity: eq.snmpCommunity || '',
+      snmpCommunity: '',
       siteId: eq.siteId || '',
       connectionMode: eq.credentials?.connectionMode || 'static',
       pppoeUsername: eq.credentials?.pppoeUsername || '',
@@ -1458,7 +1458,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           </div>
                           <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>
                           <div className="col-span-2"><span className="text-gray-400">Nodo:</span> {eq.siteName || 'Sin nodo'} {eq.siteCity ? `· ${eq.siteCity}` : ''}</div>
-                          {eq.snmpCommunity && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> {eq.snmpCommunity}</div>}
+                          {(eq.hasSnmpCommunity || eq.snmpCommunitySet) && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> configurado</div>}
                           {eq.credentials?.lastMetrics && (
                             <div className="col-span-2">
                               <SignalBadge metrics={eq.credentials.lastMetrics} />
@@ -1478,7 +1478,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                             className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
                             <Pencil className="h-3 w-3" /> Editar
                           </button>
-                          {eq.snmpCommunity && (
+                          {(eq.snmpCommunity || eq.hasSnmpCommunity || eq.snmpCommunitySet) && (
                             <button
                               onClick={() => expandedMetricsId === eq.id ? setExpandedMetricsId(null) : loadMetrics(eq.id)}
                               className="px-3 py-1.5 text-xs bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
@@ -1612,7 +1612,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                                 if (r) {
                                   setRouterCredForm({
                                     routerUser: r.credentials?.routerUser || 'admin',
-                                    routerPass: r.credentials?.routerPass || '',
+                                    routerPass: '',
                                     tunnelHostname: r.credentials?.tunnelHostname || r.ipAddress || '',
                                   })
                                   setProvisionPppProfile(s.pppProfile || 'default')
