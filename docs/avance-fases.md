@@ -94,3 +94,33 @@ Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-imple
 
 ### Siguiente fase recomendada
 **Fase 3 — Facturación y cobranzas**
+
+---
+
+## Fase 3 — Facturación y pagos
+
+**Estado:** Hecho (MVP)  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- PaymentGateway stub + checkout + webhooks firmados/idempotentes.
+- Void y adjust de facturas internas con auditoría.
+- Avisos de deuda (console/email stub) opcionales por org.
+- Migración `005_billing_payments.sql`; Render preDeploy corre migraciones.
+
+### Archivos
+- `server/src/lib/paymentGateway.js`, `invoiceAdjustments.js`, `debtNotices.js`
+- `server/src/routes/webhooks.js`, updates en `payments.js`, `invoices.js`, `billingScheduler.js`
+- Docs: `fase-3-facturacion-avance.md`
+
+### Pruebas
+- Suite unitaria → **52 pass**
+- Build client → **OK**
+
+### Riesgos / pendientes
+- Configurar `PAYMENT_WEBHOOK_SECRET` en Render.
+- Flow/Webpay reales y PDF quedan post-MVP.
+- Sin `DATABASE_URL` local las migraciones se aplican en preDeploy de Render.
+
+### Siguiente fase recomendada
+**Fase 4 — Red y monitoreo**

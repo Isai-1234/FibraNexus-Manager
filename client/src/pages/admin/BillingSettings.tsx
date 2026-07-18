@@ -10,6 +10,7 @@ type BillingSettingsData = {
   stopBillingWhenSuspended: boolean
   autoMarkOverdue: boolean
   autoReactivateOnPayment: boolean
+  debtNoticesEnabled: boolean
   suspendPortalUrl: string
 }
 
@@ -151,6 +152,10 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={settings.autoReactivateOnPayment} onChange={() => toggle('autoReactivateOnPayment')} className="rounded" />
                 <span className="text-sm">Reactivar automáticamente al registrar un pago</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={!!settings.debtNoticesEnabled} onChange={() => toggle('debtNoticesEnabled')} className="rounded" />
+                <span className="text-sm">Enviar avisos de deuda al correr jobs (console/email stub)</span>
               </label>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Días de gracia antes de suspender</label>

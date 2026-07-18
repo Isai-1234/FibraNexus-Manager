@@ -22,6 +22,7 @@ import { edgeosRouter } from './routes/edgeos.js';
 import { devicesRouter } from './routes/devices.js';
 import { staffRouter } from './routes/staff.js';
 import { workOrdersRouter } from './routes/workOrders.js';
+import { webhooksRouter } from './routes/webhooks.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireActiveOrg } from './lib/tenant.js';
@@ -65,6 +66,9 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' }));
+
+// Webhooks de pago (públicos, firmados) — antes de auth
+app.use('/api/webhooks', webhooksRouter);
 
 // Cabeceras de seguridad básicas
 app.use((req, res, next) => {

@@ -8,6 +8,7 @@ export const DEFAULT_ORG_SETTINGS = {
   stopBillingWhenSuspended: true,
   autoMarkOverdue: true,
   autoReactivateOnPayment: true,
+  debtNoticesEnabled: false,
   suspendPortalUrl: '',
 };
 

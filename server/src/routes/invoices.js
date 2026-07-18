@@ -139,6 +139,9 @@ invoicesRouter.put('/:id/status', requireRole('admin'), async (req, res) => {
       return res.status(404).json({ error: 'Factura no encontrada' });
     }
     const { status } = req.body;
+    if (status === 'cancelled') {
+      return res.status(400).json({ error: 'Usa POST /api/invoices/:id/void para anular con motivo' });
+    }
     const [updated] = await db.update(invoices)
       .set({ status, paidDate: status === 'paid' ? new Date() : null, updatedAt: new Date() })
       .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
@@ -146,5 +149,68 @@ invoicesRouter.put('/:id/status', requireRole('admin'), async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar factura' });
+  }
+});
+
+invoicesRouter.post('/:id/void', requireRole('admin', 'office'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const invoiceId = parseInt(req.params.id, 10);
+    const { voidInvoice } = await import('../lib/invoiceAdjustments.js');
+    const { writeAuditLog, clientIp } = await import('../lib/auditLog.js');
+    const result = await voidInvoice({
+      orgId,
+      invoiceId,
+      reason: req.body.reason,
+      userId: req.user.id,
+    });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'invoice.void',
+      entity: 'invoice',
+      entityId: invoiceId,
+      details: { reason: req.body.reason },
+      ipAddress: clientIp(req),
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+invoicesRouter.post('/:id/adjust', requireRole('admin', 'office'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const invoiceId = parseInt(req.params.id, 10);
+    const { adjustInvoice } = await import('../lib/invoiceAdjustments.js');
+    const { writeAuditLog, clientIp } = await import('../lib/auditLog.js');
+    const result = await adjustInvoice({
+      orgId,
+      invoiceId,
+      amountDelta: req.body.amountDelta,
+      reason: req.body.reason,
+      userId: req.user.id,
+    });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'invoice.adjust',
+      entity: 'invoice',
+      entityId: invoiceId,
+      details: {
+        amountDelta: req.body.amountDelta,
+        reason: req.body.reason,
+        newTotal: result.invoice?.total,
+      },
+      ipAddress: clientIp(req),
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });

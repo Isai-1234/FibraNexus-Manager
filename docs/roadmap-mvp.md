@@ -51,8 +51,8 @@ flowchart LR
 |------|--------|----------------|--------|
 | **0** | Base segura y confiable | No vender con agujeros P0 | **Hecho** |
 | **1** | SaaS de FibraNexus | Isaí opera ISPs, trials, límites, suspensión | **Hecho** |
-| **2** | CRM y ciclo de vida | Ficha 360°, roles admin/administrativo/técnico, OT | Pendiente |
-| **3** | Facturación y pagos | Saldos, adaptadores pasarela, avisos | Pendiente |
+| **2** | CRM y ciclo de vida | Ficha 360°, roles admin/administrativo/técnico, OT | **Hecho** |
+| **3** | Facturación y pagos | Saldos, adaptadores pasarela, avisos | **Hecho** |
 | **4** | Red y monitoreo | Inventario robusto, alertas, cola real | Pendiente |
 | **5** | Portal y experiencia ops | Pago portal, marca ISP, vista técnico | Pendiente |
 

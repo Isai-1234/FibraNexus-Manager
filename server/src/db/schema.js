@@ -13,6 +13,12 @@ export const workOrderStatusEnum = pgEnum('work_order_status', [
 export const workOrderTypeEnum = pgEnum('work_order_type', [
   'install', 'visit', 'support', 'disconnect', 'other',
 ]);
+export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
+  'pending', 'completed', 'failed', 'expired', 'cancelled',
+]);
+export const invoiceAdjustmentTypeEnum = pgEnum('invoice_adjustment_type', [
+  'credit', 'debit', 'void',
+]);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
@@ -357,4 +363,58 @@ export const workOrders = pgTable('work_orders', {
   idxWoOrg: index('idx_work_orders_org').on(table.organizationId),
   idxWoClient: index('idx_work_orders_client').on(table.clientId),
   idxWoStatus: index('idx_work_orders_status').on(table.status),
+}));
+
+/** Checkout / cobro online (stub o pasarela real con credenciales) */
+export const paymentIntents = pgTable('payment_intents', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id).notNull(),
+  invoiceId: integer('invoice_id').references(() => invoices.id).notNull(),
+  clientId: integer('client_id').references(() => clients.id).notNull(),
+  provider: varchar('provider', { length: 40 }).notNull().default('stub'),
+  externalId: varchar('external_id', { length: 120 }).notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).notNull().default('CLP'),
+  status: paymentIntentStatusEnum('status').notNull().default('pending'),
+  checkoutUrl: text('checkout_url'),
+  metadata: jsonb('metadata').default({}),
+  expiresAt: timestamp('expires_at'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqProviderExternal: unique('payment_intents_provider_external_uidx').on(table.provider, table.externalId),
+  idxPiOrg: index('idx_payment_intents_org').on(table.organizationId),
+  idxPiInvoice: index('idx_payment_intents_invoice').on(table.invoiceId),
+}));
+
+/** Eventos de webhook procesados (idempotencia) */
+export const paymentWebhookEvents = pgTable('payment_webhook_events', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id),
+  provider: varchar('provider', { length: 40 }).notNull(),
+  eventId: varchar('event_id', { length: 160 }).notNull(),
+  invoiceId: integer('invoice_id').references(() => invoices.id),
+  paymentIntentId: integer('payment_intent_id').references(() => paymentIntents.id),
+  payload: jsonb('payload').notNull().default({}),
+  processedAt: timestamp('processed_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqProviderEvent: unique('payment_webhook_events_provider_event_uidx').on(table.provider, table.eventId),
+  idxPweOrg: index('idx_payment_webhook_events_org').on(table.organizationId),
+}));
+
+/** Ajustes / anulación de facturas internas (no DTE) */
+export const invoiceAdjustments = pgTable('invoice_adjustments', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id).notNull(),
+  invoiceId: integer('invoice_id').references(() => invoices.id).notNull(),
+  type: invoiceAdjustmentTypeEnum('type').notNull(),
+  amountDelta: decimal('amount_delta', { precision: 10, scale: 2 }).notNull().default('0'),
+  reason: text('reason').notNull(),
+  createdBy: integer('created_by').references(() => users.id),
+  previousTotal: decimal('previous_total', { precision: 10, scale: 2 }),
+  newTotal: decimal('new_total', { precision: 10, scale: 2 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  idxAdjInvoice: index('idx_invoice_adjustments_invoice').on(table.invoiceId),
 }));

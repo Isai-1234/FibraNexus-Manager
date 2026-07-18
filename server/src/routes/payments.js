@@ -6,7 +6,7 @@ import { registerPayment, sumPaymentsForInvoice } from '../lib/paymentService.js
 import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 import { db } from '../db/index.js';
 import { payments, invoices, clients, users } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { orgFilter } from '../lib/tenant.js';
 
 export const paymentsRouter = Router();
@@ -129,5 +129,75 @@ paymentsRouter.get('/invoice/:invoiceId/balance', requireRole('admin', 'office',
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al calcular saldo' });
+  }
+});
+
+/** Crea checkout (stub o pasarela cuando haya credenciales) */
+paymentsRouter.post('/checkout', requireRole('admin', 'office'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const invoiceId = parseInt(req.body.invoiceId, 10);
+    if (!invoiceId) return res.status(400).json({ error: 'invoiceId requerido' });
+
+    const [inv] = await db.select().from(invoices)
+      .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
+      .limit(1);
+    if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+    if (inv.status === 'cancelled' || inv.status === 'paid') {
+      return res.status(400).json({ error: 'La factura no admite cobro online' });
+    }
+
+    const paidSum = await sumPaymentsForInvoice(invoiceId);
+    const balance = Math.max(0, Number(inv.total) - paidSum);
+    if (balance <= 0) return res.status(400).json({ error: 'Saldo en cero' });
+
+    const { createPaymentGateway } = await import('../lib/paymentGateway.js');
+    const { paymentIntents } = await import('../db/schema.js');
+    const gateway = createPaymentGateway();
+    const checkout = await gateway.createCheckout({
+      organizationId: orgId,
+      invoiceId,
+      amount: balance,
+      currency: 'CLP',
+      returnUrl: req.body.returnUrl || process.env.FRONTEND_URL || '',
+    });
+
+    const [intent] = await db.insert(paymentIntents).values({
+      organizationId: orgId,
+      invoiceId,
+      clientId: inv.clientId,
+      provider: String(checkout.provider).includes('stub') ? 'stub' : checkout.provider,
+      externalId: checkout.externalId,
+      amount: String(balance.toFixed(2)),
+      currency: 'CLP',
+      status: 'pending',
+      checkoutUrl: checkout.checkoutUrl,
+      metadata: checkout.metadata || {},
+      expiresAt: checkout.expiresAt,
+    }).returning();
+
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'payment.checkout_create',
+      entity: 'payment_intent',
+      entityId: intent.id,
+      details: { invoiceId, amount: balance, provider: intent.provider },
+      ipAddress: clientIp(req),
+    });
+
+    res.status(201).json({
+      intentId: intent.id,
+      provider: intent.provider,
+      externalId: intent.externalId,
+      amount: balance,
+      checkoutUrl: intent.checkoutUrl,
+      expiresAt: intent.expiresAt,
+      mode: intent.provider === 'stub' ? 'stub' : 'live',
+    });
+  } catch (error) {
+    console.error('Checkout error:', error.message);
+    res.status(500).json({ error: error.message || 'Error al crear checkout' });
   }
 });

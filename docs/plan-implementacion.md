@@ -156,6 +156,8 @@ Ficha 360° usable en venta y operación diaria; roles ISP precisos; historial i
 
 ## Fase 3 — Facturación y pagos
 
+**Estado:** Hecho (MVP) — detalle en [fase-3-facturacion-avance.md](fase-3-facturacion-avance.md)
+
 ### Objetivo
 
 Cobranza confiable ISP→abonado; adaptadores de pasarela; separación documento interno vs DTE futuro.

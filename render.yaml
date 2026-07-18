@@ -3,6 +3,8 @@ services:
     name: fibranexus-manager
     runtime: node
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter fibranexus-server run build
+    # Migraciones versionadas antes de arrancar (requiere DATABASE_URL en el dashboard)
+    preDeployCommand: node scripts/run-migrations.mjs
     startCommand: pnpm --filter fibranexus-server start
     envVars:
       - key: NODE_VERSION

@@ -120,6 +120,20 @@ export async function runBillingJobsForOrg(orgId) {
   results.billing = await runAutoBillingForOrg(orgId);
   results.suspend = await runAutoSuspendForOrg(orgId);
 
+  if (settings.debtNoticesEnabled) {
+    try {
+      const { sendOverdueDebtNotices } = await import('./debtNotices.js');
+      const { invoices, clients, users } = await import('../db/schema.js');
+      const { eq, and } = await import('drizzle-orm');
+      const { daysOverdue } = await import('./orgSettings.js');
+      results.debtNotices = await sendOverdueDebtNotices(orgId, {
+        db, invoices, clients, users, orgFilter, eq, and, daysOverdue,
+      });
+    } catch (err) {
+      results.debtNotices = { error: err.message };
+    }
+  }
+
   return results;
 }
 
