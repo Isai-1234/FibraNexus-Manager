@@ -157,12 +157,20 @@ if (clientDist) {
 app.use(errorHandler);
 
 async function start() {
-  if (process.env.DATABASE_URL) {
+  if (config.databaseUrl) {
     try {
-      await runMigrations(process.env.DATABASE_URL);
+      await runMigrations(config.databaseUrl);
     } catch (err) {
-      console.error('Migration error:', err);
+      console.error('Migration error:', err.message || err);
     }
+    try {
+      const { runVersionedMigrations } = await import('./db/runVersionedMigrations.js');
+      await runVersionedMigrations(config.databaseUrl);
+    } catch (err) {
+      console.error('Versioned migration error:', err.message || err);
+    }
+  } else {
+    console.warn('[boot] Sin DATABASE_URL — se omiten migraciones');
   }
 
   startScheduler();

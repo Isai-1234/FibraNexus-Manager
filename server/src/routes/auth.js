@@ -252,12 +252,14 @@ authRouter.post(
       }
       res.json(okMsg);
     } catch (error) {
-      console.error('Password reset request error:', error.message);
-      res.status(500).json({ error: 'Error al solicitar recuperación' });
+      console.error('Password reset request error:', error.message || error);
+      const hint = /password_reset_tokens|does not exist|relation/i.test(String(error.message || error))
+        ? 'Falta migración de recuperación; redespliega o ejecuta node scripts/run-migrations.mjs'
+        : 'Error al solicitar recuperación';
+      res.status(500).json({ error: hint });
     }
   },
 );
-
 authRouter.post(
   '/password-reset/confirm',
   rateLimit({ name: 'pwreset_confirm', windowMs: 15 * 60_000, max: 10 }),
