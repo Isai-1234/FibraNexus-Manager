@@ -154,3 +154,32 @@ Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-imple
 
 ### Siguiente fase recomendada
 **Fase 5 — Portal y experiencia operativa**
+
+---
+
+## Fase 5 — Portal y experiencia operativa
+
+**Estado:** Hecho (MVP)  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- Pago online desde portal abonado (checkout stub/pasarela).
+- Documentos de facturación en portal.
+- Branding ISP (logo, colores, título) en ajustes + portal.
+- Vista de campo técnico: OT, checklist, fotos URL, cierre.
+- Asignación de técnico en OT + filtro `mine`.
+
+### Archivos
+- `server/src/routes/portal.js`, `orgSettings.js`, `settings.js`, `workOrders.js`
+- `client/.../ClientPortal.tsx`, `FieldWorkOrders.tsx`, `BillingSettings.tsx`, `WorkOrdersManager.tsx`, `Dashboard.tsx`
+- Docs: `fase-5-portal-avance.md`
+
+### Pruebas
+- Suite unitaria → **69 pass** (incl. `portal-phase5.unit.test.js`)
+- Build client → **OK**
+
+### Riesgos / pendientes
+- Fotos solo por URL; PDF/DTE y pasarela real post-MVP.
+
+### Siguiente
+MVP de fases 0–5 cerrado. Iterar según feedback de Internetsur.

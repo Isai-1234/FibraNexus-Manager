@@ -223,6 +223,11 @@ Abonado paga/consulta; técnico cierra visitas; marca del ISP.
 - Branding por org (`logo`, colores en settings).
 - Vista técnico: instalación, visita, fotos, cierre OT.
 
+### Estado MVP (2026-07-18)
+
+- **Hecho:** checkout portal, documentos, branding settings, FieldWorkOrders + asignación OT.
+- **Diferido:** upload binario, PDF/DTE, pasarela live, PWA.
+
 ---
 
 ## Diagrama de dependencias

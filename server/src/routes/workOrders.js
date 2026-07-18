@@ -49,6 +49,9 @@ workOrdersRouter.get('/', requireRole('admin', 'office', 'technician'), async (r
     const status = req.query.status;
     const conditions = [orgFilter(workOrders, orgId)];
     if (status) conditions.push(eq(workOrders.status, status));
+    if (req.query.mine === '1' || req.query.mine === 'true') {
+      conditions.push(eq(workOrders.assignedTo, req.user.id));
+    }
 
     const rows = await db.select({
       id: workOrders.id,

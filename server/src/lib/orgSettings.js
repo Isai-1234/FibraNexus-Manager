@@ -10,16 +10,39 @@ export const DEFAULT_ORG_SETTINGS = {
   autoReactivateOnPayment: true,
   debtNoticesEnabled: false,
   suspendPortalUrl: '',
+  // Fase 5 — marca del ISP en portal
+  brandLogoUrl: '',
+  brandPrimaryColor: '#2563eb',
+  brandAccentColor: '#0ea5e9',
+  brandPortalTitle: '',
 };
 
 export function mergeOrgSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
+  const primary = sanitizeHexColor(s.brandPrimaryColor, DEFAULT_ORG_SETTINGS.brandPrimaryColor);
+  const accent = sanitizeHexColor(s.brandAccentColor, DEFAULT_ORG_SETTINGS.brandAccentColor);
   return {
     ...DEFAULT_ORG_SETTINGS,
     ...s,
     billingHour: Math.min(23, Math.max(0, parseInt(s.billingHour, 10) || DEFAULT_ORG_SETTINGS.billingHour)),
     graceDaysBeforeSuspend: Math.min(90, Math.max(0, parseInt(s.graceDaysBeforeSuspend, 10) ?? DEFAULT_ORG_SETTINGS.graceDaysBeforeSuspend)),
+    brandLogoUrl: String(s.brandLogoUrl || '').trim().slice(0, 500),
+    brandPrimaryColor: primary,
+    brandAccentColor: accent,
+    brandPortalTitle: String(s.brandPortalTitle || '').trim().slice(0, 80),
   };
+}
+
+function sanitizeHexColor(value, fallback) {
+  const v = String(value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    const r = v[1];
+    const g = v[2];
+    const b = v[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return fallback;
 }
 
 export function daysOverdue(dueDate, asOf = new Date()) {

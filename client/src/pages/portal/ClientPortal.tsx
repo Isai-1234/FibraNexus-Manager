@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock, Send, MessageSquare, ChevronLeft } from 'lucide-react'
+import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock, Send, MessageSquare, ChevronLeft, FileText, CreditCard } from 'lucide-react'
 import axios from 'axios'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700', suspended: 'bg-yellow-100 text-yellow-700',
   pending: 'bg-blue-100 text-blue-700', paid: 'bg-green-100 text-green-700',
-  overdue: 'bg-red-100 text-red-700', open: 'bg-yellow-100 text-yellow-700',
+  overdue: 'bg-red-100 text-red-700', partial: 'bg-amber-100 text-amber-800',
+  open: 'bg-yellow-100 text-yellow-700',
   in_progress: 'bg-blue-100 text-blue-700', resolved: 'bg-green-100 text-green-700',
   waiting_client: 'bg-amber-100 text-amber-800', closed: 'bg-gray-100 text-gray-500',
 }
 
 const statusLabel: Record<string, string> = {
   active: 'Activo', suspended: 'Suspendido', pending: 'Pendiente', paid: 'Pagada',
-  overdue: 'Vencida', open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto',
+  overdue: 'Vencida', partial: 'Parcial', open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto',
   waiting_client: 'Esperando tu respuesta', closed: 'Cerrado',
 }
 
@@ -26,6 +27,7 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
   const [ticketDetail, setTicketDetail] = useState<any>(null)
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
+  const [payingId, setPayingId] = useState<number | null>(null)
 
   function api() {
     return axios.create({
@@ -45,6 +47,25 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
       console.error(e)
     }
     setLoading(false)
+  }
+
+  async function payInvoice(invoiceId: number) {
+    setPayingId(invoiceId)
+    try {
+      const res = await api().post('/portal/checkout', {
+        invoiceId,
+        returnUrl: window.location.origin + '/',
+      })
+      const url = res.data?.checkoutUrl
+      if (url) {
+        window.location.href = url
+        return
+      }
+      alert('No se obtuvo URL de pago')
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al iniciar pago')
+    }
+    setPayingId(null)
   }
 
   async function loadTicketDetail(ticketId: number) {
@@ -87,30 +108,42 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
 
+  const brand = data?.branding || {}
+  const primary = brand.primaryColor || '#2563eb'
+  const accent = brand.accentColor || '#0ea5e9'
+  const orgName = brand.orgName || user?.organization?.name || 'Mi ISP'
+  const portalTitle = brand.portalTitle || 'Portal Cliente'
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderBottomColor: primary }} />
       </div>
     )
   }
 
-  const orgName = user?.organization?.name || 'Mi ISP'
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Portal Cliente</h1>
-          <p className="text-sm text-gray-500">{orgName} · {user?.fullName}</p>
+    <div className="min-h-screen bg-slate-50" style={{ ['--brand' as any]: primary, ['--brand-accent' as any]: accent }}>
+      <header className="bg-white border-b px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-3 min-w-0">
+          {brand.logoUrl ? (
+            <img src={brand.logoUrl} alt={orgName} className="h-9 w-9 object-contain rounded-lg" />
+          ) : (
+            <div className="h-9 w-9 rounded-lg flex items-center justify-center text-white text-sm font-bold"
+              style={{ background: primary }}>{(orgName || 'I').slice(0, 1)}</div>
+          )}
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{portalTitle}</h1>
+            <p className="text-xs sm:text-sm text-gray-500 truncate">{orgName} · {user?.fullName}</p>
+          </div>
         </div>
-        <button onClick={logout} className="flex items-center gap-2 text-gray-500 hover:text-red-600 text-sm">
+        <button onClick={logout} className="flex items-center gap-2 text-gray-500 hover:text-red-600 text-sm shrink-0">
           <LogOut className="h-4 w-4" /> Salir
         </button>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <main className="max-w-4xl mx-auto p-4 sm:p-6 space-y-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { label: 'Días como cliente', value: data?.daysAsClient ?? 0, icon: Clock },
             { label: 'Deuda pendiente', value: '$' + (data?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign },
@@ -118,7 +151,7 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
             { label: 'Servicios', value: data?.services?.length ?? 0, icon: Wifi },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl p-4 border shadow-sm">
-              <s.icon className="h-5 w-5 text-blue-600 mb-2" />
+              <s.icon className="h-5 w-5 mb-2" style={{ color: primary }} />
               <p className="text-xs text-gray-500">{s.label}</p>
               <p className="text-lg font-bold">{s.value}</p>
             </div>
@@ -126,29 +159,40 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
         </div>
 
         {data?.pendingAmount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <p className="text-sm text-amber-900">Tienes facturas pendientes por <strong>${data.pendingAmount.toLocaleString('es-CL')}</strong>. Contacta a {orgName} para regularizar.</p>
+          <div className="rounded-xl p-4 flex flex-wrap items-center gap-3 border"
+            style={{ background: `${accent}18`, borderColor: `${accent}55` }}>
+            <AlertTriangle className="h-5 w-5" style={{ color: accent }} />
+            <p className="text-sm text-gray-900 flex-1 min-w-[200px]">
+              Tienes facturas pendientes por <strong>${data.pendingAmount.toLocaleString('es-CL')}</strong>.
+            </p>
+            <button type="button" onClick={() => setTab('facturas')}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+              style={{ background: primary }}>
+              Ir a pagar
+            </button>
           </div>
         )}
 
-        <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
-          {['resumen', 'facturas', 'tickets'].map(t => (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
+          {['resumen', 'facturas', 'documentos', 'tickets'].map(t => (
             <button key={t} onClick={() => { setTab(t); setSelectedTicketId(null); setTicketDetail(null) }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium capitalize ${tab === t ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>
+              className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium capitalize whitespace-nowrap ${
+                tab === t ? 'bg-white shadow' : 'text-gray-500'
+              }`}
+              style={tab === t ? { color: primary } : undefined}>
               {t}
             </button>
           ))}
         </div>
 
         {tab === 'resumen' && (
-          <div className="bg-white rounded-xl border p-6">
+          <div className="bg-white rounded-xl border p-5 sm:p-6">
             <h2 className="font-semibold mb-4">Mi servicio de internet</h2>
             {!data?.services?.length ? (
               <p className="text-gray-400 text-sm">Sin servicio activo asignado.</p>
             ) : data.services.map((s: any) => (
               <div key={s.id} className="border rounded-lg p-4">
-                <div className="flex justify-between items-start">
+                <div className="flex justify-between items-start gap-3">
                   <div>
                     <p className="font-bold">{s.plan?.name}</p>
                     <p className="text-sm text-gray-500">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · ${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
@@ -167,15 +211,64 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
           <div className="bg-white rounded-xl border divide-y">
             {!data?.invoices?.length ? (
               <p className="p-6 text-gray-400 text-sm">Sin facturas.</p>
-            ) : data.invoices.map((inv: any) => (
-              <div key={inv.id} className="p-4 flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{inv.invoiceNumber}</p>
-                  <p className="text-xs text-gray-400">Vence: {inv.dueDate}</p>
+            ) : data.invoices.map((inv: any) => {
+              const payable = ['pending', 'overdue', 'partial'].includes(inv.status)
+              return (
+                <div key={inv.id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+                  <div>
+                    <p className="font-medium">{inv.invoiceNumber}</p>
+                    <p className="text-xs text-gray-400">Vence: {inv.dueDate}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="font-bold">${Number(inv.total).toLocaleString('es-CL')}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[inv.status]}`}>{statusLabel[inv.status] || inv.status}</span>
+                    </div>
+                    {payable && (
+                      <button type="button" disabled={payingId === inv.id} onClick={() => payInvoice(inv.id)}
+                        className="px-3 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1 disabled:opacity-60"
+                        style={{ background: primary }}>
+                        <CreditCard className="h-3.5 w-3.5" />
+                        {payingId === inv.id ? '…' : 'Pagar'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold">${Number(inv.total).toLocaleString('es-CL')}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[inv.status]}`}>{statusLabel[inv.status] || inv.status}</span>
+              )
+            })}
+          </div>
+        )}
+
+        {tab === 'documentos' && (
+          <div className="bg-white rounded-xl border divide-y">
+            <div className="px-4 py-3 bg-slate-50 border-b">
+              <p className="text-sm font-medium text-gray-800 flex items-center gap-2">
+                <FileText className="h-4 w-4" style={{ color: primary }} /> Documentos de facturación
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">Comprobantes internos emitidos por {orgName} (PDF electrónico post-MVP).</p>
+            </div>
+            {!data?.documents?.length ? (
+              <p className="p-6 text-gray-400 text-sm">Sin documentos aún.</p>
+            ) : data.documents.map((doc: any) => (
+              <div key={doc.id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+                <div>
+                  <p className="font-medium text-sm">{doc.title}</p>
+                  <p className="text-xs text-gray-400">
+                    {doc.type === 'invoice' ? 'Factura interna' : doc.type}
+                    {doc.dueDate ? ` · vence ${doc.dueDate}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[doc.status] || 'bg-gray-100'}`}>
+                    {statusLabel[doc.status] || doc.status}
+                  </span>
+                  <span className="text-sm font-semibold">${Number(doc.amount || 0).toLocaleString('es-CL')}</span>
+                  {doc.payable && (
+                    <button type="button" onClick={() => payInvoice(doc.id)}
+                      className="text-xs px-2.5 py-1 rounded-lg text-white" style={{ background: primary }}>
+                      Pagar
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -186,7 +279,8 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
           <div className="space-y-4">
             {!selectedTicketId ? (
               <>
-                <button onClick={() => setShowTicket(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-2">
+                <button onClick={() => setShowTicket(true)} className="px-4 py-2 text-white rounded-lg text-sm flex items-center gap-2"
+                  style={{ background: primary }}>
                   <Plus className="h-4 w-4" /> Reportar problema
                 </button>
                 <div className="bg-white rounded-xl border divide-y">
@@ -237,38 +331,27 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
                     authorRole: 'client',
                     createdAt: ticketDetail?.createdAt,
                   }]).map((msg: any) => (
-                    <div key={msg.id} className={`flex ${msg.authorRole === 'client' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] rounded-xl px-4 py-3 ${
-                        msg.authorRole === 'client' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-800 shadow-sm'
-                      }`}>
-                        <p className="text-xs font-semibold mb-1 opacity-80">
-                          {msg.authorRole === 'client' ? 'Tú' : (msg.authorName || orgName)}
-                        </p>
-                        <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
-                        <p className="text-[10px] opacity-60 mt-2">{new Date(msg.createdAt).toLocaleString('es-CL')}</p>
+                    <div key={msg.id} className={`rounded-lg p-3 ${msg.authorRole === 'client' ? 'bg-white border ml-4' : 'bg-blue-50 border border-blue-100 mr-4'}`}>
+                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                        <MessageSquare className="h-3 w-3" />
+                        <span className="font-medium">{msg.authorName || 'Sistema'}</span>
+                        {msg.createdAt && <span>· {new Date(msg.createdAt).toLocaleString('es-CL')}</span>}
                       </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.message}</p>
                     </div>
                   ))}
                 </div>
 
-                {!['closed', 'resolved'].includes(ticketDetail?.status || '') ? (
+                {!['closed', 'resolved'].includes(ticketDetail?.status) && (
                   <form onSubmit={sendReply} className="p-4 border-t flex gap-2">
-                    <textarea
-                      className="flex-1 border rounded-lg px-3 py-2 text-sm min-h-[64px] resize-none"
-                      placeholder="Escribe un mensaje de seguimiento..."
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      required
-                    />
+                    <input value={replyText} onChange={e => setReplyText(e.target.value)}
+                      placeholder="Escribe tu respuesta…"
+                      className="flex-1 border rounded-lg px-3 py-2 text-sm" />
                     <button type="submit" disabled={sendingReply || !replyText.trim()}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg self-end disabled:opacity-50 flex items-center gap-2 text-sm">
+                      className="px-3 py-2 text-white rounded-lg disabled:opacity-50" style={{ background: primary }}>
                       <Send className="h-4 w-4" />
                     </button>
                   </form>
-                ) : (
-                  <p className="p-4 text-sm text-gray-500 border-t flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" /> Este ticket fue cerrado por soporte.
-                  </p>
                 )}
               </div>
             )}
@@ -277,24 +360,27 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
       </main>
 
       {showTicket && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <form onSubmit={submitTicket} className="bg-white rounded-xl p-6 w-full max-w-md">
-            <div className="flex justify-between mb-4">
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <form onSubmit={submitTicket} className="bg-white rounded-t-2xl sm:rounded-xl w-full max-w-md p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center">
               <h3 className="font-bold">Reportar problema</h3>
               <button type="button" onClick={() => setShowTicket(false)}><X className="h-5 w-5" /></button>
             </div>
-            <input className="w-full border rounded-lg px-3 py-2 mb-3" placeholder="Asunto" required value={ticketForm.subject}
-              onChange={e => setTicketForm({ ...ticketForm, subject: e.target.value })} />
-            <textarea className="w-full border rounded-lg px-3 py-2 mb-3" rows={4} placeholder="Describe el problema" required
-              value={ticketForm.description} onChange={e => setTicketForm({ ...ticketForm, description: e.target.value })} />
-            <select className="w-full border rounded-lg px-3 py-2 mb-4" value={ticketForm.priority}
-              onChange={e => setTicketForm({ ...ticketForm, priority: e.target.value })}>
+            <input required placeholder="Asunto" value={ticketForm.subject}
+              onChange={e => setTicketForm({ ...ticketForm, subject: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2" />
+            <textarea required rows={4} placeholder="Describe el problema…" value={ticketForm.description}
+              onChange={e => setTicketForm({ ...ticketForm, description: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2" />
+            <select value={ticketForm.priority} onChange={e => setTicketForm({ ...ticketForm, priority: e.target.value })}
+              className="w-full border rounded-lg px-3 py-2">
               <option value="low">Baja</option>
               <option value="medium">Media</option>
               <option value="high">Alta</option>
-              <option value="critical">Crítica</option>
             </select>
-            <button type="submit" className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium">Enviar ticket</button>
+            <button type="submit" className="w-full py-2.5 text-white rounded-lg font-medium" style={{ background: primary }}>
+              Enviar
+            </button>
           </form>
         </div>
       )}

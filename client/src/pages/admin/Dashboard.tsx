@@ -8,11 +8,12 @@ import BillingSettings from './BillingSettings'
 import DetectedDevices from './DetectedDevices'
 import StaffManager from './StaffManager'
 import WorkOrdersManager from './WorkOrdersManager'
+import FieldWorkOrders from '../technician/FieldWorkOrders'
 import { formatDateCL } from '../../lib/formatDate'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState(user?.role === 'technician' ? 'work-orders' : 'dashboard')
   const [equipmentSubTab, setEquipmentSubTab] = useState('infrastructure')
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [clientInitialTab, setClientInitialTab] = useState('overview')
@@ -992,7 +993,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           )}
 
           {activeTab === 'work-orders' && (
-            <WorkOrdersManager API={API} />
+            user?.role === 'technician'
+              ? <FieldWorkOrders API={API} user={user} />
+              : <WorkOrdersManager API={API} />
           )}
 
           {/* EQUIPOS con subtabs */}

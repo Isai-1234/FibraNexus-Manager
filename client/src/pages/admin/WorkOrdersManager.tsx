@@ -42,6 +42,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function WorkOrdersManager({ API }: { API: string }) {
   const [rows, setRows] = useState<WorkOrder[]>([])
   const [clients, setClients] = useState<ClientOpt[]>([])
+  const [technicians, setTechnicians] = useState<{ id: number; fullName: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -52,6 +53,7 @@ export default function WorkOrdersManager({ API }: { API: string }) {
     type: 'visit',
     notes: '',
     scheduledAt: '',
+    assignedTo: '',
   })
 
   function api() {
@@ -65,12 +67,17 @@ export default function WorkOrdersManager({ API }: { API: string }) {
     setLoading(true)
     setError('')
     try {
-      const [wo, cl] = await Promise.all([
+      const [wo, cl, staff] = await Promise.all([
         api().get('/work-orders'),
         api().get('/clients'),
+        api().get('/staff').catch(() => ({ data: [] })),
       ])
       setRows(Array.isArray(wo.data) ? wo.data : [])
       setClients(Array.isArray(cl.data) ? cl.data : [])
+      const staffList = Array.isArray(staff.data) ? staff.data : []
+      setTechnicians(staffList
+        .filter((u: any) => u.role === 'technician' || u.role === 'admin')
+        .map((u: any) => ({ id: u.id, fullName: u.fullName || u.email })))
     } catch (err: any) {
       setError(err.response?.data?.error || err.message)
     }
@@ -88,9 +95,10 @@ export default function WorkOrdersManager({ API }: { API: string }) {
         type: form.type,
         notes: form.notes || null,
         scheduledAt: form.scheduledAt || null,
+        assignedTo: form.assignedTo ? Number(form.assignedTo) : null,
       })
       setShowForm(false)
-      setForm({ clientId: '', title: '', type: 'visit', notes: '', scheduledAt: '' })
+      setForm({ clientId: '', title: '', type: 'visit', notes: '', scheduledAt: '', assignedTo: '' })
       load()
     } catch (err: any) {
       alert(err.response?.data?.error || err.message)
@@ -245,6 +253,19 @@ export default function WorkOrdersManager({ API }: { API: string }) {
               >
                 {Object.entries(TYPE_LABEL).map(([k, v]) => (
                   <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="text-gray-600">Asignar a técnico (opcional)</span>
+              <select
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+                value={form.assignedTo}
+                onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}
+              >
+                <option value="">Sin asignar</option>
+                {technicians.map((t) => (
+                  <option key={t.id} value={t.id}>{t.fullName}</option>
                 ))}
               </select>
             </label>

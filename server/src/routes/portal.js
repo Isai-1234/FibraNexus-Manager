@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, clientServices, invoices, tickets, users, plans } from '../db/schema.js';
+import { clients, clientServices, invoices, tickets, users, plans, organizations, paymentIntents } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import {
@@ -9,6 +9,9 @@ import {
   updateTicketRecord,
   getTicketForClient,
 } from '../lib/ticketService.js';
+import { mergeOrgSettings } from '../lib/orgSettings.js';
+import { sumPaymentsForInvoice } from '../lib/paymentService.js';
+import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 export const portalRouter = Router();
 
 async function getClientAccount(userId) {
@@ -54,12 +57,36 @@ portalRouter.get('/dashboard', async (req, res) => {
 
     const user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
     const pendingAmount = clientInvoices
-      .filter((i) => i.status === 'pending' || i.status === 'overdue')
+      .filter((i) => i.status === 'pending' || i.status === 'overdue' || i.status === 'partial')
       .reduce((sum, i) => sum + Number(i.total || 0), 0);
 
     const daysAsClient = Math.max(0, Math.floor(
       (Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24),
     ));
+
+    const [org] = await db.select({
+      name: organizations.name,
+      settings: organizations.settings,
+    }).from(organizations).where(eq(organizations.id, client.organizationId)).limit(1);
+    const settings = mergeOrgSettings(org?.settings);
+    const branding = {
+      orgName: org?.name || 'Mi ISP',
+      logoUrl: settings.brandLogoUrl || '',
+      primaryColor: settings.brandPrimaryColor,
+      accentColor: settings.brandAccentColor,
+      portalTitle: settings.brandPortalTitle || 'Portal Cliente',
+    };
+
+    const documents = clientInvoices.map((inv) => ({
+      id: inv.id,
+      type: 'invoice',
+      title: inv.invoiceNumber || `Factura #${inv.id}`,
+      status: inv.status,
+      amount: Number(inv.total || 0),
+      dueDate: inv.dueDate,
+      issuedAt: inv.createdAt,
+      payable: ['pending', 'overdue', 'partial'].includes(inv.status),
+    }));
 
     res.json({
       client: { ...client, user: { fullName: user?.fullName, email: user?.email, phone: user?.phone } },
@@ -67,11 +94,86 @@ portalRouter.get('/dashboard', async (req, res) => {
       services,
       invoices: clientInvoices,
       tickets: clientTickets,
+      documents,
+      branding,
       pendingAmount,
       openTickets: clientTickets.filter((t) => ['open', 'in_progress', 'waiting_client'].includes(t.status)).length,
     });
   } catch (error) {
     res.status(500).json({ error: 'Error: ' + error.message });
+  }
+});
+
+/** Checkout online del abonado (stub o pasarela) */
+portalRouter.post('/checkout', async (req, res) => {
+  try {
+    const client = await getClientAccount(req.user.id);
+    if (!client) return res.status(404).json({ error: 'Cuenta de abonado no encontrada' });
+
+    const invoiceId = parseInt(req.body.invoiceId, 10);
+    if (!invoiceId) return res.status(400).json({ error: 'invoiceId requerido' });
+
+    const [inv] = await db.select().from(invoices)
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.clientId, client.id)))
+      .limit(1);
+    if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+    if (inv.status === 'cancelled' || inv.status === 'paid') {
+      return res.status(400).json({ error: 'La factura no admite cobro online' });
+    }
+
+    const paidSum = await sumPaymentsForInvoice(invoiceId);
+    const balance = Math.max(0, Number(inv.total) - paidSum);
+    if (balance <= 0) return res.status(400).json({ error: 'Saldo en cero' });
+
+    const { createPaymentGateway } = await import('../lib/paymentGateway.js');
+    const gateway = createPaymentGateway();
+    const returnUrl = req.body.returnUrl
+      || process.env.FRONTEND_URL
+      || '';
+    const checkout = await gateway.createCheckout({
+      organizationId: client.organizationId,
+      invoiceId,
+      amount: balance,
+      currency: 'CLP',
+      returnUrl,
+    });
+
+    const [intent] = await db.insert(paymentIntents).values({
+      organizationId: client.organizationId,
+      invoiceId,
+      clientId: client.id,
+      provider: String(checkout.provider).includes('stub') ? 'stub' : checkout.provider,
+      externalId: checkout.externalId,
+      amount: String(balance.toFixed(2)),
+      currency: 'CLP',
+      status: 'pending',
+      checkoutUrl: checkout.checkoutUrl,
+      metadata: { ...(checkout.metadata || {}), source: 'portal' },
+      expiresAt: checkout.expiresAt,
+    }).returning();
+
+    await writeAuditLog({
+      organizationId: client.organizationId,
+      userId: req.user.id,
+      action: 'portal.checkout_create',
+      entity: 'payment_intent',
+      entityId: intent.id,
+      details: { invoiceId, amount: balance, provider: intent.provider },
+      ipAddress: clientIp(req),
+    });
+
+    res.status(201).json({
+      intentId: intent.id,
+      provider: intent.provider,
+      externalId: intent.externalId,
+      amount: balance,
+      checkoutUrl: intent.checkoutUrl,
+      expiresAt: intent.expiresAt,
+      mode: intent.provider === 'stub' ? 'stub' : 'live',
+    });
+  } catch (error) {
+    console.error('Portal checkout error:', error.message);
+    res.status(500).json({ error: error.message || 'Error al crear checkout' });
   }
 });
 

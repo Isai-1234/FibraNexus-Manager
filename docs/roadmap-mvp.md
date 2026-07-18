@@ -54,7 +54,7 @@ flowchart LR
 | **2** | CRM y ciclo de vida | Ficha 360°, roles admin/administrativo/técnico, OT | **Hecho** |
 | **3** | Facturación y pagos | Saldos, adaptadores pasarela, avisos | **Hecho** |
 | **4** | Red y monitoreo | Inventario robusto, alertas, cola real | **Hecho (MVP)** — cola Redis diferida |
-| **5** | Portal y experiencia ops | Pago portal, marca ISP, vista técnico | Pendiente |
+| **5** | Portal y experiencia ops | Pago portal, marca ISP, vista técnico | **Hecho (MVP)** |
 
 Detalle, dependencias y criterios de aceptación: [plan-implementacion.md](plan-implementacion.md).
 
