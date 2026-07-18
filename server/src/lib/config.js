@@ -1,15 +1,28 @@
-import './loadEnv.js';
+import '../loadEnv.js';
 
 /**
  * Config centralizada — cambiar proveedor = cambiar env, no código.
  * Getters: leen process.env en el momento del uso (no al importar el módulo).
  */
+function cleanDatabaseUrl(raw) {
+  let v = String(raw || '').trim();
+  // Errores comunes al pegar desde .env en Render Value:
+  // DATABASE_URL="postgresql://..."  o  DATABASE_URL=postgresql://...
+  if (/^DATABASE_URL\s*=/i.test(v)) {
+    v = v.replace(/^DATABASE_URL\s*=\s*/i, '').trim();
+  }
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
 export const config = {
   get port() {
     return parseInt(process.env.PORT || '10000', 10);
   },
   get databaseUrl() {
-    return (process.env.DATABASE_URL || '').trim();
+    return cleanDatabaseUrl(process.env.DATABASE_URL);
   },
   get dbPoolMax() {
     return parseInt(process.env.DB_POOL_MAX || '10', 10);

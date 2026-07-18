@@ -2,9 +2,10 @@ import '../loadEnv.js';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema.js';
+import { config } from '../lib/config.js';
 
-const connectionString = process.env.DATABASE_URL;
-const max = parseInt(process.env.DB_POOL_MAX || '10', 10);
+const connectionString = config.databaseUrl;
+const max = config.dbPoolMax;
 
 const queryClient = postgres(connectionString || 'postgresql://localhost:5432/postgres', {
   max,
