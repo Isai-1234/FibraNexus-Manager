@@ -228,9 +228,27 @@ authRouter.post(
         ipAddress: clientIp(req),
       });
 
-      // Sin integración de email: devolver token solo en desarrollo
+      const { sendMail, appPublicBaseUrl } = await import('../lib/mailer.js');
+      const resetUrl = `${appPublicBaseUrl()}/reset-password?token=${rawToken}`;
+      try {
+        await sendMail({
+          to: email,
+          subject: 'Recuperar contraseña — FibraNexus',
+          text: `Hola${user.fullName ? ` ${user.fullName}` : ''},\n\nPara restablecer tu contraseña abre este enlace (válido 1 hora):\n${resetUrl}\n\nSi no pediste esto, ignora el correo.`,
+          html: `<p>Hola${user.fullName ? ` ${user.fullName}` : ''},</p><p>Para restablecer tu contraseña (válido 1 hora):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Si no pediste esto, ignora el correo.</p>`,
+        });
+      } catch (mailErr) {
+        console.error('Password reset mail error:', mailErr.message);
+        // No filtramos el email; el token queda creado. En lab el link también va a logs.
+        console.log('[password-reset] link (fallback log):', resetUrl);
+      }
+
+      // Sin Resend: el enlace queda en logs de Render. En desarrollo también en la respuesta.
       if (process.env.NODE_ENV !== 'production') {
-        return res.json({ ...okMsg, devToken: rawToken, expiresAt });
+        return res.json({ ...okMsg, devToken: rawToken, resetUrl, expiresAt });
+      }
+      if (!process.env.RESEND_API_KEY) {
+        console.log('[password-reset] RESEND_API_KEY no configurada; enlace en logs:', resetUrl);
       }
       res.json(okMsg);
     } catch (error) {

@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
 import AdminDashboard from './pages/admin/Dashboard'
 import ClientPortal from './pages/portal/ClientPortal'
 import SuspendedNotice from './pages/portal/SuspendedNotice'
@@ -68,6 +70,8 @@ function App() {
         <Route path="/suspended" element={<SuspendedNotice />} />
         <Route path="/login" element={!user ? <Login onLogin={login} /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register onRegister={setUser} /> : <Navigate to="/" />} />
+        <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/" />} />
+        <Route path="/reset-password" element={!user ? <ResetPassword /> : <Navigate to="/" />} />
         <Route path="/*" element={user ? <AppShell user={user} API={API} /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
