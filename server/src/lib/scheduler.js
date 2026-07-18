@@ -76,6 +76,10 @@ export function startScheduler() {
   // Retención de métricas por org (Fase 1 SaaS)
   setTimeout(() => purgeOldMetrics(), 120_000);
   setInterval(() => purgeOldMetrics(), 6 * 60 * 60 * 1000);
+
+  // Alertas operativas (Fase 4) — refresco periódico sin Redis
+  setTimeout(() => refreshAlertsRound('initial'), 75_000);
+  setInterval(() => refreshAlertsRound('scheduled'), 5 * 60 * 1000);
 }
 
 async function purgeOldMetrics() {
@@ -99,6 +103,16 @@ async function purgeOldMetrics() {
     }
   } catch (err) {
     console.error('[scheduler:metrics-retention] error: %s', err.message);
+  }
+}
+
+async function refreshAlertsRound(label) {
+  try {
+    const { refreshAlertsAllOrgs } = await import('./orgAlerts.js');
+    const results = await refreshAlertsAllOrgs();
+    console.log('[scheduler:alerts:%s] orgs=%d', label, results.length);
+  } catch (err) {
+    console.error('[scheduler:alerts:%s] error: %s', label, err.message);
   }
 }
 

@@ -32,6 +32,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [error, setError] = useState('')
   const [clients, setClients] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
+  const [orgAlerts, setOrgAlerts] = useState<any[]>([])
+  const [alertCounts, setAlertCounts] = useState<{ total?: number; critical?: number; warning?: number }>({})
 
   function api() {
     return axios.create({
@@ -52,12 +54,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setError('')
     try {
       if (activeTab === 'dashboard') {
-        const res = await api().get('/dashboard/admin')
-        setStats(res.data.stats || {})
-        setClientOverview(res.data.clientOverview || [])
-        setClientsWithProblems(res.data.clientsWithProblems || [])
-        setOverdueInvoices(res.data.overdueInvoices || [])
-        setRecentTickets(res.data.recentTickets || [])
+        const [dashRes, alertsRes] = await Promise.all([
+          api().get('/dashboard/admin'),
+          api().get('/alerts?status=open').catch(() => ({ data: { items: [], counts: {} } })),
+        ])
+        setStats(dashRes.data.stats || {})
+        setClientOverview(dashRes.data.clientOverview || [])
+        setClientsWithProblems(dashRes.data.clientsWithProblems || [])
+        setOverdueInvoices(dashRes.data.overdueInvoices || [])
+        setRecentTickets(dashRes.data.recentTickets || [])
+        setOrgAlerts(Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : [])
+        setAlertCounts(alertsRes.data?.counts || {})
       } else if (activeTab === 'clients') {
         const res = await api().get('/clients/overview')
         setData(Array.isArray(res.data) ? res.data : [])
@@ -77,6 +84,36 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       setError('Error al cargar datos: ' + (err.response?.data?.error || err.message))
     }
     setLoading(false)
+  }
+
+  async function ackAlert(id: number) {
+    try {
+      await api().post(`/alerts/${id}/ack`)
+      setOrgAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'acked' } : a))
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'No se pudo acusar la alerta')
+    }
+  }
+
+  async function resolveAlert(id: number) {
+    try {
+      await api().post(`/alerts/${id}/resolve`)
+      setOrgAlerts(prev => prev.filter(a => a.id !== id))
+      setAlertCounts(c => ({ ...c, total: Math.max(0, (c.total || 1) - 1) }))
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'No se pudo resolver la alerta')
+    }
+  }
+
+  async function refreshAlerts() {
+    try {
+      await api().post('/alerts/refresh')
+      const alertsRes = await api().get('/alerts?status=open')
+      setOrgAlerts(Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : [])
+      setAlertCounts(alertsRes.data?.counts || {})
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'No se pudieron refrescar alertas')
+    }
   }
 
   async function openNewForm() {
@@ -586,6 +623,65 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
+              {orgAlerts.length > 0 && (
+                <div className={`rounded-xl border shadow-sm overflow-hidden ${
+                  (alertCounts.critical || 0) > 0 ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
+                }`}>
+                  <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-black/5">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className={`h-5 w-5 ${(alertCounts.critical || 0) > 0 ? 'text-red-600' : 'text-amber-600'}`} />
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">
+                          Alertas operativas ({orgAlerts.length} abiertas
+                          {(alertCounts.critical || 0) > 0 ? ` · ${alertCounts.critical} críticas` : ''})
+                        </p>
+                        <p className="text-xs text-gray-600">Equipos, mora, pagos o routers que requieren atención</p>
+                      </div>
+                    </div>
+                    {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                      <button type="button" onClick={refreshAlerts}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-700">
+                        Actualizar ahora
+                      </button>
+                    )}
+                  </div>
+                  <ul className="divide-y divide-black/5 max-h-64 overflow-y-auto bg-white/60">
+                    {orgAlerts.slice(0, 12).map((a: any) => (
+                      <li key={a.id} className="px-5 py-3 flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
+                              a.severity === 'critical' ? 'bg-red-100 text-red-700'
+                                : a.severity === 'info' ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-amber-100 text-amber-800'
+                            }`}>{a.severity}</span>
+                            {a.status === 'acked' && (
+                              <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">vista</span>
+                            )}
+                            <span className="font-medium text-sm text-gray-900">{a.title}</span>
+                          </div>
+                          {a.message && <p className="text-xs text-gray-600 mt-0.5">{a.message}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {a.status === 'open' && (
+                            <button type="button" onClick={() => ackAlert(a.id)}
+                              className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
+                              Visto
+                            </button>
+                          )}
+                          {(user?.role === 'admin' || user?.role === 'office' || user?.role === 'superadmin') && (
+                            <button type="button" onClick={() => resolveAlert(a.id)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
+                              Resolver
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[
                   { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' },

@@ -124,3 +124,33 @@ Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-imple
 
 ### Siguiente fase recomendada
 **Fase 4 — Red y monitoreo**
+
+---
+
+## Fase 4 — Red y monitoreo
+
+**Estado:** Hecho (MVP)  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- Alertas operativas por org (`org_alerts`) con dedupe, ack/resolve y refresh en scheduler.
+- Banner en dashboard ISP.
+- EdgeOS remoto: confirmación + auditoría en mutaciones de red/colas.
+- Sin Redis: `USE_JOB_QUEUE` sigue bloqueado a propósito.
+
+### Archivos / migraciones
+- `server/migrations/006_org_alerts.sql`
+- `server/src/lib/orgAlerts.js`, `routes/alerts.js`, `lib/scheduler.js`, `routes/edgeos.js`
+- `client/.../Dashboard.tsx`, `EdgeOSManager.tsx`
+- Docs: `fase-4-red-monitoreo-avance.md`
+
+### Pruebas
+- Suite unitaria → **62 pass** (incl. `alerts-phase4.unit.test.js`)
+- Build client → **OK**
+
+### Riesgos / pendientes
+- Aplicar migración 006 en prod (boot/preDeploy).
+- BullMQ/Redis y push de alertas quedan post-MVP.
+
+### Siguiente fase recomendada
+**Fase 5 — Portal y experiencia operativa**

@@ -31,7 +31,7 @@ Un ISP piloto en producción puede:
 | Panel plataforma | Parcial (falta SaaS billing model, última actividad, suspensión formal) |
 | CRM abonado | Implementado (falta rol administrativo, OT, contratos) |
 | Facturación ISP→abonado | Parcial (parciales OK; sin pasarela ni PDF) |
-| Red | Implementado núcleo; cola async real pendiente |
+| Red | Alertas org + EdgeOS confirm/audit; cola Redis diferida |
 | Portal | Parcial (deuda + tickets; sin pago online) |
 
 ```mermaid
@@ -53,7 +53,7 @@ flowchart LR
 | **1** | SaaS de FibraNexus | Isaí opera ISPs, trials, límites, suspensión | **Hecho** |
 | **2** | CRM y ciclo de vida | Ficha 360°, roles admin/administrativo/técnico, OT | **Hecho** |
 | **3** | Facturación y pagos | Saldos, adaptadores pasarela, avisos | **Hecho** |
-| **4** | Red y monitoreo | Inventario robusto, alertas, cola real | Pendiente |
+| **4** | Red y monitoreo | Inventario robusto, alertas, cola real | **Hecho (MVP)** — cola Redis diferida |
 | **5** | Portal y experiencia ops | Pago portal, marca ISP, vista técnico | Pendiente |
 
 Detalle, dependencias y criterios de aceptación: [plan-implementacion.md](plan-implementacion.md).

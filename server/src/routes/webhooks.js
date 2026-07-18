@@ -40,6 +40,10 @@ async function processPaidWebhook({ provider, event, intent, inv, orgId, invoice
       details: { provider, eventId: event.eventId, status: event.status },
       ipAddress: clientIp(req),
     });
+    try {
+      const { raisePaymentFailAlert } = await import('../lib/orgAlerts.js');
+      await raisePaymentFailAlert(orgId, invoiceId, `Webhook ${provider}: ${event.status}`);
+    } catch { /* non-fatal */ }
     return res.json({ ok: true, status: event.status });
   }
 

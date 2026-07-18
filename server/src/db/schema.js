@@ -19,6 +19,8 @@ export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
 export const invoiceAdjustmentTypeEnum = pgEnum('invoice_adjustment_type', [
   'credit', 'debit', 'void',
 ]);
+export const alertSeverityEnum = pgEnum('alert_severity', ['info', 'warning', 'critical']);
+export const alertStatusEnum = pgEnum('alert_status', ['open', 'acked', 'resolved']);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
@@ -417,4 +419,30 @@ export const invoiceAdjustments = pgTable('invoice_adjustments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
   idxAdjInvoice: index('idx_invoice_adjustments_invoice').on(table.invoiceId),
+}));
+
+/** Alertas operativas ISP (Fase 4) — sin canal push externo */
+export const orgAlerts = pgTable('org_alerts', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  severity: alertSeverityEnum('severity').notNull().default('warning'),
+  status: alertStatusEnum('status').notNull().default('open'),
+  kind: varchar('kind', { length: 64 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  message: text('message'),
+  entityType: varchar('entity_type', { length: 40 }),
+  entityId: integer('entity_id'),
+  dedupeKey: varchar('dedupe_key', { length: 160 }).notNull(),
+  metadata: jsonb('metadata').default({}),
+  firstSeenAt: timestamp('first_seen_at').defaultNow().notNull(),
+  lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at'),
+  ackedAt: timestamp('acked_at'),
+  ackedBy: integer('acked_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqOrgDedupe: unique('org_alerts_org_dedupe_uidx').on(table.organizationId, table.dedupeKey),
+  idxAlertsOrgStatus: index('idx_org_alerts_org_status').on(table.organizationId, table.status),
+  idxAlertsLastSeen: index('idx_org_alerts_last_seen').on(table.lastSeenAt),
 }));

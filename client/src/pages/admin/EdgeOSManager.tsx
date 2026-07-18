@@ -98,10 +98,11 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     const cidr = netForm.ipCidr.trim()
     if (!cidr) { setNetError('IP/CIDR es requerido (ej: 192.168.3.1/24)'); return }
     if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(cidr)) { setNetError('Formato inválido — usa IP/prefijo, ej: 192.168.3.1/24'); return }
+    if (!confirm(`¿Aplicar red ${netForm.iface} ${cidr} en el EdgeRouter?`)) return
     setNetSaving(true)
     setNetError('')
     try {
-      await api().post(`/edgeos/${router.id}/network`, netForm)
+      await api().post(`/edgeos/${router.id}/network`, { ...netForm, confirm: true })
       setShowNetForm(false)
       setNetForm({ iface: 'eth2', ipCidr: '', description: '', dhcp: true, poolStart: '', poolEnd: '' })
       await loadStatus()
@@ -114,7 +115,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     if (!confirm(`¿Eliminar interfaz ${iface} y su DHCP del EdgeRouter?`)) return
     setActionLoading(`del-net-${iface}`)
     try {
-      await api().delete(`/edgeos/${router.id}/network/${iface}`)
+      await api().delete(`/edgeos/${router.id}/network/${iface}?confirm=true`)
       await loadStatus()
     } catch (e: any) {
       alert(e.response?.data?.error || 'Error al eliminar red')
@@ -143,9 +144,10 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
   }
 
   async function provisionSubscriber(serviceId: number) {
+    if (!confirm('¿Provisionar cola remota en el EdgeRouter para este abonado?')) return
     setActionLoading(`prov-${serviceId}`)
     try {
-      await api().post(`/edgeos/${router.id}/provision/${serviceId}`, { iface: selectedIface })
+      await api().post(`/edgeos/${router.id}/provision/${serviceId}`, { iface: selectedIface, confirm: true })
       await loadSubscribers()
       await loadStatus()
     } catch (e: any) {
@@ -157,7 +159,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     if (!confirm('¿Eliminar la queue de este abonado del EdgeRouter? El tráfico quedará sin límite hasta que se vuelva a aplicar.')) return
     setActionLoading(`deprov-${serviceId}`)
     try {
-      await api().delete(`/edgeos/${router.id}/provision/${serviceId}`)
+      await api().delete(`/edgeos/${router.id}/provision/${serviceId}?confirm=true`)
       await loadSubscribers()
       await loadStatus()
     } catch (e: any) {
@@ -172,7 +174,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
     setBulkLoading(true)
     for (const s of without) {
       try {
-        await api().post(`/edgeos/${router.id}/provision/${s.serviceId}`, { iface: selectedIface })
+        await api().post(`/edgeos/${router.id}/provision/${s.serviceId}`, { iface: selectedIface, confirm: true })
       } catch { /* continuar con el siguiente */ }
     }
     await loadSubscribers()

@@ -196,6 +196,11 @@ Inventario y monitoreo confiables; administración remota segura; cola de trabaj
 - Redis/BullMQ **real** (o abortar `USE_JOB_QUEUE`).
 - Acciones remotas: confirmación + permiso + auditoría + cola.
 
+### Estado MVP (2026-07-18)
+
+- **Hecho:** `org_alerts` + API + banner; confirm/audit EdgeOS; scheduler de refresh; `USE_JOB_QUEUE` fatal sin Redis.
+- **Diferido:** BullMQ real, inventario OLT/ONU ampliado, push de alertas.
+
 ### Riesgos
 
 - Complejidad MikroTik/EdgeOS en lab; validar con Internetsur.

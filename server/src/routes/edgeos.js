@@ -224,6 +224,9 @@ edgeosRouter.post('/:routerId/network', requireRole('admin'), async (req, res) =
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
+    if (!req.body?.confirm) {
+      return res.status(400).json({ error: 'Confirma la acción remota enviando confirm=true', requiresConfirm: true });
+    }
     const routerId = parseInt(req.params.routerId);
     const router = await getEdgeRouter(routerId, orgId);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
@@ -243,7 +246,12 @@ edgeosRouter.post('/:routerId/network', requireRole('admin'), async (req, res) =
       { iface, ipCidr, subnet: net.subnet, description, dhcp, poolStart: poolStart || net.poolStart, poolEnd: poolEnd || net.poolEnd, addedAt: new Date().toISOString() },
     ];
 
-    await appendPendingCmd(routerId, cmd, { edgeosNetworks: updatedNetworks });
+    await appendPendingCmd(routerId, cmd, { edgeosNetworks: updatedNetworks }, {
+      organizationId: orgId,
+      userId: req.user.id,
+      confirmed: true,
+      ipAddress: req.ip,
+    });
     res.json({ cmd: { id: cmd.id, type: cmd.type }, message: 'Comando encolado — EdgeRouter aplicará en ≤30 s' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -255,6 +263,9 @@ edgeosRouter.delete('/:routerId/network/:iface', requireRole('admin'), async (re
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
+    if (!req.body?.confirm && req.query.confirm !== 'true') {
+      return res.status(400).json({ error: 'Confirma la eliminación remota con confirm=true', requiresConfirm: true });
+    }
     const routerId = parseInt(req.params.routerId);
     const router = await getEdgeRouter(routerId, orgId);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
@@ -265,7 +276,12 @@ edgeosRouter.delete('/:routerId/network/:iface', requireRole('admin'), async (re
 
     const creds = router.credentials || {};
     const updatedNetworks = (creds.edgeosNetworks || []).filter(n => n.iface !== iface);
-    await appendPendingCmd(routerId, cmd, { edgeosNetworks: updatedNetworks });
+    await appendPendingCmd(routerId, cmd, { edgeosNetworks: updatedNetworks }, {
+      organizationId: orgId,
+      userId: req.user.id,
+      confirmed: true,
+      ipAddress: req.ip,
+    });
     res.json({ cmd: { id: cmd.id, type: cmd.type }, message: 'Eliminación encolada' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -316,6 +332,9 @@ edgeosRouter.post('/:routerId/provision/:serviceId', requireRole('admin'), async
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
+    if (!req.body?.confirm) {
+      return res.status(400).json({ error: 'Confirma el aprovisionamiento remoto con confirm=true', requiresConfirm: true });
+    }
     const routerId = parseInt(req.params.routerId);
     const serviceId = parseInt(req.params.serviceId);
     const router = await getEdgeRouter(routerId, orgId);
@@ -344,7 +363,12 @@ edgeosRouter.post('/:routerId/provision/:serviceId', requireRole('admin'), async
     const script = buildAddQueueScript({ iface, serviceId, clientIp: service.ipAddress, downloadMbps: downloadSpeed, uploadMbps: uploadSpeed, clientName: fullName });
     const cmd = makePendingCmd('queue_add', script, { serviceId, clientIp: service.ipAddress, iface, downloadMbps: downloadSpeed, uploadMbps: uploadSpeed });
 
-    await appendPendingCmd(routerId, cmd);
+    await appendPendingCmd(routerId, cmd, {}, {
+      organizationId: orgId,
+      userId: req.user.id,
+      confirmed: true,
+      ipAddress: req.ip,
+    });
 
     const meta = {
       ...(service.networkMeta || {}),
@@ -421,6 +445,9 @@ edgeosRouter.delete('/:routerId/provision/:serviceId', requireRole('admin'), asy
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
+    if (!req.body?.confirm && req.query.confirm !== 'true') {
+      return res.status(400).json({ error: 'Confirma el retiro remoto con confirm=true', requiresConfirm: true });
+    }
     const routerId = parseInt(req.params.routerId);
     const serviceId = parseInt(req.params.serviceId);
     const router = await getEdgeRouter(routerId, orgId);
@@ -433,7 +460,12 @@ edgeosRouter.delete('/:routerId/provision/:serviceId', requireRole('admin'), asy
     const script = buildRemoveQueueScript({ iface, serviceId });
     const cmd = makePendingCmd('queue_remove', script, { serviceId, iface });
 
-    await appendPendingCmd(routerId, cmd);
+    await appendPendingCmd(routerId, cmd, {}, {
+      organizationId: orgId,
+      userId: req.user.id,
+      confirmed: true,
+      ipAddress: req.ip,
+    });
 
     const meta = { ...(svc.networkMeta || {}), edgeosQueue: null };
     await db.update(clientServices).set({ networkMeta: meta, updatedAt: new Date() }).where(eq(clientServices.id, serviceId));
