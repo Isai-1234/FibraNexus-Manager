@@ -172,6 +172,9 @@ authRouter.post(
       res.json({ user: userResponse(user, organization), token });
     } catch (error) {
       console.error('Login error:', error.message);
+      if (/JWT_SECRET/i.test(String(error.message))) {
+        return res.status(500).json({ error: 'JWT_SECRET no configurado en el servidor' });
+      }
       res.status(500).json({ error: 'Error al iniciar sesión' });
     }
   },

@@ -1,44 +1,85 @@
 #!/usr/bin/env node
 /**
- * Bootstrap local de una sola ejecución (corre dentro de server/).
- *
- *   cd server
+ * Bootstrap local (ejecutar desde server/):
  *   $env:ALLOW_BOOTSTRAP="1"
  *   pnpm exec node scripts/bootstrap-admin.mjs --email E --password P --org-slug internetsur --role admin
- *
- * Desde la raíz:
- *   $env:ALLOW_BOOTSTRAP="1"
- *   pnpm run bootstrap:admin -- --email E --password P --org-slug internetsur --role admin
  */
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '../.env') });
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+const envCandidates = [
+  path.join(__dirname, '../.env'),
+  path.join(__dirname, '../.env.local'),
+  path.join(__dirname, '../../.env'),
+  path.join(process.cwd(), '.env'),
+];
 
-import bcrypt from 'bcryptjs';
-import { db } from '../src/db/index.js';
-import { users, organizations } from '../src/db/schema.js';
-import { eq } from 'drizzle-orm';
+function loadEnvFiles() {
+  for (const p of envCandidates) {
+    if (!fs.existsSync(p)) continue;
+    dotenv.config({ path: p, override: true });
+    console.log('[bootstrap] .env cargado:', p);
+  }
+}
+
+function readDatabaseUrlFromFiles() {
+  for (const p of envCandidates) {
+    if (!fs.existsSync(p)) continue;
+    let buf = fs.readFileSync(p);
+    if (buf[0] === 0xff && buf[1] === 0xfe) buf = Buffer.from(buf.toString('utf16le'));
+    const text = buf.toString('utf8').replace(/^\uFEFF/, '');
+    const m = text.match(/^\s*DATABASE_URL\s*=\s*(.+)$/m);
+    if (!m) continue;
+    let v = m[1].trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    return v;
+  }
+  return '';
+}
+
+function cleanUrl(raw) {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  const uriMatch = v.match(/postgres(?:ql)?:\/\/[^\s"'`]+/i);
+  if (uriMatch) v = uriMatch[0];
+  v = v.replace(/^["']|["']$/g, '');
+  // postgres.js + pgbouncer: quitar flag que a veces rompe prepares
+  v = v.replace(/[?&]pgbouncer=true/i, (m) => (m.startsWith('?') ? '?' : '')).replace(/\?$/, '');
+  v = v.replace(/\?&/, '?').replace(/[?&]$/, '');
+  return v.trim();
+}
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
-  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
+  if (i >= 0 && process.argv[i + 1] && !String(process.argv[i + 1]).startsWith('--')) {
+    return process.argv[i + 1];
+  }
   return fallback;
 }
 
 async function main() {
+  loadEnvFiles();
+
   if (process.env.ALLOW_BOOTSTRAP !== '1') {
-    console.error('Refusado: define ALLOW_BOOTSTRAP=1 para ejecutar este script.');
+    console.error('Refusado: define ALLOW_BOOTSTRAP=1');
     process.exit(1);
   }
 
-  if (!process.env.DATABASE_URL) {
-    console.error('Falta DATABASE_URL. Créala en server/.env (no la subas a git).');
+  let dbUrl = cleanUrl(process.env.DATABASE_URL);
+  if (!dbUrl) dbUrl = cleanUrl(readDatabaseUrlFromFiles());
+  if (!dbUrl) {
+    console.error('Falta DATABASE_URL en server/.env o en $env:DATABASE_URL');
+    for (const p of envCandidates) {
+      console.error(' ', p, fs.existsSync(p) ? 'existe' : 'no existe');
+    }
     process.exit(1);
   }
+  process.env.DATABASE_URL = dbUrl;
 
   const email = arg('email');
   const password = arg('password');
@@ -47,7 +88,7 @@ async function main() {
   const role = arg('role', 'admin');
 
   if (!email || !password) {
-    console.error('Uso: ALLOW_BOOTSTRAP=1 pnpm exec node scripts/bootstrap-admin.mjs --email E --password P [--name N] [--org-slug S] [--role admin|superadmin]');
+    console.error('Faltan --email y --password');
     process.exit(1);
   }
   if (password.length < 10) {
@@ -59,11 +100,17 @@ async function main() {
     process.exit(1);
   }
 
+  // Importar DB DESPUÉS de fijar DATABASE_URL
+  const { default: bcrypt } = await import('bcryptjs');
+  const { eq } = await import('drizzle-orm');
+  const { db } = await import('../src/db/index.js');
+  const { users, organizations } = await import('../src/db/schema.js');
+
   let organizationId = null;
   if (role !== 'superadmin') {
     const org = await db.query.organizations.findFirst({ where: eq(organizations.slug, orgSlug) });
     if (!org) {
-      console.error(`Organización slug=${orgSlug} no encontrada. No se crea automáticamente para proteger datos.`);
+      console.error(`Organización slug=${orgSlug} no encontrada.`);
       process.exit(1);
     }
     organizationId = org.id;
@@ -82,7 +129,7 @@ async function main() {
       isActive: true,
       updatedAt: new Date(),
     }).where(eq(users.id, existing.id));
-    console.log('Usuario actualizado:', normalizedEmail, 'role=', role, 'orgId=', organizationId);
+    console.log('OK Usuario actualizado:', normalizedEmail, 'role=', role, 'orgId=', organizationId);
   } else {
     await db.insert(users).values({
       email: normalizedEmail,
@@ -92,7 +139,7 @@ async function main() {
       organizationId,
       isActive: true,
     });
-    console.log('Usuario creado:', normalizedEmail, 'role=', role, 'orgId=', organizationId);
+    console.log('OK Usuario creado:', normalizedEmail, 'role=', role, 'orgId=', organizationId);
   }
 
   process.exit(0);
