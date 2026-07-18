@@ -6,6 +6,7 @@ export async function getHealthPayload() {
   const checks = {
     database: 'unknown',
     latencyMs: null,
+    databaseUrlPresent: Boolean(config.databaseUrl),
   };
 
   let status = 'ok';
@@ -19,7 +20,7 @@ export async function getHealthPayload() {
     } catch (err) {
       status = 'degraded';
       checks.database = 'error';
-      checks.error = err.message;
+      checks.error = err.message || String(err);
     }
   } else {
     status = 'degraded';

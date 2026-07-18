@@ -1,6 +1,6 @@
+import './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -37,10 +37,13 @@ import { equipment } from './db/schema.js';
 import { eq } from 'drizzle-orm';
 import { rateLimit } from './lib/rateLimit.js';
 
-dotenv.config();
-
 const app = express();
 const PORT = parseInt(process.env.PORT || '10000');
+
+console.log(
+  '[boot] DATABASE_URL:',
+  config.databaseUrl ? `present (len=${config.databaseUrl.length})` : 'MISSING — set it in Render → Environment',
+);
 
 // Guardrail: cola Redis no implementada
 if (process.env.USE_JOB_QUEUE === 'true') {
