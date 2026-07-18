@@ -123,6 +123,8 @@ Fase 2 (CRM) — necesita org estable y límites claros.
 
 ## Fase 2 — CRM y ciclo de vida del abonado
 
+**Estado:** Hecho (MVP) — detalle en [fase-2-crm-avance.md](fase-2-crm-avance.md)
+
 ### Objetivo
 
 Ficha 360° usable en venta y operación diaria; roles ISP precisos; historial inmutable.
@@ -144,11 +146,11 @@ Ficha 360° usable en venta y operación diaria; roles ISP precisos; historial i
 - Administrativo no modifica routers/credenciales.
 - Técnico no registra pagos ni borra abonados.
 - OT con checklist y cierre auditado.
-- Tests de permisos por rol.
+- Tests de permisos por rol (contratos unitarios; E2E con DB real pendiente).
 
 ### Riesgos
 
-- Migración de roles existentes; mapear usuarios actuales.
+- Migración de roles existentes; mapear usuarios actuales. Aplicar `003` y `004` en prod.
 
 ---
 

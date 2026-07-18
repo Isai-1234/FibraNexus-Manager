@@ -1,46 +1,42 @@
 # Fase 2 — CRM y ciclo de vida del abonado
 
-**Estado:** En curso  
-**Inicio:** 2026-07-18
+**Estado:** Cerrada (MVP funcional)  
+**Cierre:** 2026-07-18
 
-Este documento conserva el avance de la fase sin declarar cerradas las partes
-que aun requieren experiencia de usuario y pruebas contra PostgreSQL real.
+## Bloque 2.1 — Rol administrativo
 
-## Bloque 2.1 terminado: rol administrativo
+Rol técnico `office` (Administrativo). Migración `003_office_role.sql`.
 
-Se incorporo el rol tecnico `office`, mostrado al usuario como
-**Administrativo**. La migracion aditiva es
-`server/migrations/003_office_role.sql`.
+Puede: dashboard comercial, abonados, planes, facturas, pagos, tickets, órdenes de trabajo.  
+No puede: routers, equipos, SNMP, red, aprovisionamiento remoto, gestión de personal.
 
-Un administrativo puede:
+## Bloque 2.2 — Ciclo de vida y RUT
 
-- Consultar el dashboard comercial, abonados, planes, facturas y saldos.
-- Crear y editar abonados.
-- Registrar pagos manuales.
-- Crear, responder y actualizar tickets.
+- Estados CRM: `prospect`, `pending_install`, `active`, `suspended`, `cut`, `cancelled`.
+- Validación/normalización de RUT chileno (`server/src/lib/rut.js`).
+- Soft-delete marca `lifecycleStatus = cancelled`.
+- Migración `004_crm_lifecycle.sql` (+ lat/long en clientes, tabla `work_orders`).
 
-Un administrativo no puede:
+## Bloque 2.3 — Órdenes de trabajo
 
-- Ver o cambiar routers, equipos, credenciales, communities SNMP ni la red.
-- Ejecutar aprovisionamiento, escaneos o acciones remotas.
-- Suspender/reactivar servicios, cambiar planes, eliminar abonados o gestionar
-  personal.
+API `/api/work-orders`: crear, actualizar checklist/adjuntos metadatos, completar (con force), anular.  
+Instalación → `pending_install`; completar instalación → `active`. Auditoría en cada acción.
 
-Los administrativos cuentan dentro del limite SaaS de usuarios internos.
-La API `/api/staff` permite al administrador crear y actualizar personal
-`admin`, `office` y `technician`; la pantalla especifica para hacerlo sigue
-pendiente.
+## Bloque 2.4 — UI ISP
 
-## Verificacion
+- Menú filtrado por rol (office no ve Red ISP / routers / inventario).
+- Pestaña **Personal ISP** (`StaffManager`) para admin.
+- Pestaña **Órdenes de trabajo** (`WorkOrdersManager`).
+- Formulario de abonado: RUT, estado CRM, lat/long.
 
-- Contratos unitarios: `server/src/lib/__tests__/office-role.unit.test.js`.
-- Migracion revisada como aditiva; requiere ejecutarse antes de crear un
-  usuario `office` en Supabase.
+## Verificación
 
-## Pendiente para cerrar Fase 2
+- `office-role.unit.test.js`, `rut.unit.test.js`, `crm-lifecycle.unit.test.js`
+- Suite `node --test server/src/lib/__tests__/*.test.js`
+- Build client
 
-1. Validacion de RUT chileno y datos de direccion/geolocalizacion.
-2. Estados de prospecto e instalacion pendiente.
-3. Ordenes de trabajo con checklist, adjuntos y cierre auditado.
-4. Interfaz para administrar personal ISP y permisos visibles.
-5. Pruebas de integracion de permisos con PostgreSQL real.
+## Pendiente post-MVP (no bloquea cierre)
+
+- Adjuntos binarios reales (hoy solo URL/metadatos).
+- Pruebas de integración de permisos con PostgreSQL real.
+- Asignación de OT a técnico desde selector de staff.

@@ -5,7 +5,7 @@ import { and, eq, inArray, sql, isNull } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
+import { orgFilter, requireOrganizationId, loadOrganization } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { listClientEquipment } from '../lib/equipmentClientLink.js';
 import {
@@ -16,7 +16,8 @@ import {
 } from '../lib/equipmentStatus.js';
 import { enrichMacFromDhcp } from '../lib/ipAllocation.js';
 import { assertWithinClientLimit } from '../lib/orgLimits.js';
-import { loadOrganization } from '../lib/tenant.js';
+import { assertOptionalRut } from '../lib/rut.js';
+import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 
 export const clientsRouter = Router();
 
@@ -39,7 +40,9 @@ clientsRouter.get('/', requireRole('admin', 'office', 'technician'), async (req,
     const baseSelect = {
       id: clients.id, userId: clients.userId, clientType: clients.clientType,
       rut: clients.rut, address: clients.address, city: clients.city,
-      region: clients.region, createdAt: clients.createdAt,
+      region: clients.region, lifecycleStatus: clients.lifecycleStatus,
+      latitude: clients.latitude, longitude: clients.longitude,
+      createdAt: clients.createdAt,
       user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
     };
 
@@ -161,10 +164,14 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
     const org = req.organization || await loadOrganization(orgId);
     await assertWithinClientLimit(org);
 
-    const { email, password, fullName, phone, clientType, rut, address, city, region } = req.body;
+    const { email, password, fullName, phone, clientType, rut, address, city, region, latitude, longitude, lifecycleStatus } = req.body;
     if (!email || !fullName) {
       return res.status(400).json({ error: 'Email y nombre son requeridos' });
     }
+    const normalizedRut = assertOptionalRut(rut);
+    const allowedLifecycle = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
+    const life = allowedLifecycle.includes(lifecycleStatus) ? lifecycleStatus : 'prospect';
+
     const plainPass = password && String(password).length >= 10
       ? password
       : cryptoRandomPassword();
@@ -175,8 +182,27 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
     }).returning();
     const [client] = await db.insert(clients).values({
       organizationId: orgId,
-      userId: user.id, clientType: clientType || 'individual', rut, address, city, region,
+      userId: user.id,
+      clientType: clientType || 'individual',
+      rut: normalizedRut,
+      address,
+      city,
+      region,
+      latitude: latitude != null ? String(latitude) : null,
+      longitude: longitude != null ? String(longitude) : null,
+      lifecycleStatus: life,
     }).returning();
+
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'client.create',
+      entity: 'client',
+      entityId: client.id,
+      details: { lifecycleStatus: life },
+      ipAddress: clientIp(req),
+    });
+
     const { password: _, ...userData } = user;
     res.status(201).json({
       ...client,
@@ -198,7 +224,10 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const clientId = parseInt(req.params.id);
-    const { fullName, email, phone, clientType, rut, address, city, region, password } = req.body;
+    const {
+      fullName, email, phone, clientType, rut, address, city, region, password,
+      latitude, longitude, lifecycleStatus,
+    } = req.body;
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
     if (!existing.length) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -207,22 +236,47 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     if (fullName) userUpdate.fullName = fullName;
     if (email) userUpdate.email = email;
     if (phone) userUpdate.phone = phone;
-    if (password) userUpdate.password = await bcrypt.hash(password, 10);
+    if (password) userUpdate.password = await bcrypt.hash(password, 12);
     userUpdate.updatedAt = new Date();
     if (Object.keys(userUpdate).length > 1) {
       await db.update(users).set(userUpdate).where(eq(users.id, row.userId));
     }
-    const [updated] = await db.update(clients).set({
+
+    const patch = {
       clientType: clientType || row.clientType,
-      rut: rut ?? row.rut,
       address: address ?? row.address,
       city: city ?? row.city,
       region: region ?? row.region,
       updatedAt: new Date(),
-    }).where(eq(clients.id, clientId)).returning();
+    };
+    if (rut !== undefined) patch.rut = assertOptionalRut(rut);
+    if (latitude !== undefined) patch.latitude = latitude != null && latitude !== '' ? String(latitude) : null;
+    if (longitude !== undefined) patch.longitude = longitude != null && longitude !== '' ? String(longitude) : null;
+    if (lifecycleStatus) {
+      const allowed = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
+      if (!allowed.includes(lifecycleStatus)) {
+        return res.status(400).json({ error: 'Estado de ciclo de vida inválido' });
+      }
+      patch.lifecycleStatus = lifecycleStatus;
+    }
+
+    const [updated] = await db.update(clients).set(patch)
+      .where(eq(clients.id, clientId)).returning();
+
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'client.update',
+      entity: 'client',
+      entityId: clientId,
+      details: { lifecycleStatus: updated.lifecycleStatus },
+      ipAddress: clientIp(req),
+    });
+
     res.json({ ...updated, user: { fullName, email, phone } });
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar cliente: ' + error.message });
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message || 'Error al actualizar cliente' });
   }
 });
 
@@ -263,7 +317,7 @@ clientsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
       ));
 
     await db.update(clients)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set({ deletedAt: new Date(), lifecycleStatus: 'cancelled', updatedAt: new Date() })
       .where(eq(clients.id, clientId));
 
     await db.update(users)

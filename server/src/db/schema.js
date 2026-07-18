@@ -4,6 +4,15 @@ export const userRoleEnum = pgEnum('user_role', ['superadmin', 'admin', 'office'
 export const clientTypeEnum = pgEnum('client_type', ['individual', 'business']);
 export const serviceTypeEnum = pgEnum('service_type', ['fiber', 'wisp', 'copper', 'wireless']);
 export const serviceStatusEnum = pgEnum('service_status', ['active', 'suspended', 'cancelled', 'pending', 'cut']);
+export const clientLifecycleEnum = pgEnum('client_lifecycle', [
+  'prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled',
+]);
+export const workOrderStatusEnum = pgEnum('work_order_status', [
+  'open', 'in_progress', 'done', 'cancelled',
+]);
+export const workOrderTypeEnum = pgEnum('work_order_type', [
+  'install', 'visit', 'support', 'disconnect', 'other',
+]);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
@@ -107,6 +116,7 @@ export const clients = pgTable('clients', {
   longitude: decimal('longitude', { precision: 11, scale: 8 }),
   notes: text('notes'),
   tags: jsonb('tags'),
+  lifecycleStatus: clientLifecycleEnum('lifecycle_status').notNull().default('prospect'),
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -322,3 +332,29 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
   usedAt: timestamp('used_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+/** Órdenes de trabajo (instalación, visita, soporte) — historial inmutable vía baja lógica */
+export const workOrders = pgTable('work_orders', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id).notNull(),
+  clientId: integer('client_id').references(() => clients.id).notNull(),
+  serviceId: integer('service_id').references(() => clientServices.id),
+  assignedTo: integer('assigned_to').references(() => users.id),
+  createdBy: integer('created_by').references(() => users.id),
+  title: varchar('title', { length: 255 }).notNull(),
+  type: workOrderTypeEnum('type').notNull().default('visit'),
+  status: workOrderStatusEnum('status').notNull().default('open'),
+  checklist: jsonb('checklist').default([]),
+  attachments: jsonb('attachments').default([]),
+  notes: text('notes'),
+  completionNotes: text('completion_notes'),
+  scheduledAt: timestamp('scheduled_at'),
+  completedAt: timestamp('completed_at'),
+  cancelledAt: timestamp('cancelled_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  idxWoOrg: index('idx_work_orders_org').on(table.organizationId),
+  idxWoClient: index('idx_work_orders_client').on(table.clientId),
+  idxWoStatus: index('idx_work_orders_status').on(table.status),
+}));

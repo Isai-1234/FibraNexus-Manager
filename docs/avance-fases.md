@@ -60,7 +60,37 @@ Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-imple
 - Aplicar migración 002 en Supabase/prod antes de usar columnas nuevas.
 - Si columnas no existen aún, API fallará al leer org — desplegar migración primero.
 - Gateway SaaS real sigue pendiente (Fase 3).
-- UI ISP para gestionar staff (listado en panel admin) aún mínima (solo API).
 
 ### Siguiente fase recomendada
 **Fase 2 — CRM y ciclo de vida del abonado**
+
+---
+
+## Fase 2 — CRM y ciclo de vida del abonado
+
+**Estado:** Hecho (MVP)  
+**Fecha:** 2026-07-18
+
+### Funciones completadas
+- Rol `office` (Administrativo) con permisos comerciales sin red.
+- Ciclo de vida CRM + RUT chileno + lat/long.
+- Órdenes de trabajo con checklist y cierre auditado.
+- UI: personal ISP, OT, menú por rol, campos CRM en abonados.
+
+### Archivos / migraciones
+- `003_office_role.sql`, `004_crm_lifecycle.sql`
+- `server/src/lib/rut.js`, `routes/workOrders.js`, `routes/clients.js`, `routes/staff.js`
+- `client/.../StaffManager.tsx`, `WorkOrdersManager.tsx`, `Dashboard.tsx`
+- Docs: `fase-2-crm-avance.md`
+
+### Pruebas
+- Suite unitaria → **45 pass**
+- Build client → **OK**
+
+### Riesgos / pendientes
+- Aplicar migraciones 003 y 004 en prod antes de usar columnas/tablas nuevas.
+- Adjuntos OT solo metadatos/URL.
+- Integración E2E de permisos con PostgreSQL real aún pendiente.
+
+### Siguiente fase recomendada
+**Fase 3 — Facturación y cobranzas**

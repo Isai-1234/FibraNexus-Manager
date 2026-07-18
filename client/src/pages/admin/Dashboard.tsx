@@ -6,6 +6,8 @@ import RouterManager from './RouterManager'
 import NetworkManager from './NetworkManager'
 import BillingSettings from './BillingSettings'
 import DetectedDevices from './DetectedDevices'
+import StaffManager from './StaffManager'
+import WorkOrdersManager from './WorkOrdersManager'
 import { formatDateCL } from '../../lib/formatDate'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
@@ -243,22 +245,26 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setError('')
   }
 
-  const menuSections = [
+  const role = user?.role || 'admin'
+  const allMenuSections = [
     {
       title: 'Tus abonados',
       hint: 'Personas que contratan internet',
       items: [
         { id: 'dashboard', label: 'Centro de operaciones', icon: LayoutDashboard },
         { id: 'clients', label: 'Abonados', icon: Users },
-        { id: 'services', label: 'Auditoría técnica', icon: Wifi },
+        { id: 'services', label: 'Auditoría técnica', icon: Wifi, roles: ['admin', 'technician'] },
+        { id: 'work-orders', label: 'Órdenes de trabajo', icon: Ticket },
         { id: 'invoices', label: 'Facturación', icon: DollarSign },
-        { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings },
+        { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings, roles: ['admin'] },
         { id: 'tickets', label: 'Soporte', icon: Ticket },
+        { id: 'staff', label: 'Personal ISP', icon: Users, roles: ['admin'] },
       ],
     },
     {
       title: 'Red e infraestructura',
       hint: 'Nodos, routers y adopciones',
+      roles: ['admin', 'technician'],
       items: [
         { id: 'red-isp', label: 'Red ISP', icon: Network },
         { id: 'inventory', label: 'Inventario', icon: Server },
@@ -270,10 +276,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       title: 'Catálogo comercial',
       hint: 'Planes que vendes (productos)',
       items: [
-        { id: 'plans', label: 'Planes de internet', icon: TrendingUp },
+        { id: 'plans', label: 'Planes de internet', icon: TrendingUp, roles: ['admin'] },
       ],
     },
   ]
+  const menuSections = allMenuSections
+    .filter((s) => !s.roles || s.roles.includes(role))
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((i) => !i.roles || i.roles.includes(role)),
+    }))
+    .filter((s) => s.items.length > 0)
   const menuItems = menuSections.flatMap((s) => s.items)
 
   const tabLabels: Record<string, string> = {
@@ -287,6 +300,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     ips: 'Gestión de IPs',
     invoices: 'Facturación',
     tickets: 'Tickets de soporte',
+    staff: 'Personal del ISP',
+    'work-orders': 'Órdenes de trabajo',
   }
 
   const tabDescriptions: Record<string, string> = {
@@ -299,6 +314,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
     tickets: 'Incidencias reportadas por abonados',
+    staff: 'Administradores, administrativos y técnicos de tu organización',
+    'work-orders': 'Instalaciones, visitas y cierres con checklist',
   }
 
   const formFields: Record<string, any[]> = {
@@ -309,9 +326,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       { name: 'phone', label: 'Teléfono', type: 'text' },
       { name: 'clientType', label: 'Tipo', type: 'select', options: ['individual', 'business'] },
       { name: 'rut', label: 'RUT (ej: 12345678-9)', type: 'text' },
+      { name: 'lifecycleStatus', label: 'Estado CRM', type: 'select', options: ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'] },
       { name: 'city', label: 'Ciudad', type: 'text' },
       { name: 'region', label: 'Región', type: 'select', options: ['Arica y Parinacota','Tarapacá','Antofagasta','Atacama','Coquimbo','Valparaíso','Metropolitana','O\'Higgins','Maule','Ñuble','Biobío','La Araucanía','Los Ríos','Los Lagos','Aysén','Magallanes'] },
       { name: 'address', label: 'Dirección', type: 'text' },
+      { name: 'latitude', label: 'Latitud', type: 'text' },
+      { name: 'longitude', label: 'Longitud', type: 'text' },
     ],
     services: [
       { name: 'clientId', label: 'Abonado', type: 'client-select', required: true },
@@ -378,8 +398,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     individual: 'Individual', business: 'Empresa',
     fiber: 'Fibra', wisp: 'WISP', copper: 'Cobre', wireless: 'Inalámbrico',
     router: 'Router', switch: 'Switch', olt: 'OLT', ont: 'ONT', ap: 'AP', cpe: 'CPE', server: 'Servidor', other: 'Otro',
-    admin: 'Administrador', technician: 'Técnico', client: 'Cliente', superadmin: 'Super Admin',
-    none: 'Sin servicio', cut: 'Cortado',
+    admin: 'Administrador', office: 'Administrativo', technician: 'Técnico', client: 'Cliente', superadmin: 'Super Admin',
+    none: 'Sin servicio',
+    prospect: 'Prospecto', pending_install: 'Instalación pendiente',
     unknown: 'Sin PPPoE',
   }
 
@@ -540,16 +561,18 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab] && (
               <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && (
+            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
               <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={loadData} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium">🔄 Actualizar</button>
+            {activeTab !== 'staff' && activeTab !== 'work-orders' && (
+              <button onClick={loadData} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium">🔄 Actualizar</button>
+            )}
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
@@ -757,6 +780,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <DetectedDevices API={API} onOpenClient={(id) => openClientProfile(id, 'overview')} />
           )}
 
+          {activeTab === 'staff' && (
+            <StaffManager API={API} />
+          )}
+
+          {activeTab === 'work-orders' && (
+            <WorkOrdersManager API={API} />
+          )}
+
           {/* EQUIPOS con subtabs */}
           {activeTab === 'equipment' && (
             <div className="space-y-4">
@@ -836,7 +867,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           )}
 
           {/* TABLAS GENERALES */}
-          {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && (
+          {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
             <div className="space-y-4">
               {activeTab === 'plans' && (
                 <div className="bg-purple-50 border border-purple-100 rounded-xl px-5 py-3 text-sm text-purple-900">
