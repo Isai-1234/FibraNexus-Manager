@@ -56,9 +56,26 @@ portalRouter.get('/dashboard', async (req, res) => {
       .limit(20);
 
     const user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
-    const pendingAmount = clientInvoices
-      .filter((i) => i.status === 'pending' || i.status === 'overdue' || i.status === 'partial')
-      .reduce((sum, i) => sum + Number(i.total || 0), 0);
+
+    let pendingAmount = 0;
+    const documents = [];
+    for (const inv of clientInvoices) {
+      const paidSum = await sumPaymentsForInvoice(inv.id);
+      const balance = Math.max(0, Number(inv.total || 0) - paidSum);
+      const payable = ['pending', 'overdue', 'partial'].includes(inv.status) && balance > 0;
+      if (payable) pendingAmount += balance;
+      documents.push({
+        id: inv.id,
+        type: 'invoice',
+        title: inv.invoiceNumber || `Factura #${inv.id}`,
+        status: inv.status,
+        amount: Number(inv.total || 0),
+        balance,
+        dueDate: inv.dueDate,
+        issuedAt: inv.createdAt,
+        payable,
+      });
+    }
 
     const daysAsClient = Math.max(0, Math.floor(
       (Date.now() - new Date(client.createdAt).getTime()) / (1000 * 60 * 60 * 24),
@@ -76,17 +93,6 @@ portalRouter.get('/dashboard', async (req, res) => {
       accentColor: settings.brandAccentColor,
       portalTitle: settings.brandPortalTitle || 'Portal Cliente',
     };
-
-    const documents = clientInvoices.map((inv) => ({
-      id: inv.id,
-      type: 'invoice',
-      title: inv.invoiceNumber || `Factura #${inv.id}`,
-      status: inv.status,
-      amount: Number(inv.total || 0),
-      dueDate: inv.dueDate,
-      issuedAt: inv.createdAt,
-      payable: ['pending', 'overdue', 'partial'].includes(inv.status),
-    }));
 
     res.json({
       client: { ...client, user: { fullName: user?.fullName, email: user?.email, phone: user?.phone } },
