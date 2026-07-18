@@ -15,7 +15,8 @@
     "lab:detected": "node ../scripts/lab-detected-check.mjs",
     "test": "node --test src/lib/__tests__/*.test.js",
     "migrate": "node ../scripts/run-migrations.mjs",
-    "migrate:encrypt-secrets": "node ../scripts/migrate-encrypt-secrets.mjs"
+    "migrate:encrypt-secrets": "node ../scripts/migrate-encrypt-secrets.mjs",
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
