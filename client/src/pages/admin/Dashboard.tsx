@@ -33,7 +33,28 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [clients, setClients] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
   const [orgAlerts, setOrgAlerts] = useState<any[]>([])
-  const [alertCounts, setAlertCounts] = useState<{ total?: number; critical?: number; warning?: number }>({})
+  const [alertPanel, setAlertPanel] = useState<null | 'desconectados' | 'morosos' | 'cobros'>(null)
+
+  /** Agrupa alertas en la tarjeta del dashboard que corresponde. */
+  const ALERT_BUCKETS: Record<string, 'desconectados' | 'morosos' | 'cobros'> = {
+    cpe_offline: 'desconectados',
+    router_offline: 'desconectados',
+    agent_down: 'desconectados',
+    mora: 'morosos',
+    payment_fail: 'cobros',
+  }
+
+  const ALERT_WHY: Record<string, string> = {
+    cpe_offline: 'El CPE/antena no responde en el último chequeo. Revisa alimentación, enlace radio o si el abonado apagó el equipo.',
+    router_offline: 'El router figura offline en inventario. Puede ser corte de energía, enlace o fallo de monitoreo.',
+    agent_down: 'El agente EdgeOS/MikroTik no envió heartbeat. El nodo puede estar caído, sin internet de gestión o con el script detenido.',
+    mora: 'Hay factura(s) vencida(s) sin saldar. El abonado está en mora comercial.',
+    payment_fail: 'Un intento de cobro/webhook falló o fue rechazado. Revisa la pasarela y el estado de la factura.',
+  }
+
+  function alertsForBucket(bucket: 'desconectados' | 'morosos' | 'cobros') {
+    return orgAlerts.filter(a => ALERT_BUCKETS[a.kind] === bucket)
+  }
 
   function api() {
     return axios.create({
@@ -56,15 +77,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       if (activeTab === 'dashboard') {
         const [dashRes, alertsRes] = await Promise.all([
           api().get('/dashboard/admin'),
-          api().get('/alerts?status=open').catch(() => ({ data: { items: [], counts: {} } })),
+          api().get('/alerts?status=all').catch(() => ({ data: { items: [] } })),
         ])
         setStats(dashRes.data.stats || {})
         setClientOverview(dashRes.data.clientOverview || [])
         setClientsWithProblems(dashRes.data.clientsWithProblems || [])
         setOverdueInvoices(dashRes.data.overdueInvoices || [])
         setRecentTickets(dashRes.data.recentTickets || [])
-        setOrgAlerts(Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : [])
-        setAlertCounts(alertsRes.data?.counts || {})
+        const raw = Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : []
+        setOrgAlerts(raw.filter((a: any) => a.status === 'open' || a.status === 'acked'))
       } else if (activeTab === 'clients') {
         const res = await api().get('/clients/overview')
         setData(Array.isArray(res.data) ? res.data : [])
@@ -99,7 +120,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     try {
       await api().post(`/alerts/${id}/resolve`)
       setOrgAlerts(prev => prev.filter(a => a.id !== id))
-      setAlertCounts(c => ({ ...c, total: Math.max(0, (c.total || 1) - 1) }))
     } catch (e: any) {
       alert(e.response?.data?.error || 'No se pudo resolver la alerta')
     }
@@ -108,11 +128,28 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   async function refreshAlerts() {
     try {
       await api().post('/alerts/refresh')
-      const alertsRes = await api().get('/alerts?status=open')
-      setOrgAlerts(Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : [])
-      setAlertCounts(alertsRes.data?.counts || {})
+      const alertsRes = await api().get('/alerts?status=all')
+      const raw = Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : []
+      setOrgAlerts(raw.filter((a: any) => a.status === 'open' || a.status === 'acked'))
     } catch (e: any) {
       alert(e.response?.data?.error || 'No se pudieron refrescar alertas')
+    }
+  }
+
+  function openAlertBucket(bucket: 'desconectados' | 'morosos' | 'cobros') {
+    setAlertPanel(prev => prev === bucket ? null : bucket)
+  }
+
+  function goFromAlert(a: any) {
+    if (a.entityType === 'invoice' || a.kind === 'mora' || a.kind === 'payment_fail') {
+      const clientId = a.metadata?.clientId
+      if (clientId) openClientProfile(Number(clientId))
+      else setActiveTab('invoices')
+      return
+    }
+    if (a.kind === 'cpe_offline' || a.kind === 'router_offline' || a.kind === 'agent_down') {
+      openRouters()
+      return
     }
   }
 
@@ -623,88 +660,162 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              {orgAlerts.length > 0 && (
-                <div className={`rounded-xl border shadow-sm overflow-hidden ${
-                  (alertCounts.critical || 0) > 0 ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
-                }`}>
-                  <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-black/5">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className={`h-5 w-5 ${(alertCounts.critical || 0) > 0 ? 'text-red-600' : 'text-amber-600'}`} />
-                      <div>
-                        <p className="font-semibold text-gray-900 text-sm">
-                          Alertas operativas ({orgAlerts.length} abiertas
-                          {(alertCounts.critical || 0) > 0 ? ` · ${alertCounts.critical} críticas` : ''})
-                        </p>
-                        <p className="text-xs text-gray-600">Equipos, mora, pagos o routers que requieren atención</p>
-                      </div>
-                    </div>
-                    {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                      <button type="button" onClick={refreshAlerts}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-700">
-                        Actualizar ahora
-                      </button>
-                    )}
-                  </div>
-                  <ul className="divide-y divide-black/5 max-h-64 overflow-y-auto bg-white/60">
-                    {orgAlerts.slice(0, 12).map((a: any) => (
-                      <li key={a.id} className="px-5 py-3 flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                              a.severity === 'critical' ? 'bg-red-100 text-red-700'
-                                : a.severity === 'info' ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-amber-100 text-amber-800'
-                            }`}>{a.severity}</span>
-                            {a.status === 'acked' && (
-                              <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">vista</span>
-                            )}
-                            <span className="font-medium text-sm text-gray-900">{a.title}</span>
-                          </div>
-                          {a.message && <p className="text-xs text-gray-600 mt-0.5">{a.message}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {a.status === 'open' && (
-                            <button type="button" onClick={() => ackAlert(a.id)}
-                              className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
-                              Visto
-                            </button>
-                          )}
-                          {(user?.role === 'admin' || user?.role === 'office' || user?.role === 'superadmin') && (
-                            <button type="button" onClick={() => resolveAlert(a.id)}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
-                              Resolver
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[
-                  { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' },
-                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' },
-                  { label: 'Desconectados', value: stats?.offlineClients || 0, icon: WifiOff, color: 'text-orange-600', bg: 'bg-orange-50', tab: 'clients' },
-                  { label: 'Morosos', value: stats?.delinquentClients || 0, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
-                  { label: 'Servicios activos', value: stats?.activeServices || 0, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', tab: 'services' },
-                  { label: 'Suspendidos', value: stats?.suspendedServices || 0, icon: WifiOff, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'services' },
-                  { label: 'Por cobrar', value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'), icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', tab: 'invoices' },
-                  { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' },
-                  { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' },
+                  { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' as const },
+                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' as const },
+                  {
+                    label: 'Desconectados',
+                    value: Math.max(stats?.offlineClients || 0, alertsForBucket('desconectados').length),
+                    icon: WifiOff,
+                    color: 'text-orange-600',
+                    bg: 'bg-orange-50',
+                    alertBucket: 'desconectados' as const,
+                    tab: 'clients' as const,
+                    hint: 'CPE, routers y agentes sin respuesta',
+                  },
+                  {
+                    label: 'Morosos',
+                    value: Math.max(stats?.delinquentClients || 0, alertsForBucket('morosos').length),
+                    icon: AlertTriangle,
+                    color: 'text-red-600',
+                    bg: 'bg-red-50',
+                    alertBucket: 'morosos' as const,
+                    tab: 'invoices' as const,
+                    hint: 'Facturas vencidas / mora',
+                  },
+                  { label: 'Servicios activos', value: stats?.activeServices || 0, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', tab: 'services' as const },
+                  { label: 'Suspendidos', value: stats?.suspendedServices || 0, icon: WifiOff, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'services' as const },
+                  {
+                    label: 'Por cobrar',
+                    value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'),
+                    icon: DollarSign,
+                    color: 'text-amber-600',
+                    bg: 'bg-amber-50',
+                    alertBucket: alertsForBucket('cobros').length ? ('cobros' as const) : undefined,
+                    tab: 'invoices' as const,
+                    hint: 'Fallos de cobro y saldos pendientes',
+                  },
+                  { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' as const },
+                  { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' as const },
                   { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', action: () => openRouters() },
-                ].map(s => (
-                  <div key={s.label} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-gray-100"
-                    onClick={() => s.action ? s.action() : setActiveTab(s.tab)}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
-                      <p className="text-xs text-gray-500 font-medium leading-tight">{s.label}</p>
+                ].map(s => {
+                  const bucketAlerts = s.alertBucket ? alertsForBucket(s.alertBucket) : []
+                  const hasAlerts = bucketAlerts.length > 0
+                  const isOpen = s.alertBucket && alertPanel === s.alertBucket
+                  return (
+                    <div
+                      key={s.label}
+                      className={`bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border ${
+                        isOpen ? 'border-orange-400 ring-2 ring-orange-100' : hasAlerts ? 'border-orange-200' : 'border-gray-100'
+                      }`}
+                      onClick={() => {
+                        if (s.alertBucket && hasAlerts) openAlertBucket(s.alertBucket)
+                        else if (s.action) s.action()
+                        else if (s.tab) setActiveTab(s.tab)
+                      }}
+                      title={hasAlerts ? s.hint : undefined}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
+                        <p className="text-xs text-gray-500 font-medium leading-tight flex-1">{s.label}</p>
+                        {hasAlerts && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-800">
+                            {bucketAlerts.length}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xl font-bold text-gray-900">{s.value}</p>
+                      {hasAlerts && (
+                        <p className="text-[10px] text-orange-700 mt-1 font-medium">
+                          {isOpen ? 'Cerrar detalle ↑' : 'Ver alertas →'}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xl font-bold text-gray-900">{s.value}</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
+
+              {alertPanel && (
+                <div className="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-orange-50 border-b border-orange-100 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-semibold text-orange-950 text-sm flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                        {alertPanel === 'desconectados' && 'Desconectados — qué está pasando'}
+                        {alertPanel === 'morosos' && 'Morosos — qué está pasando'}
+                        {alertPanel === 'cobros' && 'Cobros — qué está pasando'}
+                      </h2>
+                      <p className="text-xs text-orange-800/80 mt-0.5">
+                        Cada alerta indica el problema detectado y por qué aparece.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                        <button type="button" onClick={refreshAlerts}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-orange-200 hover:bg-orange-50 text-orange-900">
+                          Actualizar
+                        </button>
+                      )}
+                      <button type="button" onClick={() => setAlertPanel(null)}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-700">
+                        Cerrar
+                      </button>
+                    </div>
+                  </div>
+                  {alertsForBucket(alertPanel).length === 0 ? (
+                    <p className="px-5 py-8 text-sm text-gray-500 text-center">Sin alertas abiertas en esta categoría.</p>
+                  ) : (
+                    <ul className="divide-y max-h-96 overflow-y-auto">
+                      {alertsForBucket(alertPanel).map((a: any) => (
+                        <li key={a.id} className="px-5 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
+                                  a.severity === 'critical' ? 'bg-red-100 text-red-700'
+                                    : a.severity === 'info' ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-amber-100 text-amber-800'
+                                }`}>{a.severity}</span>
+                                {a.status === 'acked' && (
+                                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">vista</span>
+                                )}
+                                <span className="font-medium text-sm text-gray-900">{a.title}</span>
+                              </div>
+                              <p className="text-xs text-gray-700">
+                                <span className="font-semibold text-gray-500">Qué:</span>{' '}
+                                {a.message || 'Sin detalle adicional.'}
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                <span className="font-semibold text-gray-500">Por qué:</span>{' '}
+                                {ALERT_WHY[a.kind] || 'Condición operativa detectada por el monitoreo.'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                              <button type="button" onClick={() => goFromAlert(a)}
+                                className="text-xs px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800">
+                                Ir
+                              </button>
+                              {a.status === 'open' && (
+                                <button type="button" onClick={() => ackAlert(a.id)}
+                                  className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
+                                  Visto
+                                </button>
+                              )}
+                              {(user?.role === 'admin' || user?.role === 'office' || user?.role === 'superadmin') && (
+                                <button type="button" onClick={() => resolveAlert(a.id)}
+                                  className="text-xs px-2.5 py-1 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
+                                  Resolver
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {clientsWithProblems.length > 0 && (
                 <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden">
