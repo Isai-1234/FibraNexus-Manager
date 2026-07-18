@@ -233,27 +233,45 @@ authRouter.post(
 
       const { sendMail, appPublicBaseUrl } = await import('../lib/mailer.js');
       const resetUrl = `${appPublicBaseUrl()}/reset-password?token=${rawToken}`;
+      const mailConfigured = Boolean(process.env.RESEND_API_KEY);
+      let mailProvider = 'none';
       try {
-        await sendMail({
+        const sent = await sendMail({
           to: email,
           subject: 'Recuperar contraseña — FibraNexus',
           text: `Hola${user.fullName ? ` ${user.fullName}` : ''},\n\nPara restablecer tu contraseña abre este enlace (válido 1 hora):\n${resetUrl}\n\nSi no pediste esto, ignora el correo.`,
           html: `<p>Hola${user.fullName ? ` ${user.fullName}` : ''},</p><p>Para restablecer tu contraseña (válido 1 hora):</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Si no pediste esto, ignora el correo.</p>`,
         });
+        mailProvider = sent?.provider || (mailConfigured ? 'resend' : 'console');
       } catch (mailErr) {
         console.error('Password reset mail error:', mailErr.message);
         // No filtramos el email; el token queda creado. En lab el link también va a logs.
         console.log('[password-reset] link (fallback log):', resetUrl);
+        mailProvider = 'error';
       }
 
       // Sin Resend: el enlace queda en logs de Render. En desarrollo también en la respuesta.
       if (process.env.NODE_ENV !== 'production') {
-        return res.json({ ...okMsg, devToken: rawToken, resetUrl, expiresAt });
+        return res.json({
+          ...okMsg,
+          emailDelivery: mailProvider,
+          mailConfigured,
+          devToken: rawToken,
+          resetUrl,
+          expiresAt,
+        });
       }
-      if (!process.env.RESEND_API_KEY) {
+      if (!mailConfigured) {
         console.log('[password-reset] RESEND_API_KEY no configurada; enlace en logs:', resetUrl);
       }
-      res.json(okMsg);
+      res.json({
+        ...okMsg,
+        emailDelivery: mailConfigured ? 'resend' : 'unavailable',
+        mailConfigured,
+        hint: mailConfigured
+          ? undefined
+          : 'El servidor aún no tiene correo configurado (RESEND_API_KEY). El enlace solo aparece en los logs de Render.',
+      });
     } catch (error) {
       console.error('Password reset request error:', error.message || error);
       const hint = /password_reset_tokens|does not exist|relation/i.test(String(error.message || error))
