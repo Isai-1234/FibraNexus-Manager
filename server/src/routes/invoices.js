@@ -214,3 +214,45 @@ invoicesRouter.post('/:id/adjust', requireRole('admin', 'office'), async (req, r
     res.status(500).json({ error: error.message });
   }
 });
+
+invoicesRouter.get('/:id/pdf', requireRole('admin', 'office', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const invoiceId = parseInt(req.params.id, 10);
+    const [inv] = await db.select().from(invoices)
+      .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
+      .limit(1);
+    if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    const [row] = await db.select({
+      fullName: users.fullName,
+      email: users.email,
+      rut: clients.rut,
+      address: clients.address,
+    }).from(clients)
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(and(eq(clients.id, inv.clientId), orgFilter(clients, orgId)))
+      .limit(1);
+
+    const { sumPaymentsForInvoice } = await import('../lib/paymentService.js');
+    const { buildInvoicePdfBuffer } = await import('../lib/invoicePdf.js');
+    const { organizations } = await import('../db/schema.js');
+    const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    const paidSum = await sumPaymentsForInvoice(invoiceId);
+    const balance = Math.max(0, Number(inv.total) - paidSum);
+    const buf = await buildInvoicePdfBuffer({
+      invoice: inv,
+      client: row || {},
+      org,
+      paidSum,
+      balance,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${inv.invoiceNumber || `factura-${invoiceId}`}.pdf"`);
+    res.send(buf);
+  } catch (error) {
+    console.error('Invoice PDF error:', error.message);
+    res.status(500).json({ error: error.message || 'Error al generar PDF' });
+  }
+});

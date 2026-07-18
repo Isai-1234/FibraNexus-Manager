@@ -21,6 +21,7 @@ type BillingSettingsData = {
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
   const [settings, setSettings] = useState<BillingSettingsData | null>(null)
   const [orgName, setOrgName] = useState('')
+  const [paymentGateway, setPaymentGateway] = useState<{ provider?: string; mode?: string; configured?: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
@@ -38,6 +39,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       .then((r) => {
         setSettings(r.data.settings)
         setOrgName(r.data.organization || '')
+        setPaymentGateway(r.data.paymentGateway || null)
       })
       .catch((err) => setMessage(err.response?.data?.error || err.message))
       .finally(() => setLoading(false))
@@ -119,6 +121,31 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
 
         {settings && (
           <div className="space-y-6">
+            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-3">
+              <h2 className="font-semibold text-gray-900">Pasarela de cobro online</h2>
+              <p className="text-sm text-gray-500">
+                Estado del adaptador usado por checkout del portal y panel. No se muestran secretos.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  paymentGateway?.mode === 'live'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {paymentGateway?.mode === 'live' ? 'LIVE' : 'STUB'}
+                </span>
+                <span className="text-sm text-gray-700">
+                  Proveedor: <strong>{paymentGateway?.provider || 'stub'}</strong>
+                </span>
+              </div>
+              <p className="text-xs text-gray-400">
+                Para modo live configura en el servidor <code className="bg-gray-100 px-1 rounded">FLOW_API_KEY</code> +{' '}
+                <code className="bg-gray-100 px-1 rounded">FLOW_SECRET_KEY</code> o{' '}
+                <code className="bg-gray-100 px-1 rounded">WEBPAY_COMMERCE_CODE</code> +{' '}
+                <code className="bg-gray-100 px-1 rounded">WEBPAY_API_KEY</code>.
+              </p>
+            </section>
+
             <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
               <h2 className="font-semibold text-gray-900">Facturación automática</h2>
               <p className="text-sm text-gray-500">Genera facturas diariamente a la hora indicada para servicios con cobro pendiente.</p>

@@ -258,3 +258,40 @@ portalRouter.post('/tickets/:id/messages', async (req, res) => {
     res.status(500).json({ error: 'Error al enviar mensaje' });
   }
 });
+
+portalRouter.get('/invoices/:id/pdf', async (req, res) => {
+  try {
+    const client = await getClientAccount(req.user.id);
+    if (!client) return res.status(404).json({ error: 'Cuenta no encontrada' });
+    const invoiceId = parseInt(req.params.id, 10);
+    const [inv] = await db.select().from(invoices)
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.clientId, client.id)))
+      .limit(1);
+    if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+
+    const user = await db.query.users.findFirst({ where: eq(users.id, req.user.id) });
+    const paidSum = await sumPaymentsForInvoice(invoiceId);
+    const balance = Math.max(0, Number(inv.total) - paidSum);
+    const [org] = await db.select({ name: organizations.name }).from(organizations)
+      .where(eq(organizations.id, client.organizationId)).limit(1);
+    const { buildInvoicePdfBuffer } = await import('../lib/invoicePdf.js');
+    const buf = await buildInvoicePdfBuffer({
+      invoice: inv,
+      client: {
+        fullName: user?.fullName,
+        email: user?.email,
+        rut: client.rut,
+        address: client.address,
+      },
+      org,
+      paidSum,
+      balance,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${inv.invoiceNumber || `factura-${invoiceId}`}.pdf"`);
+    res.send(buf);
+  } catch (error) {
+    console.error('Portal PDF error:', error.message);
+    res.status(500).json({ error: error.message || 'Error al generar PDF' });
+  }
+});

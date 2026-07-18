@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 import { requireOrganizationId } from '../lib/tenant.js';
 import { mergeOrgSettings, DEFAULT_ORG_SETTINGS } from '../lib/orgSettings.js';
 import { runBillingJobsForOrg } from '../lib/billingScheduler.js';
+import { getPaymentGatewayStatus } from '../lib/paymentGateway.js';
 
 export const settingsRouter = Router();
 
@@ -16,7 +17,12 @@ settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
     const [org] = await db.select({ id: organizations.id, name: organizations.name, settings: organizations.settings })
       .from(organizations).where(eq(organizations.id, orgId)).limit(1);
     if (!org) return res.status(404).json({ error: 'Organización no encontrada' });
-    res.json({ organization: org.name, settings: mergeOrgSettings(org.settings), defaults: DEFAULT_ORG_SETTINGS });
+    res.json({
+      organization: org.name,
+      settings: mergeOrgSettings(org.settings),
+      defaults: DEFAULT_ORG_SETTINGS,
+      paymentGateway: getPaymentGatewayStatus(),
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

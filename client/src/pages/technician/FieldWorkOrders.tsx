@@ -43,6 +43,7 @@ export default function FieldWorkOrders({ API, user }: { API: string; user: any 
   const [photoUrl, setPhotoUrl] = useState('')
   const [photoNote, setPhotoNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   function api() {
     return axios.create({
@@ -113,6 +114,27 @@ export default function FieldWorkOrders({ API, user }: { API: string; user: any 
       alert(err.response?.data?.error || err.message)
     }
     setSaving(false)
+  }
+
+  async function uploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!detail || !e.target.files?.[0]) return
+    const file = e.target.files[0]
+    const form = new FormData()
+    form.append('file', file)
+    if (photoNote.trim()) form.append('note', photoNote.trim())
+    form.append('name', file.name)
+    setUploading(true)
+    try {
+      const res = await axios.post(`${API}/work-orders/${detail.id}/attachments`, form, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      })
+      setDetail(res.data)
+      setPhotoNote('')
+      e.target.value = ''
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message)
+    }
+    setUploading(false)
   }
 
   async function claim() {
@@ -200,7 +222,7 @@ export default function FieldWorkOrders({ API, user }: { API: string; user: any 
           <h3 className="font-semibold text-sm flex items-center gap-2">
             <Camera className="h-4 w-4 text-blue-600" /> Fotos / evidencias
           </h3>
-          <p className="text-xs text-gray-500">Pega la URL de una foto (Drive, Imgur, etc.). Upload directo post-MVP.</p>
+          <p className="text-xs text-gray-500">Sube una foto desde el teléfono o pega una URL.</p>
           {(detail.attachments || []).length > 0 && (
             <ul className="space-y-2">
               {(detail.attachments || []).map((a, i) => (
@@ -211,16 +233,22 @@ export default function FieldWorkOrders({ API, user }: { API: string; user: any 
               ))}
             </ul>
           )}
-          <form onSubmit={addPhoto} className="space-y-2">
-            <input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} required
+          <input value={photoNote} onChange={(e) => setPhotoNote(e.target.value)}
+            placeholder="Nota (opcional)"
+            className="w-full border rounded-xl px-3 py-2.5 text-sm" />
+          <label className={`block w-full text-center py-3 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 text-blue-800 text-sm font-medium cursor-pointer ${uploading ? 'opacity-50' : ''}`}>
+            {uploading ? 'Subiendo…' : 'Tomar / elegir foto'}
+            <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden"
+              disabled={uploading || saving} onChange={uploadPhoto} />
+          </label>
+          <form onSubmit={addPhoto} className="space-y-2 pt-1 border-t">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400">O URL manual</p>
+            <input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)}
               placeholder="https://… URL de la foto"
               className="w-full border rounded-xl px-3 py-2.5 text-sm" />
-            <input value={photoNote} onChange={(e) => setPhotoNote(e.target.value)}
-              placeholder="Nota (opcional)"
-              className="w-full border rounded-xl px-3 py-2.5 text-sm" />
-            <button type="submit" disabled={saving}
-              className="w-full py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-sm font-medium disabled:opacity-50">
-              Agregar evidencia
+            <button type="submit" disabled={saving || !photoUrl.trim()}
+              className="w-full py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 text-sm font-medium disabled:opacity-50">
+              Agregar por URL
             </button>
           </form>
         </div>

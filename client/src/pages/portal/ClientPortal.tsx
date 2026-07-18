@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock, Send, MessageSquare, ChevronLeft, FileText, CreditCard } from 'lucide-react'
+import { Wifi, DollarSign, Ticket, LogOut, AlertTriangle, Plus, X, Clock, Send, MessageSquare, ChevronLeft, FileText, CreditCard, Download } from 'lucide-react'
 import axios from 'axios'
 
 const statusColor: Record<string, string> = {
@@ -66,6 +66,21 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
       alert(err.response?.data?.error || 'Error al iniciar pago')
     }
     setPayingId(null)
+  }
+
+  async function downloadPdf(invoiceId: number, invoiceNumber?: string) {
+    try {
+      const res = await api().get(`/portal/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${invoiceNumber || `factura-${invoiceId}`}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al descargar PDF')
+    }
   }
 
   async function loadTicketDetail(ticketId: number) {
@@ -224,6 +239,11 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
                       <p className="font-bold">${Number(inv.total).toLocaleString('es-CL')}</p>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[inv.status]}`}>{statusLabel[inv.status] || inv.status}</span>
                     </div>
+                    <button type="button" onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
+                      className="px-2.5 py-2 rounded-lg text-xs font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 flex items-center gap-1"
+                      title="Descargar PDF">
+                      <Download className="h-3.5 w-3.5" /> PDF
+                    </button>
                     {payable && (
                       <button type="button" disabled={payingId === inv.id} onClick={() => payInvoice(inv.id)}
                         className="px-3 py-2 rounded-lg text-xs font-medium text-white flex items-center gap-1 disabled:opacity-60"
@@ -262,7 +282,11 @@ export default function ClientPortal({ user, API }: { user: any; API: string }) 
                   <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[doc.status] || 'bg-gray-100'}`}>
                     {statusLabel[doc.status] || doc.status}
                   </span>
-                  <span className="text-sm font-semibold">${Number(doc.amount || 0).toLocaleString('es-CL')}</span>
+                  <span className="text-sm font-semibold">${Number(doc.balance ?? doc.amount ?? 0).toLocaleString('es-CL')}</span>
+                  <button type="button" onClick={() => downloadPdf(doc.id, doc.title)}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 flex items-center gap-1">
+                    <Download className="h-3 w-3" /> PDF
+                  </button>
                   {doc.payable && (
                     <button type="button" onClick={() => payInvoice(doc.id)}
                       className="text-xs px-2.5 py-1 rounded-lg text-white" style={{ background: primary }}>

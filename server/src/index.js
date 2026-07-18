@@ -139,6 +139,10 @@ app.get('/api/health', async (req, res) => {
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const { ensureUploadRoot } = await import('./lib/uploads.js');
+const uploadRoot = ensureUploadRoot();
+app.use('/uploads', express.static(uploadRoot));
+
 const staticCandidates = [
   path.join(__dirname, '../public'),
   path.join(__dirname, '../../client/dist'),
@@ -149,7 +153,7 @@ if (clientDist) {
   console.log('Serving frontend from', clientDist);
   app.use(express.static(clientDist));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 } else {

@@ -1295,6 +1295,27 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                     : <button onClick={() => handleAction('reactivate', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">Reactivar</button>}
                                 </>
                               )}
+                              {activeTab === 'invoices' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await api().get(`/invoices/${item.id}/pdf`, { responseType: 'blob' })
+                                      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+                                      const a = document.createElement('a')
+                                      a.href = url
+                                      a.download = `${item.invoiceNumber || `factura-${item.id}`}.pdf`
+                                      a.click()
+                                      URL.revokeObjectURL(url)
+                                    } catch (e: any) {
+                                      alert(e.response?.data?.error || 'Error al descargar PDF')
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 font-medium"
+                                >
+                                  PDF
+                                </button>
+                              )}
                               {activeTab === 'invoices' && item.status === 'pending' && (
                                 <button onClick={() => handleAction('pay', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">💰 Pagar</button>
                               )}

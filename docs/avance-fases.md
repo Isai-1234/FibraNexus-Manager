@@ -183,3 +183,22 @@ Log corto al cerrar cada fase. Plan maestro: [plan-implementacion.md](plan-imple
 
 ### Siguiente
 MVP de fases 0–5 cerrado. Iterar según feedback de Internetsur.
+
+---
+
+## Post-MVP — Operación diaria
+
+**Estado:** Hecho  
+**Fecha:** 2026-07-18
+
+### Funciones
+- Gateway Flow/Webpay live opcional + indicador stub/live.
+- PDF factura interna (portal + admin).
+- Upload fotos OT + static `/uploads`.
+
+### Docs
+- `fase-6-ops-avance.md`
+
+### Pruebas
+- Suite unitaria → **76 pass**
+- Build client → **OK**

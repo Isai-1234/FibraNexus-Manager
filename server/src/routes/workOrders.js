@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { and, desc, eq } from 'drizzle-orm';
+import multer from 'multer';
 import { db } from '../db/index.js';
 import { workOrders, clients, users } from '../db/schema.js';
 import { requireRole } from '../middleware/auth.js';
@@ -7,6 +8,11 @@ import { orgFilter, requireOrganizationId, getClientInOrg } from '../lib/tenant.
 import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 import { z } from 'zod';
 import { parseBody } from '../lib/validators.js';
+import {
+  workOrderUploadDir,
+  buildStoredFilename,
+  publicUploadUrl,
+} from '../lib/uploads.js';
 
 export const workOrdersRouter = Router();
 
@@ -41,6 +47,28 @@ const defaultChecklist = (type) => {
     { id: '3', label: 'Resolver o escalar', done: false },
   ];
 };
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      try {
+        const orgId = req.organizationId || req.user?.organizationId;
+        const woId = parseInt(req.params.id, 10);
+        cb(null, workOrderUploadDir(orgId, woId));
+      } catch (err) {
+        cb(err);
+      }
+    },
+    filename(req, file, cb) {
+      cb(null, buildStoredFilename(file.originalname));
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter(req, file, cb) {
+    const ok = /^image\/(jpeg|png|gif|webp|heic)$/i.test(file.mimetype) || file.mimetype === 'application/pdf';
+    cb(ok ? null : new Error('Solo imágenes o PDF (máx 8 MB)'), ok);
+  },
+});
 
 workOrdersRouter.get('/', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
@@ -204,6 +232,67 @@ workOrdersRouter.patch('/:id', requireRole('admin', 'office', 'technician'), asy
     res.status(500).json({ error: error.message });
   }
 });
+
+workOrdersRouter.post(
+  '/:id/attachments',
+  requireRole('admin', 'office', 'technician'),
+  (req, res, next) => {
+    req.organizationId = requireOrganizationId(req, res);
+    if (!req.organizationId) return;
+    next();
+  },
+  (req, res, next) => {
+    upload.single('file')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Error al subir archivo' });
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const orgId = req.organizationId;
+      const id = parseInt(req.params.id, 10);
+      const [existing] = await db.select().from(workOrders)
+        .where(and(eq(workOrders.id, id), orgFilter(workOrders, orgId)))
+        .limit(1);
+      if (!existing) return res.status(404).json({ error: 'Orden no encontrada' });
+      if (!req.file) return res.status(400).json({ error: 'Archivo requerido (campo file)' });
+
+      const url = publicUploadUrl(orgId, id, req.file.filename);
+      const note = req.body?.note ? String(req.body.note).slice(0, 200) : undefined;
+      const attachment = {
+        name: String(req.body?.name || req.file.originalname || 'evidencia').slice(0, 120),
+        url,
+        note,
+        mime: req.file.mimetype,
+        size: req.file.size,
+        uploadedAt: new Date().toISOString(),
+      };
+      const attachments = [
+        ...(Array.isArray(existing.attachments) ? existing.attachments : []),
+        attachment,
+      ].slice(0, 20);
+
+      const [updated] = await db.update(workOrders).set({
+        attachments,
+        updatedAt: new Date(),
+      }).where(eq(workOrders.id, id)).returning();
+
+      await writeAuditLog({
+        organizationId: orgId,
+        userId: req.user.id,
+        action: 'work_order.attachment_upload',
+        entity: 'work_order',
+        entityId: id,
+        details: { url, name: attachment.name },
+        ipAddress: clientIp(req),
+      });
+
+      res.status(201).json(updated);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 workOrdersRouter.post('/:id/complete', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
