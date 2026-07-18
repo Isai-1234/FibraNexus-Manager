@@ -15,12 +15,23 @@ export const DEFAULT_ORG_SETTINGS = {
   brandPrimaryColor: '#2563eb',
   brandAccentColor: '#0ea5e9',
   brandPortalTitle: '',
+  // Pasarela por ISP (Flow / stub)
+  paymentProvider: 'stub',
+  flowApiKey: '',
+  flowSecretKey: '',
+  flowApiUrl: '',
+  webpayCommerceCode: '',
+  webpayApiKey: '',
+  webpayEnv: 'integration',
 };
 
 export function mergeOrgSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
   const primary = sanitizeHexColor(s.brandPrimaryColor, DEFAULT_ORG_SETTINGS.brandPrimaryColor);
   const accent = sanitizeHexColor(s.brandAccentColor, DEFAULT_ORG_SETTINGS.brandAccentColor);
+  const paymentProvider = ['stub', 'flow', 'webpay'].includes(String(s.paymentProvider || '').toLowerCase())
+    ? String(s.paymentProvider).toLowerCase()
+    : 'stub';
   return {
     ...DEFAULT_ORG_SETTINGS,
     ...s,
@@ -30,6 +41,13 @@ export function mergeOrgSettings(raw) {
     brandPrimaryColor: primary,
     brandAccentColor: accent,
     brandPortalTitle: String(s.brandPortalTitle || '').trim().slice(0, 80),
+    paymentProvider,
+    flowApiKey: s.flowApiKey != null ? String(s.flowApiKey) : '',
+    flowSecretKey: s.flowSecretKey != null ? String(s.flowSecretKey) : '',
+    flowApiUrl: String(s.flowApiUrl || '').trim().slice(0, 200),
+    webpayCommerceCode: s.webpayCommerceCode != null ? String(s.webpayCommerceCode) : '',
+    webpayApiKey: s.webpayApiKey != null ? String(s.webpayApiKey) : '',
+    webpayEnv: s.webpayEnv === 'production' ? 'production' : 'integration',
   };
 }
 

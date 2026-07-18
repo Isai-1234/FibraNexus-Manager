@@ -16,6 +16,10 @@ type BillingSettingsData = {
   brandPrimaryColor: string
   brandAccentColor: string
   brandPortalTitle: string
+  paymentProvider?: string
+  flowApiUrl?: string
+  hasFlowApiKey?: boolean
+  hasFlowSecretKey?: boolean
 }
 
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
@@ -26,6 +30,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [message, setMessage] = useState('')
+  const [flowApiKeyInput, setFlowApiKeyInput] = useState('')
+  const [flowSecretInput, setFlowSecretInput] = useState('')
 
   function api() {
     return axios.create({
@@ -50,9 +56,37 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
     setSaving(true)
     setMessage('')
     try {
-      const res = await api().patch('/settings/billing', settings)
+      const payload: any = { ...settings }
+      delete payload.hasFlowApiKey
+      delete payload.hasFlowSecretKey
+      delete payload.hasWebpayCredentials
+      if (flowApiKeyInput.trim()) payload.flowApiKey = flowApiKeyInput.trim()
+      if (flowSecretInput.trim()) payload.flowSecretKey = flowSecretInput.trim()
+      const res = await api().patch('/settings/billing', payload)
       setSettings(res.data.settings)
+      setPaymentGateway(res.data.paymentGateway || null)
+      setFlowApiKeyInput('')
+      setFlowSecretInput('')
       setMessage('Ajustes guardados correctamente')
+    } catch (err: any) {
+      setMessage('Error: ' + (err.response?.data?.error || err.message))
+    }
+    setSaving(false)
+  }
+
+  async function clearFlow() {
+    if (!confirm('¿Quitar las credenciales de Flow y volver al modo stub?')) return
+    setSaving(true)
+    try {
+      const res = await api().patch('/settings/billing', {
+        clearFlowCredentials: true,
+        paymentProvider: 'stub',
+      })
+      setSettings(res.data.settings)
+      setPaymentGateway(res.data.paymentGateway || null)
+      setFlowApiKeyInput('')
+      setFlowSecretInput('')
+      setMessage('Credenciales Flow eliminadas — modo stub')
     } catch (err: any) {
       setMessage('Error: ' + (err.response?.data?.error || err.message))
     }
@@ -121,10 +155,10 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
 
         {settings && (
           <div className="space-y-6">
-            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-3">
-              <h2 className="font-semibold text-gray-900">Pasarela de cobro online</h2>
+            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-gray-900">Pasarela de cobro online (tu cuenta Flow)</h2>
               <p className="text-sm text-gray-500">
-                Estado del adaptador usado por checkout del portal y panel. No se muestran secretos.
+                Cada ISP configura su propia API de Flow. Las claves se guardan cifradas y no se vuelven a mostrar.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -135,15 +169,67 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   {paymentGateway?.mode === 'live' ? 'LIVE' : 'STUB'}
                 </span>
                 <span className="text-sm text-gray-700">
-                  Proveedor: <strong>{paymentGateway?.provider || 'stub'}</strong>
+                  Proveedor activo: <strong>{paymentGateway?.provider || 'stub'}</strong>
                 </span>
               </div>
-              <p className="text-xs text-gray-400">
-                Para modo live configura en el servidor <code className="bg-gray-100 px-1 rounded">FLOW_API_KEY</code> +{' '}
-                <code className="bg-gray-100 px-1 rounded">FLOW_SECRET_KEY</code> o{' '}
-                <code className="bg-gray-100 px-1 rounded">WEBPAY_COMMERCE_CODE</code> +{' '}
-                <code className="bg-gray-100 px-1 rounded">WEBPAY_API_KEY</code>.
-              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={settings.paymentProvider || 'stub'}
+                  onChange={(e) => setSettings({ ...settings, paymentProvider: e.target.value })}
+                >
+                  <option value="stub">Stub (pruebas internas, sin cobro real)</option>
+                  <option value="flow">Flow.cl (tu comercio)</option>
+                </select>
+              </div>
+
+              {(settings.paymentProvider === 'flow' || settings.hasFlowApiKey) && (
+                <div className="space-y-3 pt-1 border-t border-gray-100">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Flow API Key</label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={flowApiKeyInput}
+                      onChange={(e) => setFlowApiKeyInput(e.target.value)}
+                      placeholder={settings.hasFlowApiKey ? '•••••• ya configurada — escribe para cambiar' : 'Pega tu API Key de Flow'}
+                      className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Flow Secret Key</label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={flowSecretInput}
+                      onChange={(e) => setFlowSecretInput(e.target.value)}
+                      placeholder={settings.hasFlowSecretKey ? '•••••• ya configurada — escribe para cambiar' : 'Pega tu Secret Key de Flow'}
+                      className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">URL API Flow (opcional)</label>
+                    <input
+                      type="url"
+                      value={settings.flowApiUrl || ''}
+                      onChange={(e) => setSettings({ ...settings, flowApiUrl: e.target.value })}
+                      placeholder="https://www.flow.cl/api (o sandbox)"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Déjalo vacío para producción. Sandbox: según documentación Flow.
+                    </p>
+                  </div>
+                  {(settings.hasFlowApiKey || settings.hasFlowSecretKey) && (
+                    <button type="button" onClick={clearFlow} disabled={saving}
+                      className="text-sm text-red-600 hover:underline disabled:opacity-50">
+                      Quitar credenciales Flow
+                    </button>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">

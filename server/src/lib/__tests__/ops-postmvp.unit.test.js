@@ -8,9 +8,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   createPaymentGateway,
+  getPaymentGatewayStatusFromSettings,
   getPaymentProviderName,
-  getPaymentGatewayStatus,
   isPaymentGatewayLive,
+  signWebhookPayload,
 } from '../paymentGateway.js';
 import { buildInvoicePdfBuffer } from '../invoicePdf.js';
 import { publicUploadUrl, buildStoredFilename } from '../uploads.js';
@@ -22,7 +23,7 @@ describe('Post-MVP payment gateway status', () => {
   it('defaults to stub mode without credentials', () => {
     assert.equal(getPaymentProviderName(), 'stub');
     assert.equal(isPaymentGatewayLive(), false);
-    const st = getPaymentGatewayStatus();
+    const st = getPaymentGatewayStatusFromSettings({});
     assert.equal(st.mode, 'stub');
     assert.equal(st.provider, 'stub');
   });
@@ -34,9 +35,24 @@ describe('Post-MVP payment gateway status', () => {
     assert.ok(checkout.checkoutUrl.includes('/api/webhooks/payments/stub/simulate'));
   });
 
-  it('settings expose paymentGateway status', () => {
-    assert.match(read('src/routes/settings.js'), /getPaymentGatewayStatus/);
-    assert.match(read('src/routes/settings.js'), /paymentGateway/);
+  it('org settings with flow keys resolve to live flow', async () => {
+    const { getPaymentGatewayStatusFromSettings, createPaymentGateway: createGw } = await import('../paymentGateway.js');
+    const st = getPaymentGatewayStatusFromSettings({
+      paymentProvider: 'flow',
+      flowApiKey: 'k',
+      flowSecretKey: 's',
+    });
+    assert.equal(st.mode, 'live');
+    assert.equal(st.provider, 'flow');
+    const gw = createGw({ paymentProvider: 'flow', flowApiKey: 'k', flowSecretKey: 's' });
+    assert.equal(gw.name, 'flow');
+  });
+
+  it('settings allow ISP to save flow credentials', () => {
+    assert.match(read('src/routes/settings.js'), /flowApiKey/);
+    assert.match(read('src/routes/settings.js'), /clearFlowCredentials/);
+    assert.match(read('src/routes/settings.js'), /sanitizeSettingsForApi|publicPaymentGatewayStatus/);
+    assert.match(read('src/lib/orgPayment.js'), /createOrgPaymentGateway/);
   });
 });
 

@@ -1,33 +1,83 @@
 /**
  * Adaptador de pasarela de pagos (ISP → abonado).
- * Live solo si hay credenciales Flow o Webpay; si no, stub seguro.
+ * Credenciales por organización (Flow/Webpay en settings).
+ * Sin credenciales del ISP → stub seguro.
  */
 
 import crypto from 'crypto';
 
+/** Compat tests / webhooks stub: sin org usa solo stub o provider explícito. */
 export function getPaymentProviderName() {
-  if (process.env.FLOW_API_KEY && process.env.FLOW_SECRET_KEY) return 'flow';
-  if (process.env.WEBPAY_COMMERCE_CODE && process.env.WEBPAY_API_KEY) return 'webpay';
   return 'stub';
 }
 
 export function isPaymentGatewayLive() {
-  return getPaymentProviderName() !== 'stub';
+  return false;
 }
 
-export function getPaymentGatewayStatus() {
-  const provider = getPaymentProviderName();
+export function getPaymentGatewayStatus(orgSettings = null) {
+  return getPaymentGatewayStatusFromSettings(orgSettings || {});
+}
+
+/**
+ * Estado público (sin secretos) a partir de settings de la org.
+ */
+export function getPaymentGatewayStatusFromSettings(settings = {}) {
+  const provider = resolveOrgProvider(settings);
   return {
     provider,
     mode: provider === 'stub' ? 'stub' : 'live',
     configured: provider !== 'stub',
+    paymentProvider: settings.paymentProvider === 'flow' || settings.paymentProvider === 'webpay'
+      ? settings.paymentProvider
+      : (provider === 'stub' ? 'stub' : provider),
+    hasFlowApiKey: Boolean(settings.flowApiKey || settings._hasFlowApiKey),
+    hasFlowSecretKey: Boolean(settings.flowSecretKey || settings._hasFlowSecretKey),
   };
 }
 
-export function createPaymentGateway(provider = getPaymentProviderName()) {
-  if (provider === 'flow') return createFlowGateway();
-  if (provider === 'webpay') return createWebpayGateway();
-  return createStubGateway('stub');
+function resolveOrgProvider(settings = {}) {
+  const preferred = String(settings.paymentProvider || 'stub').toLowerCase();
+  if (preferred === 'flow' && settings.flowApiKey && settings.flowSecretKey) return 'flow';
+  if (preferred === 'webpay' && settings.webpayCommerceCode && settings.webpayApiKey) return 'webpay';
+  // Auto: si eligió stub pero tiene keys de flow, no forzar live — solo si paymentProvider=flow
+  return 'stub';
+}
+
+/**
+ * @param {string|object} providerOrSettings - 'stub'|'flow'|'webpay' o settings de org
+ * @param {object} [credentials] - override opcional { flowApiKey, flowSecretKey, ... }
+ */
+export function createPaymentGateway(providerOrSettings = 'stub', credentials = null) {
+  if (providerOrSettings && typeof providerOrSettings === 'object') {
+    const settings = { ...providerOrSettings, ...(credentials || {}) };
+    const provider = resolveOrgProvider(settings);
+    if (provider === 'flow') {
+      return createFlowGateway({
+        apiKey: settings.flowApiKey,
+        secretKey: settings.flowSecretKey,
+        apiBase: settings.flowApiUrl,
+      });
+    }
+    if (provider === 'webpay') {
+      return createWebpayGateway({
+        commerceCode: settings.webpayCommerceCode,
+        apiKey: settings.webpayApiKey,
+        apiBase: settings.webpayApiUrl,
+        env: settings.webpayEnv,
+      });
+    }
+    return createStubGateway('stub');
+  }
+
+  const provider = String(providerOrSettings || 'stub');
+  if (provider === 'flow' && credentials?.apiKey && credentials?.secretKey) {
+    return createFlowGateway(credentials);
+  }
+  if (provider === 'webpay' && credentials?.commerceCode && credentials?.apiKey) {
+    return createWebpayGateway(credentials);
+  }
+  return createStubGateway(provider === 'stub' ? 'stub' : 'stub');
 }
 
 function createStubGateway(providerLabel) {
@@ -56,16 +106,16 @@ function createStubGateway(providerLabel) {
   };
 }
 
-/** Flow.cl — create payment via REST (signed params). */
-function createFlowGateway() {
-  const apiKey = process.env.FLOW_API_KEY;
-  const secretKey = process.env.FLOW_SECRET_KEY;
-  const apiBase = (process.env.FLOW_API_URL || 'https://www.flow.cl/api').replace(/\/$/, '');
+function createFlowGateway({ apiKey, secretKey, apiBase: apiBaseIn } = {}) {
+  const apiBase = (apiBaseIn || process.env.FLOW_API_URL || 'https://www.flow.cl/api').replace(/\/$/, '');
   const publicBase = (process.env.PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
 
   return {
     name: 'flow',
     async createCheckout({ organizationId, invoiceId, amount, currency = 'CLP', returnUrl, customerEmail }) {
+      if (!apiKey || !secretKey) {
+        throw new Error('Flow no configurado: falta API Key o Secret Key del ISP');
+      }
       const commerceOrder = `fn-${organizationId}-${invoiceId}-${Date.now()}`;
       const urlConfirmation = `${publicBase}/api/webhooks/payments/flow`;
       const urlReturn = returnUrl || publicBase || '';
@@ -103,7 +153,6 @@ function createFlowGateway() {
       };
     },
     verifyWebhookSignature(rawBody, signatureHeader, secret) {
-      // Flow confirma con token; firma HMAC opcional si envían header.
       if (!signatureHeader) return true;
       return verifyHmacSha256(rawBody, signatureHeader, secret || secretKey);
     },
@@ -136,18 +185,18 @@ function mapFlowStatus(status) {
   return 'paid';
 }
 
-/** Transbank Webpay Plus REST. */
-function createWebpayGateway() {
-  const commerceCode = process.env.WEBPAY_COMMERCE_CODE;
-  const apiKey = process.env.WEBPAY_API_KEY;
-  const apiBase = (process.env.WEBPAY_API_URL
-    || (process.env.WEBPAY_ENV === 'production'
+function createWebpayGateway({ commerceCode, apiKey, apiBase: apiBaseIn, env } = {}) {
+  const apiBase = (apiBaseIn
+    || (env === 'production' || process.env.WEBPAY_ENV === 'production'
       ? 'https://webpay3g.transbank.cl'
       : 'https://webpay3gint.transbank.cl')).replace(/\/$/, '');
 
   return {
     name: 'webpay',
     async createCheckout({ organizationId, invoiceId, amount, currency = 'CLP', returnUrl }) {
+      if (!commerceCode || !apiKey) {
+        throw new Error('Webpay no configurado: falta código de comercio o API key del ISP');
+      }
       const buyOrder = `fn${organizationId}i${invoiceId}t${Date.now()}`.slice(0, 26);
       const sessionId = `org${organizationId}`;
       const res = await fetch(`${apiBase}/rswebpaytransaction/api/webpay/v1.2/transactions`, {
@@ -223,7 +272,6 @@ function parseGenericWebhook(body) {
   };
 }
 
-/** Firma HMAC para pruebas del stub / documentación */
 export function signWebhookPayload(payload, secret = process.env.PAYMENT_WEBHOOK_SECRET) {
   const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
   return crypto.createHmac('sha256', secret || 'dev-webhook-secret').update(raw).digest('hex');

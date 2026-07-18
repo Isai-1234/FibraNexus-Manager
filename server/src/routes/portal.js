@@ -131,8 +131,8 @@ portalRouter.post('/checkout', async (req, res) => {
     const balance = Math.max(0, Number(inv.total) - paidSum);
     if (balance <= 0) return res.status(400).json({ error: 'Saldo en cero' });
 
-    const { createPaymentGateway } = await import('../lib/paymentGateway.js');
-    const gateway = createPaymentGateway();
+    const { createOrgPaymentGateway } = await import('../lib/orgPayment.js');
+    const gateway = await createOrgPaymentGateway(client.organizationId);
     const returnUrl = req.body.returnUrl
       || process.env.FRONTEND_URL
       || '';
@@ -142,6 +142,7 @@ portalRouter.post('/checkout', async (req, res) => {
       amount: balance,
       currency: 'CLP',
       returnUrl,
+      customerEmail: req.user.email,
     });
 
     const [intent] = await db.insert(paymentIntents).values({
