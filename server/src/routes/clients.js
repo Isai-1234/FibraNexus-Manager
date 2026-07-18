@@ -168,6 +168,18 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
     if (!email || !fullName) {
       return res.status(400).json({ error: 'Email y nombre son requeridos' });
     }
+    const typeAliases = {
+      individual: 'individual',
+      business: 'business',
+      residential: 'individual',
+      residencial: 'individual',
+      empresa: 'business',
+      comercial: 'business',
+    };
+    const normalizedType = typeAliases[String(clientType || 'individual').toLowerCase()];
+    if (!normalizedType) {
+      return res.status(400).json({ error: 'Tipo de cliente inválido (individual o business)' });
+    }
     const normalizedRut = assertOptionalRut(rut);
     const allowedLifecycle = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
     const life = allowedLifecycle.includes(lifecycleStatus) ? lifecycleStatus : 'prospect';
@@ -176,22 +188,32 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
       ? password
       : cryptoRandomPassword();
     const hashedPassword = await bcrypt.hash(plainPass, 12);
-    const [user] = await db.insert(users).values({
-      organizationId: orgId,
-      email, password: hashedPassword, fullName, phone, role: 'client',
-    }).returning();
-    const [client] = await db.insert(clients).values({
-      organizationId: orgId,
-      userId: user.id,
-      clientType: clientType || 'individual',
-      rut: normalizedRut,
-      address,
-      city,
-      region,
-      latitude: latitude != null ? String(latitude) : null,
-      longitude: longitude != null ? String(longitude) : null,
-      lifecycleStatus: life,
-    }).returning();
+
+    let user;
+    let client;
+    try {
+      [user] = await db.insert(users).values({
+        organizationId: orgId,
+        email, password: hashedPassword, fullName, phone, role: 'client',
+      }).returning();
+      [client] = await db.insert(clients).values({
+        organizationId: orgId,
+        userId: user.id,
+        clientType: normalizedType,
+        rut: normalizedRut,
+        address,
+        city,
+        region,
+        latitude: latitude != null ? String(latitude) : null,
+        longitude: longitude != null ? String(longitude) : null,
+        lifecycleStatus: life,
+      }).returning();
+    } catch (inner) {
+      if (user?.id) {
+        try { await db.delete(users).where(eq(users.id, user.id)); } catch { /* ignore rollback helper */ }
+      }
+      throw inner;
+    }
 
     await writeAuditLog({
       organizationId: orgId,

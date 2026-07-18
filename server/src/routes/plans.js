@@ -28,13 +28,25 @@ plansRouter.post('/', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { name, type, downloadSpeed, uploadSpeed, price, description } = req.body;
+    if (!name) return res.status(400).json({ error: 'Nombre del plan requerido' });
+    if (downloadSpeed == null || uploadSpeed == null || price == null) {
+      return res.status(400).json({ error: 'Velocidades y precio son requeridos' });
+    }
+    const allowedTypes = ['fiber', 'wisp', 'copper', 'wireless'];
+    const planType = allowedTypes.includes(type) ? type : 'fiber';
     const [plan] = await db.insert(plans).values({
       organizationId: orgId,
-      name, type, downloadSpeed, uploadSpeed, price: String(price), description,
+      name,
+      type: planType,
+      downloadSpeed: parseInt(downloadSpeed, 10),
+      uploadSpeed: parseInt(uploadSpeed, 10),
+      price: String(price),
+      description: description || null,
     }).returning();
     res.status(201).json(plan);
   } catch (error) {
-    res.status(500).json({ error: 'Error al crear plan' });
+    console.error('Create plan error:', error.message);
+    res.status(500).json({ error: error.message || 'Error al crear plan' });
   }
 });
 
