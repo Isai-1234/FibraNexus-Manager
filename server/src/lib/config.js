@@ -4,17 +4,37 @@ import '../loadEnv.js';
  * Config centralizada — cambiar proveedor = cambiar env, no código.
  * Getters: leen process.env en el momento del uso (no al importar el módulo).
  */
-function cleanDatabaseUrl(raw) {
+
+/**
+ * Limpia valores mal pegados desde el modal Connect de Supabase / .env:
+ * comentarios, KEY=, comillas, saltos de línea.
+ */
+export function cleanDatabaseUrl(raw) {
   let v = String(raw || '').trim();
-  // Errores comunes al pegar desde .env en Render Value:
-  // DATABASE_URL="postgresql://..."  o  DATABASE_URL=postgresql://...
-  if (/^DATABASE_URL\s*=/i.test(v)) {
-    v = v.replace(/^DATABASE_URL\s*=\s*/i, '').trim();
+  if (!v) return '';
+
+  // Si pegaron varias líneas (comentario + DATABASE_URL=...), quedarnos con la URI
+  const uriMatch = v.match(/postgres(?:ql)?:\/\/[^\s"'`]+/i);
+  if (uriMatch) {
+    v = uriMatch[0];
+  } else {
+    v = v
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .join('')
+      .trim();
+    if (/^DATABASE_URL\s*=/i.test(v)) {
+      v = v.replace(/^DATABASE_URL\s*=\s*/i, '').trim();
+    }
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1).trim();
+    }
   }
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-    v = v.slice(1, -1).trim();
-  }
-  return v;
+
+  // Quitar comillas residuales al final
+  v = v.replace(/^["']|["']$/g, '');
+  return v.trim();
 }
 
 export const config = {
