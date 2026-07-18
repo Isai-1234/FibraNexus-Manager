@@ -8,6 +8,7 @@
     "build:client": "corepack pnpm --filter fibranexus-client build",
     "build:server": "corepack pnpm --filter fibranexus-server build",
     "build": "corepack pnpm run build:client && corepack pnpm run build:server",
-    "start": "corepack pnpm --filter fibranexus-server start"
+    "start": "corepack pnpm --filter fibranexus-server start",
+    "bootstrap:admin": "corepack pnpm --filter fibranexus-server exec node ../scripts/bootstrap-admin.mjs"
   }
 }

@@ -2,14 +2,24 @@
 /**
  * Bootstrap local de una sola ejecución.
  *
- * Uso:
- *   ALLOW_BOOTSTRAP=1 node scripts/bootstrap-admin.mjs \
- *     --email admin@ejemplo.cl --password 'Segura123!' --name 'Admin' \
- *     --org-slug internetsur
+ * Desde la raíz del repo (recomendado):
+ *   corepack pnpm run bootstrap:admin -- --email E --password P --org-slug internetsur --role admin
  *
- * REQUIERE ALLOW_BOOTSTRAP=1. No expone HTTP.
+ * O desde server/ (donde están las dependencias):
+ *   cd server
+ *   $env:ALLOW_BOOTSTRAP="1"
+ *   corepack pnpm exec node ../scripts/bootstrap-admin.mjs --email E --password P ...
+ *
+ * REQUIERE ALLOW_BOOTSTRAP=1 y DATABASE_URL (server/.env o entorno).
  */
-import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../server/.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 import bcrypt from 'bcryptjs';
 import { db } from '../server/src/db/index.js';
 import { users, organizations } from '../server/src/db/schema.js';
@@ -27,6 +37,11 @@ async function main() {
     process.exit(1);
   }
 
+  if (!process.env.DATABASE_URL) {
+    console.error('Falta DATABASE_URL. Créala en server/.env (no la subas a git).');
+    process.exit(1);
+  }
+
   const email = arg('email');
   const password = arg('password');
   const fullName = arg('name', 'Administrador');
@@ -34,7 +49,7 @@ async function main() {
   const role = arg('role', 'admin'); // admin | superadmin
 
   if (!email || !password) {
-    console.error('Uso: ALLOW_BOOTSTRAP=1 node scripts/bootstrap-admin.mjs --email E --password P [--name N] [--org-slug S] [--role admin|superadmin]');
+    console.error('Uso: ALLOW_BOOTSTRAP=1 pnpm run bootstrap:admin -- --email E --password P [--name N] [--org-slug S] [--role admin|superadmin]');
     process.exit(1);
   }
   if (password.length < 10) {
@@ -57,7 +72,7 @@ async function main() {
   }
 
   const hashed = await bcrypt.hash(password, 12);
-  const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+  const existing = await db.query.users.findFirst({ where: eq(users.email, email.toLowerCase()) });
 
   if (existing) {
     await db.update(users).set({
@@ -68,17 +83,17 @@ async function main() {
       isActive: true,
       updatedAt: new Date(),
     }).where(eq(users.id, existing.id));
-    console.log('Usuario actualizado:', email, 'role=', role, 'orgId=', organizationId);
+    console.log('Usuario actualizado:', email.toLowerCase(), 'role=', role, 'orgId=', organizationId);
   } else {
     await db.insert(users).values({
-      email,
+      email: email.toLowerCase(),
       password: hashed,
       fullName,
       role,
       organizationId,
       isActive: true,
     });
-    console.log('Usuario creado:', email, 'role=', role, 'orgId=', organizationId);
+    console.log('Usuario creado:', email.toLowerCase(), 'role=', role, 'orgId=', organizationId);
   }
 
   process.exit(0);
