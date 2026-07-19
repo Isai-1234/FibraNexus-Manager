@@ -132,6 +132,15 @@ export function computeInvoiceAmount(fullPrice, window) {
   return { amount, days, totalDays };
 }
 
+/** Precio facturable: override del servicio o precio de lista del plan. */
+export function billingPrice(service, plan) {
+  if (service?.customPrice != null && service.customPrice !== '') {
+    const n = Number(service.customPrice);
+    if (Number.isFinite(n)) return n;
+  }
+  return Number(plan?.price) || 0;
+}
+
 export function billingCycleDescription(service) {
   const cycle = service.billingCycleType || 'anniversary';
   const day = service.billingDay || billingDayFromInstall(service.installationDate);

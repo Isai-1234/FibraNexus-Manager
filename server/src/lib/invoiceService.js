@@ -8,6 +8,7 @@ import {
   computeInvoiceAmount,
   computeNextBillingDate,
   billingCycleDescription,
+  billingPrice,
 } from './billing.js';
 
 async function loadServiceWithPlan(serviceId, orgId) {
@@ -33,7 +34,8 @@ export async function createInvoiceForService(orgId, serviceId, options = {}) {
 
   const asOf = options.asOf ? new Date(options.asOf) : new Date();
   const window = getBillingWindow(service, asOf);
-  const { amount, days, totalDays } = computeInvoiceAmount(row.plan.price, window);
+  const price = billingPrice(service, row.plan);
+  const { amount, days, totalDays } = computeInvoiceAmount(price, window);
   const tax = Math.round(amount * 0.19);
   const total = amount + tax;
   const dueDate = options.dueDate || computeDueDate(service, window);
@@ -92,7 +94,8 @@ export async function previewInvoiceForService(orgId, serviceId) {
   if (!row) throw new Error('Servicio no encontrado');
 
   const window = getBillingWindow(row.service);
-  const { amount, days, totalDays } = computeInvoiceAmount(row.plan.price, window);
+  const price = billingPrice(row.service, row.plan);
+  const { amount, days, totalDays } = computeInvoiceAmount(price, window);
   const tax = Math.round(amount * 0.19);
   return {
     window,
@@ -102,6 +105,8 @@ export async function previewInvoiceForService(orgId, serviceId) {
     dueDate: computeDueDate(row.service, window),
     cycleDescription: billingCycleDescription(row.service),
     planPrice: Number(row.plan.price),
+    billingPrice: price,
+    customPrice: row.service.customPrice != null ? Number(row.service.customPrice) : null,
     days,
     totalDays,
   };

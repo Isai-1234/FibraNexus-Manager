@@ -26,6 +26,15 @@ function filterByClientId(items: any[], id: number) {
     Number(row.clientId) === Number(id) || Number(row.client?.id) === Number(id))
 }
 
+/** Precio cobrado al abonado: override del servicio o lista del plan. */
+function serviceBillingPrice(s: any) {
+  if (s?.customPrice != null && s.customPrice !== '') {
+    const n = Number(s.customPrice)
+    if (Number.isFinite(n)) return n
+  }
+  return Number(s?.plan?.price || 0)
+}
+
 function defaultServiceForm() {
   return {
     provisionMode: 'both',
@@ -188,7 +197,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     try {
       const [cRes, sRes, iRes, tRes] = await Promise.all([
         api().get(`/clients/${clientId}`),
-        api().get('/services'),
+        api().get(`/services?clientId=${clientId}`),
         api().get('/invoices'),
         api().get('/tickets'),
       ])
@@ -491,6 +500,32 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       toast('Error: ' + (e.response?.data?.error || e.message), 'error')
     }
     setSavingDteFlag(false)
+  }
+
+  async function editServiceCustomPrice(service: any) {
+    const current = serviceBillingPrice(service)
+    const raw = window.prompt(
+      `Precio efectivo mensual para «${service.plan?.name || 'servicio'}» (deja vacío para usar precio de lista del plan $${Number(service.plan?.price || 0).toLocaleString('es-CL')}):`,
+      String(current),
+    )
+    if (raw === null) return
+    const trimmed = raw.trim()
+    try {
+      if (trimmed === '') {
+        await api().put(`/services/${service.id}`, { customPrice: null })
+      } else {
+        const n = Number(trimmed.replace(',', '.'))
+        if (!Number.isFinite(n) || n < 0) {
+          toast('Precio inválido', 'error')
+          return
+        }
+        await api().put(`/services/${service.id}`, { customPrice: n })
+      }
+      toast('Precio efectivo actualizado', 'success')
+      loadAll()
+    } catch (e: any) {
+      toast('Error: ' + (e.response?.data?.error || e.message), 'error')
+    }
   }
 
   function openPayModal(inv: any) {
@@ -1408,7 +1443,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <div><span className="text-slate-600">Instalación:</span> {formatDateCL(s.installationDate)}</div>
                       <div><span className="text-slate-600">Próx. cobro:</span> {formatDateCL(s.nextBillingDate)}</div>
                       <div><span className="text-slate-600">Ciclo:</span> {billingCycleLabel(s.billingCycleType, s.billingDay)}</div>
-                      <div><span className="text-slate-600">Precio:</span> ${Number(s.plan?.price || 0).toLocaleString('es-CL')}</div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-600">Precio:</span>
+                        <span>${serviceBillingPrice(s).toLocaleString('es-CL')}</span>
+                        <button type="button" onClick={() => editServiceCustomPrice(s)}
+                          className="text-cyan-400 hover:text-cyan-300 p-0.5" title="Editar precio efectivo">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex gap-2 mt-3">
                     <button onClick={() => toggleService(s.id, s.status)}
@@ -1622,7 +1664,16 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <h3 className="font-bold text-lg text-ink">{s.plan?.name}</h3>
-                          <p className="text-ink-muted">${Number(s.plan?.price || 0).toLocaleString('es-CL')}/mes</p>
+                          <p className="text-ink-muted flex items-center gap-2">
+                            ${serviceBillingPrice(s).toLocaleString('es-CL')}/mes
+                            {s.customPrice != null && s.customPrice !== '' && (
+                              <span className="text-xs text-emerald-600">(efectivo)</span>
+                            )}
+                            <button type="button" onClick={() => editServiceCustomPrice(s)}
+                              className="text-cyan-600 hover:text-cyan-500 p-0.5" title="Editar precio efectivo">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                       </div>
                       <div className="flex flex-col items-end gap-2">

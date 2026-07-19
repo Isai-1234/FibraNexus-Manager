@@ -176,6 +176,8 @@ export const clientServices = pgTable('client_services', {
   billingCycleType: varchar('billing_cycle_type', { length: 32 }).default('anniversary'),
   billingDay: integer('billing_day'),
   billingDueDay: integer('billing_due_day').default(5),
+  /** Precio cobrado a este abonado; si NULL se usa plans.price. */
+  customPrice: decimal('custom_price', { precision: 12, scale: 2 }),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

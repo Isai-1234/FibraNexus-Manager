@@ -132,6 +132,7 @@ async function summarizeInvoicesAndPayments(orgId, rangeStart, rangeEnd) {
 async function projectNextPeriod(orgId) {
   const rows = await db.select({
     price: plans.price,
+    customPrice: clientServices.customPrice,
   }).from(clientServices)
     .innerJoin(clients, eq(clientServices.clientId, clients.id))
     .innerJoin(plans, eq(clientServices.planId, plans.id))
@@ -142,7 +143,10 @@ async function projectNextPeriod(orgId) {
     ));
 
   let total = 0;
-  for (const r of rows) total += toNum(r.price);
+  for (const r of rows) {
+    const p = r.customPrice != null && r.customPrice !== '' ? toNum(r.customPrice) : toNum(r.price);
+    total += p;
+  }
   total = Math.round(total * 100) / 100;
 
   return {

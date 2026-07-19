@@ -32,6 +32,7 @@ portalRouter.get('/dashboard', async (req, res) => {
       macAddress: clientServices.macAddress,
       installationDate: clientServices.installationDate,
       nextBillingDate: clientServices.nextBillingDate,
+      customPrice: clientServices.customPrice,
       plan: {
         name: plans.name,
         downloadSpeed: plans.downloadSpeed,
@@ -42,6 +43,15 @@ portalRouter.get('/dashboard', async (req, res) => {
       .from(clientServices)
       .leftJoin(plans, eq(clientServices.planId, plans.id))
       .where(eq(clientServices.clientId, client.id));
+
+    const servicesOut = services.map((s) => ({
+      ...s,
+      plan: s.plan ? {
+        ...s.plan,
+        // Precio mostrado al abonado = efectivo si existe
+        price: s.customPrice != null && s.customPrice !== '' ? s.customPrice : s.plan.price,
+      } : s.plan,
+    }));
 
     const clientInvoices = await db.select()
       .from(invoices)
@@ -97,7 +107,7 @@ portalRouter.get('/dashboard', async (req, res) => {
     res.json({
       client: { ...client, user: { fullName: user?.fullName, email: user?.email, phone: user?.phone } },
       daysAsClient,
-      services,
+      services: servicesOut,
       invoices: clientInvoices,
       tickets: clientTickets,
       documents,

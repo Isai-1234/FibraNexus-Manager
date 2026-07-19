@@ -40,6 +40,8 @@ type WisphubImportSummary = {
   updated?: number
   sinPlan?: number
   sinPrecio?: number
+  serviciosCreados?: number
+  serviciosOmitidos?: number
   errorCount?: number
   errors?: { wisphubId?: string; message?: string }[]
   error?: string
@@ -210,7 +212,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       setMessage('Error: pega la API Key de WispHub. Los puntos del navegador no cuentan si no guardaste.')
       return
     }
-    if (!confirm('¿Importar (o actualizar) todos los clientes desde WispHub? Puede tardar varios minutos.')) return
+    if (!confirm('¿Importar clientes desde WispHub y crear servicios facturables (planes + precio efectivo)? Puede tardar varios minutos.')) return
 
     setImportingWisphub(true)
     setWisphubImportResult(null)
@@ -238,6 +240,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       setWisphubImportResult({ ...res.data, ok: true })
       setMessage(
         `Importación WispHub: ${res.data.created ?? 0} creados, ${res.data.updated ?? 0} actualizados`
+        + `, ${res.data.serviciosCreados ?? 0} servicios creados`
+        + (res.data.serviciosOmitidos ? `, ${res.data.serviciosOmitidos} servicios omitidos` : '')
         + (res.data.errorCount ? `, ${res.data.errorCount} errores` : '')
         + (res.data.sinPrecio ? `, ${res.data.sinPrecio} sin precio efectivo` : '')
         + (res.data.sinPlan ? `, ${res.data.sinPlan} sin plan` : '')
@@ -533,8 +537,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
             <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
               <h2 className="font-semibold text-ink">Importar desde WispHub</h2>
               <p className="text-sm text-ink-muted">
-                Trae clientes desde la API de WispHub (solo lectura). Re-ejecutable: usa <code className="text-xs">wisphub_id</code> para no duplicar.
-                No toca routers ni activa DTE — eso se hace después, cliente a cliente.
+                Un solo botón: trae clientes y crea servicios facturables con precio efectivo editable.
+                Re-ejecutable: usa <code className="text-xs">wisphub_id</code> y no duplica servicios ya existentes.
+                No toca routers ni activa DTE.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -587,7 +592,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
-                  {importingWisphub ? 'Importando… (puede tardar)' : 'Importar clientes'}
+                  {importingWisphub ? 'Importando… (puede tardar)' : 'Importar clientes y crear servicios'}
                 </button>
                 {settings.hasWisphubApiKey && (
                   <button type="button" onClick={clearWisphub} disabled={saving || importingWisphub}
@@ -613,6 +618,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                     <li>Actualizados: <strong>{wisphubImportResult.updated ?? 0}</strong></li>
                     <li>Sin plan: <strong>{wisphubImportResult.sinPlan ?? 0}</strong></li>
                     <li>Sin precio efectivo: <strong>{wisphubImportResult.sinPrecio ?? 0}</strong></li>
+                    <li>Servicios creados: <strong>{wisphubImportResult.serviciosCreados ?? 0}</strong></li>
+                    <li>Servicios omitidos: <strong>{wisphubImportResult.serviciosOmitidos ?? 0}</strong></li>
                     <li>Errores: <strong>{wisphubImportResult.errorCount ?? wisphubImportResult.errors?.length ?? 0}</strong></li>
                   </ul>
                   {(wisphubImportResult.errors?.length ?? 0) > 0 && (

@@ -1,5 +1,5 @@
 /**
- * Importación de clientes desde WispHub (solo lectura).
+ * Importación de clientes desde WispHub (solo lectura API).
  *
  * API oficial (OpenAPI /api-docs):
  *   GET {baseUrl}/api/clientes/?limit=&offset=
@@ -7,18 +7,21 @@
  *   Respuesta DRF: { count, next, previous, results: Cliente[] }
  *   limit máx. 300 (doc WispHub).
  *
+ * Además materializa servicios FibraNexus (planes deduplicados + customPrice).
  * No llama activar/desactivar ni toca equipment/routers.
  * dteHabilitado permanece false (default).
  */
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { clients, users } from '../db/schema.js';
+import { clients, users, plans, clientServices } from '../db/schema.js';
 import { loadOrgWisphubSettings } from './orgWisphub.js';
+import { billingDayFromInstall, computeNextBillingDate } from './billing.js';
 
 const PAGE_LIMIT = 200; // ≤ 300 según docs WispHub
 const FETCH_TIMEOUT_MS = 60_000;
+const BLOCKING_SERVICE_STATUSES = ['active', 'suspended', 'pending'];
 
 function planName(row) {
   const p = row.plan_internet;
@@ -38,6 +41,110 @@ function effectivePrice(row) {
   const n = Number(String(raw).replace(',', '.'));
   if (!Number.isFinite(n)) return null;
   return n;
+}
+
+function parseSpeedMbps(name) {
+  const m = String(name || '').match(/(\d+)\s*[Mm]bps/);
+  if (!m) return 25;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 10000) : 25;
+}
+
+function parseListPriceFromName(name) {
+  const m = String(name || '').match(/(\d{4,})\s*$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function planListPrice(row, precioEfectivo) {
+  const p = row.plan_internet;
+  if (p && typeof p === 'object') {
+    const raw = p.precio ?? p.price ?? null;
+    if (raw != null && raw !== '') {
+      const n = Number(String(raw).replace(',', '.'));
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+  }
+  const fromName = parseListPriceFromName(planName(row));
+  if (fromName != null) return fromName;
+  if (precioEfectivo != null) return precioEfectivo;
+  return 0;
+}
+
+/**
+ * Crea o reutiliza un plan del catálogo por nombre exacto (org).
+ * Reutilizable por otros importadores que llenen planNombre + precioEfectivo.
+ */
+export async function findOrCreatePlanByName(orgId, name, { listPrice = 0, type = 'wisp' } = {}) {
+  const planNameTrim = String(name || '').trim().slice(0, 255);
+  if (!planNameTrim) throw new Error('Nombre de plan vacío');
+
+  const [existing] = await db.select().from(plans)
+    .where(and(eq(plans.organizationId, orgId), eq(plans.name, planNameTrim)))
+    .limit(1);
+  if (existing) return existing;
+
+  const speed = parseSpeedMbps(planNameTrim);
+  const price = Number.isFinite(Number(listPrice)) ? Number(listPrice) : 0;
+  const [created] = await db.insert(plans).values({
+    organizationId: orgId,
+    name: planNameTrim,
+    description: 'Creado automáticamente desde importación',
+    type: ['fiber', 'wisp', 'copper', 'wireless'].includes(type) ? type : 'wisp',
+    downloadSpeed: speed,
+    uploadSpeed: speed,
+    price: String(price),
+    setupPrice: '0',
+    isActive: true,
+  }).returning();
+  return created;
+}
+
+/**
+ * Si el cliente no tiene servicio activo/suspendido/pendiente, crea uno
+ * con customPrice = precio efectivo. Idempotente.
+ */
+export async function ensureServiceFromSnapshot(orgId, clientId, {
+  planNombre,
+  precioEfectivo,
+  listPrice = null,
+} = {}) {
+  if (!planNombre) return { action: 'skipped', reason: 'sin_plan' };
+
+  const [existingSvc] = await db.select({ id: clientServices.id })
+    .from(clientServices)
+    .where(and(
+      eq(clientServices.clientId, clientId),
+      inArray(clientServices.status, BLOCKING_SERVICE_STATUSES),
+    ))
+    .limit(1);
+  if (existingSvc) return { action: 'skipped', reason: 'ya_tiene_servicio', serviceId: existingSvc.id };
+
+  const plan = await findOrCreatePlanByName(orgId, planNombre, {
+    listPrice: listPrice != null ? listPrice : (precioEfectivo ?? 0),
+    type: 'wisp',
+  });
+
+  const installDate = new Date().toISOString().split('T')[0];
+  const cycle = 'anniversary';
+  const billingDay = billingDayFromInstall(installDate);
+  const nextBilling = computeNextBillingDate(installDate, cycle, billingDay);
+  const customPriceVal = precioEfectivo != null ? String(precioEfectivo) : null;
+
+  const [service] = await db.insert(clientServices).values({
+    clientId,
+    planId: plan.id,
+    status: 'active',
+    installationDate: installDate,
+    nextBillingDate: nextBilling,
+    billingCycleType: cycle,
+    billingDay,
+    billingDueDay: billingDay,
+    customPrice: customPriceVal,
+  }).returning();
+
+  return { action: 'created', serviceId: service.id, planId: plan.id };
 }
 
 function mapLifecycle(estado) {
@@ -193,6 +300,9 @@ async function upsertOneClient(orgId, row) {
       wisphubId,
       hasPlan: Boolean(planNombre),
       hasPrecio: precioEfectivo != null,
+      planNombre,
+      precioEfectivo,
+      listPrice: planListPrice(row, precioEfectivo),
     };
   }
 
@@ -248,6 +358,9 @@ async function upsertOneClient(orgId, row) {
     wisphubId,
     hasPlan: Boolean(planNombre),
     hasPrecio: precioEfectivo != null,
+    planNombre,
+    precioEfectivo,
+    listPrice: planListPrice(row, precioEfectivo),
   };
 }
 
@@ -281,6 +394,8 @@ export async function importWisphubClients(organizationId) {
   let processed = 0;
   let sinPlan = 0;
   let sinPrecio = 0;
+  let serviciosCreados = 0;
+  let serviciosOmitidos = 0;
   const errors = [];
 
   while (true) {
@@ -304,6 +419,21 @@ export async function importWisphubClients(organizationId) {
         else updated += 1;
         if (!r.hasPlan) sinPlan += 1;
         if (!r.hasPrecio) sinPrecio += 1;
+
+        try {
+          const svc = await ensureServiceFromSnapshot(organizationId, r.clientId, {
+            planNombre: r.planNombre,
+            precioEfectivo: r.precioEfectivo,
+            listPrice: r.listPrice,
+          });
+          if (svc.action === 'created') serviciosCreados += 1;
+          else serviciosOmitidos += 1;
+        } catch (svcErr) {
+          errors.push({
+            wisphubId: idLabel,
+            message: `Cliente OK, servicio falló: ${svcErr.message || svcErr}`,
+          });
+        }
       } catch (err) {
         errors.push({
           wisphubId: idLabel,
@@ -325,6 +455,8 @@ export async function importWisphubClients(organizationId) {
     updated,
     sinPlan,
     sinPrecio,
+    serviciosCreados,
+    serviciosOmitidos,
     errors,
     errorCount: errors.length,
   };

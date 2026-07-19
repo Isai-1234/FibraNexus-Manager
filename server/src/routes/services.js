@@ -64,6 +64,14 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
+    const filterClientId = req.query.clientId != null ? parseInt(String(req.query.clientId), 10) : null;
+    const clientScope = filterClientId && !Number.isNaN(filterClientId)
+      ? eq(clientServices.clientId, filterClientId)
+      : undefined;
+
+    const whereClause = clientScope
+      ? and(orgFilter(clients, orgId), clientScope)
+      : orgFilter(clients, orgId);
 
     const baseQuery = db.select({
       id: clientServices.id, status: clientServices.status,
@@ -77,6 +85,7 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       billingCycleType: clientServices.billingCycleType,
       billingDay: clientServices.billingDay,
       billingDueDay: clientServices.billingDueDay,
+      customPrice: clientServices.customPrice,
       createdAt: clientServices.createdAt,
       client: { id: clients.id, fullName: users.fullName, email: users.email },
       plan: { id: plans.id, name: plans.name, downloadSpeed: plans.downloadSpeed, uploadSpeed: plans.uploadSpeed, price: plans.price },
@@ -85,18 +94,18 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       .leftJoin(clients, eq(clientServices.clientId, clients.id))
       .leftJoin(users, eq(clients.userId, users.id))
       .leftJoin(plans, eq(clientServices.planId, plans.id))
-      .where(orgFilter(clients, orgId));
+      .where(whereClause);
 
     if (paginated) {
       const [{ total }] = await db.select({ total: sql`count(*)::int` })
         .from(clientServices)
         .innerJoin(clients, eq(clientServices.clientId, clients.id))
-        .where(orgFilter(clients, orgId));
+        .where(whereClause);
       const services = await baseQuery.limit(limit).offset(offset);
       return res.json({ items: services, pagination: paginationMeta(total, page, limit) });
     }
 
-    const services = await baseQuery.limit(50);
+    const services = await baseQuery.limit(filterClientId ? 100 : 50);
     res.json(services);
   } catch (error) {
     res.status(500).json({ error: 'Error al listar servicios' });
@@ -108,7 +117,7 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { clientId, planId, ipAddress, macAddress, routerId, siteId, provisionNetwork, provisionMode, status,
-      installationDate, billingCycleType, billingDueDay, generateFirstInvoice } = req.body;
+      installationDate, billingCycleType, billingDueDay, generateFirstInvoice, customPrice } = req.body;
 
     const parsedClientId = parseInt(clientId, 10);
     const parsedPlanId = parseInt(planId, 10);
@@ -153,6 +162,14 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
     const nextBilling = computeNextBillingDate(installDate, cycle, billingDay);
     const parsedRouterId = routerId ? parseInt(routerId, 10) : null;
     const parsedSiteId = siteId ? parseInt(siteId, 10) : null;
+    let customPriceVal = null;
+    if (customPrice != null && customPrice !== '') {
+      const n = Number(customPrice);
+      if (!Number.isFinite(n) || n < 0) {
+        return res.status(400).json({ error: 'customPrice inválido' });
+      }
+      customPriceVal = String(n);
+    }
     const [service] = await db.insert(clientServices).values({
       clientId: parsedClientId, planId: parsedPlanId,
       ipAddress: ipAddress || null, macAddress: macAddress || null,
@@ -163,6 +180,7 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
       billingCycleType: cycle,
       billingDay,
       billingDueDay: Number.isNaN(dueDay) ? 5 : dueDay,
+      customPrice: customPriceVal,
       status: status && ['active', 'suspended', 'pending', 'cancelled', 'cut'].includes(status) ? status : 'active',
     }).returning();
 
@@ -218,12 +236,23 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    const { status, pppProfile, ipAddress, macAddress } = req.body;
+    const { status, pppProfile, ipAddress, macAddress, customPrice } = req.body;
     const patch = { updatedAt: new Date() };
     if (status !== undefined) patch.status = status;
     if (pppProfile !== undefined) patch.pppProfile = pppProfile;
     if (ipAddress !== undefined) patch.ipAddress = ipAddress;
     if (macAddress !== undefined) patch.macAddress = macAddress;
+    if (customPrice !== undefined) {
+      if (customPrice === null || customPrice === '') {
+        patch.customPrice = null;
+      } else {
+        const n = Number(customPrice);
+        if (!Number.isFinite(n) || n < 0) {
+          return res.status(400).json({ error: 'customPrice inválido' });
+        }
+        patch.customPrice = String(n);
+      }
+    }
     const [updated] = await db.update(clientServices)
       .set(patch)
       .where(eq(clientServices.id, serviceId))
