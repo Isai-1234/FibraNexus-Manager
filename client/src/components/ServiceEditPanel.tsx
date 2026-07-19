@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { X, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import axios from 'axios'
-import { formatDateCL } from '../../lib/formatDate'
+import { formatDateCL } from '../lib/formatDate'
 
 type Props = {
   API: string
@@ -93,7 +93,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
     setLoadingPreview(true)
     try {
       // Guardar borrador en memoria no aplica: preview usa datos persistidos.
-      // Si hay overrides, primero no — pedimos preview del servicio actual;
+      // Si hay overrides, primero no â€” pedimos preview del servicio actual;
       // tras guardar se refresca. Para preview live: enviar query no soporta draft.
       const res = await api().get(`/services/${service.id}/billing-preview`, {
         params: { cantidad: 3 },
@@ -208,12 +208,12 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   value={form.contratoId} onChange={(e) => setField('contratoId', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Duración mínima (meses)</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">DuraciÃ³n mÃ­nima (meses)</label>
                 <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.duracionMinimaMeses} onChange={(e) => setField('duracionMinimaMeses', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Cargo cancelación anticipada</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Cargo cancelaciÃ³n anticipada</label>
                 <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.cargoCancelacionAnticipada}
                   onChange={(e) => setField('cargoCancelacionAnticipada', e.target.value)} />
@@ -221,16 +221,16 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
             </div>
           </Section>
 
-          <Section title="Recargos / instalación" open={open.facturas} onToggle={() => toggle('facturas')}>
+          <Section title="Recargos / instalaciÃ³n" open={open.facturas} onToggle={() => toggle('facturas')}>
             <div>
-              <label className="block text-xs font-medium text-ink-soft mb-1">Costo de instalación</label>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Costo de instalaciÃ³n</label>
               <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                 value={form.costoInstalacion} onChange={(e) => setField('costoInstalacion', e.target.value)} />
-              <p className="text-xs text-ink-muted mt-1">Se suma a la primera factura si aún no hay facturas.</p>
+              <p className="text-xs text-ink-muted mt-1">Se suma a la primera factura si aÃºn no hay facturas.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Tipo de facturación</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Tipo de facturaciÃ³n</label>
                 <select className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.tipoFacturacion} onChange={(e) => setField('tipoFacturacion', e.target.value)}>
                   <option value="retroactiva">Retroactiva</option>
@@ -238,17 +238,17 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Día comienzo periodo</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">DÃ­a comienzo periodo</label>
                 <input type="number" min="1" max="31" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.diaComienzoPeriodo} onChange={(e) => setField('diaComienzoPeriodo', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Crear factura (días antes)</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Crear factura (dÃ­as antes)</label>
                 <input type="number" min="0" max="60" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.crearFacturaDiasAntes} onChange={(e) => setField('crearFacturaDiasAntes', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Día vencimiento pago</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">DÃ­a vencimiento pago</label>
                 <input type="number" min="0" max="31" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.billingDueDay} onChange={(e) => setField('billingDueDay', e.target.value)} />
               </div>
@@ -266,16 +266,16 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.aprobarEnviarAutomaticamente}
                 onChange={(e) => setField('aprobarEnviarAutomaticamente', e.target.checked)} />
-              Aprobar y enviar automáticamente
+              Aprobar y enviar automÃ¡ticamente
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.usarCreditoAutomaticamente}
                 onChange={(e) => setField('usarCreditoAutomaticamente', e.target.checked)} />
-              Usar crédito automáticamente
+              Usar crÃ©dito automÃ¡ticamente
             </label>
           </Section>
 
-          <Section title="Configuración de descuentos" open={open.descuentos} onToggle={() => toggle('descuentos')}>
+          <Section title="ConfiguraciÃ³n de descuentos" open={open.descuentos} onToggle={() => toggle('descuentos')}>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-ink-soft mb-1">Tipo</label>
@@ -300,7 +300,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
               <label className="block text-xs font-medium text-ink-soft mb-1">IVA override (%)</label>
               <input type="number" min="0" max="100" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm"
                 value={form.impuestoOverride} onChange={(e) => setField('impuestoOverride', e.target.value)}
-                placeholder="Vacío = 19% Chile" />
+                placeholder="VacÃ­o = 19% Chile" />
             </div>
           </Section>
 
@@ -336,12 +336,12 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
             </div>
           </Section>
 
-          <Section title="Vista previa de próximas facturas" open={open.preview} onToggle={() => toggle('preview')}>
+          <Section title="Vista previa de prÃ³ximas facturas" open={open.preview} onToggle={() => toggle('preview')}>
             <p className="text-xs text-ink-muted mb-2">
               Basada en la config guardada. Guarda cambios y se actualiza.
             </p>
             {loadingPreview ? (
-              <div className="text-sm text-ink-muted py-4">Calculando…</div>
+              <div className="text-sm text-ink-muted py-4">Calculandoâ€¦</div>
             ) : !preview?.items?.length ? (
               <div className="text-sm text-ink-muted py-2">Sin preview</div>
             ) : (
@@ -350,7 +350,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   <thead className="bg-surface-raised text-xs text-ink-muted uppercase">
                     <tr>
                       <th className="text-left p-2">Periodo</th>
-                      <th className="text-left p-2">Creación</th>
+                      <th className="text-left p-2">CreaciÃ³n</th>
                       <th className="text-left p-2">Vencimiento</th>
                       <th className="text-right p-2">Monto</th>
                     </tr>
@@ -380,10 +380,11 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
           <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
           <button type="button" onClick={save} disabled={saving}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-            {saving ? 'Guardando…' : 'Aplicar los cambios'}
+            {saving ? 'Guardandoâ€¦' : 'Aplicar los cambios'}
           </button>
         </div>
       </div>
     </div>
   )
 }
+
