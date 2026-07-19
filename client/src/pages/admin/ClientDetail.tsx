@@ -1318,17 +1318,17 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   { label: 'Tipo', value: statusLabel[client.clientType] || client.clientType, icon: User },
                 ].map(f => (
                   <div key={f.label} className="flex items-start gap-3 py-2 border-b border-white/[0.05] last:border-0">
-                    <f.icon className="h-4 w-4 text-slate-600 mt-0.5 flex-shrink-0" />
+                    <f.icon className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-600">{f.label}</p>
-                      <p className="text-sm text-ink truncate">{f.value}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-400">{f.label}</p>
+                      <p className="text-sm text-white truncate">{f.value || '—'}</p>
                     </div>
                   </div>
                 ))}
                 <div className="flex items-start gap-3 py-3 border-t border-white/[0.08] mt-1">
                   <CreditCard className="h-4 w-4 text-cyan-400 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-600 mb-2">Factura electrónica (SII)</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Factura electrónica (SII)</p>
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1338,8 +1338,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         onChange={(e) => toggleClientDte(e.target.checked)}
                       />
                       <span>
-                        <span className="block text-sm text-ink">¿Generar factura electrónica?</span>
-                        <span className="block text-xs text-slate-500 mt-0.5">
+                        <span className="block text-sm text-white">¿Generar factura electrónica?</span>
+                        <span className="block text-xs text-slate-400 mt-0.5">
                           Pilotaje: actívalo solo en 2–3 clientes reales. El resto sigue sin DTE.
                         </span>
                       </span>
