@@ -147,6 +147,11 @@ clientsRouter.get('/:id', requireRole('admin', 'office', 'technician'), async (r
       id: clients.id, userId: clients.userId, clientType: clients.clientType,
       rut: clients.rut, address: clients.address, city: clients.city,
       region: clients.region, notes: clients.notes, createdAt: clients.createdAt,
+      dteHabilitado: clients.dteHabilitado,
+      wisphubId: clients.wisphubId,
+      planNombre: clients.planNombre,
+      precioEfectivo: clients.precioEfectivo,
+      lifecycleStatus: clients.lifecycleStatus,
       user: { fullName: users.fullName, email: users.email, phone: users.phone, isActive: users.isActive },
     }).from(clients).leftJoin(users, eq(clients.userId, users.id))
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
