@@ -205,12 +205,12 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   value={form.contratoId} onChange={(e) => setField('contratoId', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Duración mínima (meses)"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Duración mínima (meses)</label>
                 <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.duracionMinimaMeses} onChange={(e) => setField('duracionMinimaMeses', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Cargo cancelación anticipada"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Cargo cancelación anticipada</label>
                 <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.cargoCancelacionAnticipada}
                   onChange={(e) => setField('cargoCancelacionAnticipada', e.target.value)} />
@@ -220,14 +220,14 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
 
           <Section title="Recargos / instalación" open={open.facturas} onToggle={() => toggle('facturas')}>
             <div>
-              <label className="block text-xs font-medium text-ink-soft mb-1">"Costo de instalación"</label>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Costo de instalación</label>
               <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
                 value={form.costoInstalacion} onChange={(e) => setField('costoInstalacion', e.target.value)} />
-              <p className="text-xs text-ink-muted mt-1">"Se suma a la primera factura si aún no hay facturas."</p>
+              <p className="text-xs text-ink-muted mt-1">Se suma a la primera factura si aún no hay facturas.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Tipo de facturación"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Tipo de facturación</label>
                 <select className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.tipoFacturacion} onChange={(e) => setField('tipoFacturacion', e.target.value)}>
                   <option value="retroactiva">Retroactiva</option>
@@ -235,17 +235,17 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Día comienzo periodo"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Día comienzo periodo</label>
                 <input type="number" min="1" max="31" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.diaComienzoPeriodo} onChange={(e) => setField('diaComienzoPeriodo', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Crear factura (días antes)"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Crear factura (días antes)</label>
                 <input type="number" min="0" max="60" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.crearFacturaDiasAntes} onChange={(e) => setField('crearFacturaDiasAntes', e.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">"Día vencimiento pago"</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Día vencimiento pago</label>
                 <input type="number" min="0" max="31" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.billingDueDay} onChange={(e) => setField('billingDueDay', e.target.value)} />
               </div>
@@ -263,12 +263,12 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.aprobarEnviarAutomaticamente}
                 onChange={(e) => setField('aprobarEnviarAutomaticamente', e.target.checked)} />
-              "Aprobar y enviar automáticamente"
+              Aprobar y enviar automáticamente
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.usarCreditoAutomaticamente}
                 onChange={(e) => setField('usarCreditoAutomaticamente', e.target.checked)} />
-              "Usar crédito automáticamente"
+              Usar crédito automáticamente
             </label>
           </Section>
 
@@ -350,7 +350,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   <thead className="bg-surface-raised text-xs text-ink-muted uppercase">
                     <tr>
                       <th className="text-left p-2">Periodo</th>
-                      <th className="text-left p-2">"Creación"</th>
+                      <th className="text-left p-2">Creación</th>
                       <th className="text-left p-2">Vencimiento</th>
                       <th className="text-right p-2">Monto</th>
                     </tr>
