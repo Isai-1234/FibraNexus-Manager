@@ -36,9 +36,9 @@ export function invoiceLabel(service, plan) {
   return plan?.name || 'Servicio internet';
 }
 
-/** Aplica descuento sobre neto (antes de IVA). */
-export function applyDiscount(neto, service) {
-  const base = Math.max(0, Number(neto) || 0);
+/** Aplica descuento sobre el precio de lista (con IVA incluido). */
+export function applyDiscount(precioConIva, service) {
+  const base = Math.max(0, Number(precioConIva) || 0);
   const tipo = service.tipoDescuento || 'sin_descuento';
   const valor = Number(service.valorDescuento);
   if (tipo === 'porcentaje' && Number.isFinite(valor) && valor > 0) {
@@ -51,11 +51,19 @@ export function applyDiscount(neto, service) {
   return Math.round(base);
 }
 
-export function buildInvoiceAmounts(netoBase, service) {
-  const neto = applyDiscount(netoBase, service);
+/**
+ * Precio del servicio/plan en Chile = con IVA incluido.
+ * Parte el bruto en neto + IVA sin sumar IVA encima.
+ */
+export function buildInvoiceAmounts(precioConIva, service) {
+  const bruto = applyDiscount(precioConIva, service);
   const rate = taxRate(service);
-  const tax = Math.round(neto * rate);
-  return { amount: neto, tax, total: neto + tax, taxRate: rate };
+  if (!rate) {
+    return { amount: bruto, tax: 0, total: bruto, taxRate: 0 };
+  }
+  const amount = Math.round(bruto / (1 + rate));
+  const tax = bruto - amount;
+  return { amount, tax, total: bruto, taxRate: rate };
 }
 
 function clampDay(year, monthIndex, day) {
@@ -201,15 +209,12 @@ export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3) {
     const priced = i === 0
       ? maybeProrateFirst(service, window, hasPrior, price)
       : { ...window, neto: Math.round(price) };
-    const amounts = buildInvoiceAmounts(priced.neto, service);
-    // Cargo instalación solo en la primera si aplica y no hay facturas previas
     let installFee = 0;
     if (i === 0 && !hasPrior && service.costoInstalacion != null && service.costoInstalacion !== '') {
       installFee = Math.round(Number(service.costoInstalacion) || 0);
     }
-    const amount = amounts.amount + installFee;
-    const tax = Math.round(amount * taxRate(service));
-    const total = amount + tax;
+    // priced.neto y costo instalación son montos con IVA incluido
+    const amounts = buildInvoiceAmounts((priced.neto || 0) + installFee, service);
 
     items.push({
       index: i,
@@ -220,9 +225,9 @@ export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3) {
       isProrated: Boolean(priced.isProrated),
       fechaCreacion: creationDateForPeriod(service, window, asOf),
       fechaVencimiento: dueDateForPeriod(service, window),
-      neto: amount,
-      impuesto: tax,
-      monto: total,
+      neto: amounts.amount,
+      impuesto: amounts.tax,
+      monto: amounts.total,
       etiqueta: invoiceLabel(service, plan),
       installFee: installFee || undefined,
     });

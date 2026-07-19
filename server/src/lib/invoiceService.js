@@ -11,7 +11,6 @@ import {
   getPeriodWindow,
   maybeProrateFirst,
   buildInvoiceAmounts,
-  taxRate,
   invoiceLabel,
   periodStartDay,
   calcularProximasFacturas,
@@ -37,15 +36,16 @@ export async function createInvoiceForService(orgId, serviceId, options = {}) {
 
   let window = getPeriodWindow(service, 0, asOf);
   const priced = maybeProrateFirst(service, window, hasPrior, price);
-  let amounts = buildInvoiceAmounts(priced.neto, service);
 
   let installFee = 0;
   if (!hasPrior && service.costoInstalacion != null && service.costoInstalacion !== '') {
     installFee = Math.round(Number(service.costoInstalacion) || 0);
   }
-  const amount = amounts.amount + installFee;
-  const tax = Math.round(amount * taxRate(service));
-  const total = amount + tax;
+  // Precio e instalación con IVA incluido → se desglosa, no se suma IVA encima
+  const amounts = buildInvoiceAmounts((priced.neto || 0) + installFee, service);
+  const amount = amounts.amount;
+  const tax = amounts.tax;
+  const total = amounts.total;
 
   const dueDate = options.dueDate || (() => {
     const dueDay = service.billingDueDay ?? periodStartDay(service);
