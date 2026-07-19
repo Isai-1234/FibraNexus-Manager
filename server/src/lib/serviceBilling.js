@@ -76,38 +76,42 @@ function dateWithDay(year, monthIndex, day) {
 }
 
 /**
- * Ventana de periodo i (0 = próximo/actual según tipo_facturacion).
- * Retroactiva: cobra el periodo que termina en el próximo día de ciclo.
- * Anticipada: cobra el periodo que empieza en el próximo día de ciclo.
+ * Ventana de periodo i (0 = primero según tipo_facturacion / facturarDesde).
+ * Retroactiva: cobra el periodo que termina en el día de ciclo.
+ * Anticipada: cobra el periodo que empieza en el día de ciclo.
+ * facturarDesde: permite anclar el primer periodo a un mes concreto (ej. julio).
  */
 export function getPeriodWindow(service, periodIndex = 0, asOf = new Date()) {
   const day = periodStartDay(service);
   const install = parseDateInput(service.installationDate) || asOf;
   const tipo = service.tipoFacturacion || 'retroactiva';
+  const facturarDesde = parseDateInput(service.facturarDesde);
 
-  // Próximo día de ciclo >= asOf (o el siguiente si hoy ya pasó)
-  let anchor = dateWithDay(asOf.getFullYear(), asOf.getMonth(), day);
-  if (anchor < asOf) {
-    anchor = dateWithDay(asOf.getFullYear(), asOf.getMonth() + 1, day);
+  // Ancla del periodo 0: mes de facturarDesde, o próximo ciclo desde hoy
+  let anchor;
+  if (facturarDesde) {
+    anchor = dateWithDay(facturarDesde.getFullYear(), facturarDesde.getMonth(), day);
+  } else {
+    anchor = dateWithDay(asOf.getFullYear(), asOf.getMonth(), day);
+    if (anchor < asOf) {
+      anchor = dateWithDay(asOf.getFullYear(), asOf.getMonth() + 1, day);
+    }
   }
-  // Avanzar periodIndex meses
-  const cycleEnd = dateWithDay(anchor.getFullYear(), anchor.getMonth() + periodIndex, day);
-  const cycleStart = dateWithDay(cycleEnd.getFullYear(), cycleEnd.getMonth() - 1, day);
 
-  let periodStart = cycleStart;
-  let periodEnd = new Date(cycleEnd);
-  periodEnd.setDate(periodEnd.getDate() - 1); // inclusive end day before next cycle day
-  // Simpler UISP-like: period is [startDay month N, startDay month N+1)
-  periodStart = cycleStart;
-  periodEnd = new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate());
-  periodEnd.setDate(periodEnd.getDate() - 1);
+  const cyclePoint = dateWithDay(anchor.getFullYear(), anchor.getMonth() + periodIndex, day);
 
+  let periodStart;
+  let periodEnd;
   if (tipo === 'anticipada') {
-    // Periodo futuro: desde cycleEnd (día comienzo) un mes adelante
-    periodStart = cycleEnd;
-    const next = dateWithDay(cycleEnd.getFullYear(), cycleEnd.getMonth() + 1, day);
+    periodStart = cyclePoint;
+    const next = dateWithDay(cyclePoint.getFullYear(), cyclePoint.getMonth() + 1, day);
     periodEnd = new Date(next);
     periodEnd.setDate(periodEnd.getDate() - 1);
+  } else {
+    // Retroactiva: periodo que termina el día anterior al cyclePoint
+    periodEnd = new Date(cyclePoint);
+    periodEnd.setDate(periodEnd.getDate() - 1);
+    periodStart = dateWithDay(cyclePoint.getFullYear(), cyclePoint.getMonth() - 1, day);
   }
 
   if (periodStart < install) periodStart = install;
@@ -116,7 +120,7 @@ export function getPeriodWindow(service, periodIndex = 0, asOf = new Date()) {
   return {
     periodStart: formatDateISO(periodStart),
     periodEnd: formatDateISO(periodEnd),
-    cycleDay: formatDateISO(tipo === 'anticipada' ? periodStart : cycleEnd),
+    cycleDay: formatDateISO(tipo === 'anticipada' ? periodStart : cyclePoint),
     isProrated: false,
     billingPeriod: `${ym}-d${day}-p${periodIndex}`,
     label: `${formatDateISO(periodStart)} → ${formatDateISO(periodEnd)}`,

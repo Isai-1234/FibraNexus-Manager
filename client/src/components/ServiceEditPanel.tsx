@@ -58,6 +58,9 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
     cargoCancelacionAnticipada: moneyStr(service.cargoCancelacionAnticipada),
     duracionMinimaMeses: service.duracionMinimaMeses != null ? String(service.duracionMinimaMeses) : '',
     diaComienzoPeriodo: String(service.diaComienzoPeriodo || service.billingDay || 1),
+    facturarDesde: service.facturarDesde
+      ? String(service.facturarDesde).slice(0, 7)
+      : '',
     tipoFacturacion: service.tipoFacturacion || 'retroactiva',
     prorratearPrimeraFactura: service.prorratearPrimeraFactura !== false,
     crearFacturaDiasAntes: String(service.crearFacturaDiasAntes ?? 0),
@@ -122,6 +125,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
       cargoCancelacionAnticipada: form.cargoCancelacionAnticipada === '' ? null : Number(form.cargoCancelacionAnticipada),
       duracionMinimaMeses: form.duracionMinimaMeses === '' ? null : Number(form.duracionMinimaMeses),
       diaComienzoPeriodo: Number(form.diaComienzoPeriodo) || 1,
+      facturarDesde: form.facturarDesde.trim() || null,
       tipoFacturacion: form.tipoFacturacion,
       prorratearPrimeraFactura: form.prorratearPrimeraFactura,
       crearFacturaDiasAntes: Number(form.crearFacturaDiasAntes) || 0,
@@ -238,6 +242,23 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                 <label className="block text-xs font-medium text-ink-soft mb-1">Día comienzo periodo</label>
                 <input type="number" min="1" max="31" className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={form.diaComienzoPeriodo} onChange={(e) => setField('diaComienzoPeriodo', e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-ink-soft mb-1">Facturar desde (mes)</label>
+                <div className="flex gap-2 items-center">
+                  <input type="month" className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                    value={form.facturarDesde}
+                    onChange={(e) => setField('facturarDesde', e.target.value)} />
+                  {form.facturarDesde && (
+                    <button type="button" className="text-xs text-ink-muted hover:text-ink underline shrink-0"
+                      onClick={() => setField('facturarDesde', '')}>
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-ink-muted mt-1">
+                  Ej: julio 2026 para incluir ese mes. Vacío = desde el próximo ciclo (hoy).
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-ink-soft mb-1">Crear factura (días antes)</label>

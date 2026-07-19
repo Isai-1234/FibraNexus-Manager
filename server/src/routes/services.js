@@ -99,6 +99,7 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       cargoCancelacionAnticipada: clientServices.cargoCancelacionAnticipada,
       duracionMinimaMeses: clientServices.duracionMinimaMeses,
       diaComienzoPeriodo: clientServices.diaComienzoPeriodo,
+      facturarDesde: clientServices.facturarDesde,
       tipoFacturacion: clientServices.tipoFacturacion,
       prorratearPrimeraFactura: clientServices.prorratearPrimeraFactura,
       crearFacturaDiasAntes: clientServices.crearFacturaDiasAntes,
@@ -300,6 +301,15 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
     if (body.diaComienzoPeriodo !== undefined) {
       patch.diaComienzoPeriodo = body.diaComienzoPeriodo;
       patch.billingDay = body.diaComienzoPeriodo; // mantener sync con ciclo aniversario legacy
+    }
+    if (body.facturarDesde !== undefined) {
+      if (body.facturarDesde === null || body.facturarDesde === '') {
+        patch.facturarDesde = null;
+      } else {
+        const raw = String(body.facturarDesde).trim();
+        // YYYY-MM → primer día del mes
+        patch.facturarDesde = /^\d{4}-\d{2}$/.test(raw) ? `${raw}-01` : raw.slice(0, 10);
+      }
     }
     if (body.tipoFacturacion !== undefined) patch.tipoFacturacion = body.tipoFacturacion;
     if (body.prorratearPrimeraFactura !== undefined) patch.prorratearPrimeraFactura = body.prorratearPrimeraFactura;

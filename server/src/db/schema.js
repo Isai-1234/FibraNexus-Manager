@@ -188,6 +188,8 @@ export const clientServices = pgTable('client_services', {
   cargoCancelacionAnticipada: decimal('cargo_cancelacion_anticipada', { precision: 12, scale: 2 }),
   duracionMinimaMeses: integer('duracion_minima_meses'),
   diaComienzoPeriodo: integer('dia_comienzo_periodo').default(1),
+  /** Primer periodo a facturar; NULL = desde hoy. */
+  facturarDesde: date('facturar_desde'),
   tipoFacturacion: tipoFacturacionEnum('tipo_facturacion').notNull().default('retroactiva'),
   prorratearPrimeraFactura: boolean('prorratear_primera_factura').notNull().default(true),
   crearFacturaDiasAntes: integer('crear_factura_dias_antes').notNull().default(0),
