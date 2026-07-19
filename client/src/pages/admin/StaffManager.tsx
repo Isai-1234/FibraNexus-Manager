@@ -89,7 +89,7 @@ export default function StaffManager({ API }: { API: string }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-500">{rows.length} usuario{rows.length !== 1 ? 's' : ''} interno{rows.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-ink-muted">{rows.length} usuario{rows.length !== 1 ? 's' : ''} interno{rows.length !== 1 ? 's' : ''}</p>
         <button
           onClick={() => setShowForm(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
@@ -103,9 +103,9 @@ export default function StaffManager({ API }: { API: string }) {
       {loading ? (
         <div className="flex justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="bg-surface-card rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <thead className="bg-surface text-xs uppercase text-ink-muted">
               <tr>
                 {['Nombre', 'Email', 'Rol', 'Estado', 'Acciones'].map((h) => (
                   <th key={h} className="text-left p-4">{h}</th>
@@ -114,7 +114,7 @@ export default function StaffManager({ API }: { API: string }) {
             </thead>
             <tbody className="divide-y">
               {rows.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
+                <tr key={u.id} className="hover:bg-surface-raised">
                   <td className="p-4 font-medium">{u.fullName}</td>
                   <td className="p-4 text-sm text-gray-600">{u.email}</td>
                   <td className="p-4">
@@ -129,7 +129,7 @@ export default function StaffManager({ API }: { API: string }) {
                     </select>
                   </td>
                   <td className="p-4">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-surface-raised text-gray-600'}`}>
                       {u.isActive ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
@@ -150,7 +150,7 @@ export default function StaffManager({ API }: { API: string }) {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <form onSubmit={createStaff} className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <form onSubmit={createStaff} className="bg-surface-card rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="font-semibold text-lg flex items-center gap-2"><Plus className="h-5 w-5" /> Nuevo personal</h3>
               <button type="button" onClick={() => setShowForm(false)}><X className="h-5 w-5 text-gray-400" /></button>

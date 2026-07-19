@@ -14,7 +14,7 @@ export default function SubscriberQueueCard({ name, target, maxLimit, comment, d
   const ip = target ? String(target).split('/')[0] : null
 
   return (
-    <div className={`rounded-xl border p-4 transition ${disabled ? 'border-red-100 bg-red-50/40' : 'border-gray-100 bg-white shadow-sm hover:shadow-md'}`}>
+    <div className={`rounded-xl border p-4 transition ${disabled ? 'border-red-100 bg-red-50/40' : 'border-line bg-surface-card shadow-sm hover:shadow-md'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -22,8 +22,8 @@ export default function SubscriberQueueCard({ name, target, maxLimit, comment, d
               <Wifi className={`h-4 w-4 ${disabled ? 'text-red-600' : 'text-blue-600'}`} />
             </div>
             <div className="min-w-0">
-              <p className="font-semibold text-gray-900 truncate">{name}</p>
-              {ip && <p className="text-xs text-gray-500 font-mono">{ip}</p>}
+              <p className="font-semibold text-ink truncate">{name}</p>
+              {ip && <p className="text-xs text-ink-muted font-mono">{ip}</p>}
             </div>
           </div>
         </div>
@@ -56,7 +56,7 @@ export default function SubscriberQueueCard({ name, target, maxLimit, comment, d
       )}
 
       {comment && (
-        <p className="mt-3 text-xs text-gray-500 truncate" title={comment}>{comment}</p>
+        <p className="mt-3 text-xs text-ink-muted truncate" title={comment}>{comment}</p>
       )}
     </div>
   )

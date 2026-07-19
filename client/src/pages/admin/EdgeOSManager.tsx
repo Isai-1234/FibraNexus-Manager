@@ -14,7 +14,7 @@ interface Props {
 
 function QueueBadge({ q, pendingCmds }: { q: any; pendingCmds: any[] }) {
   if (!q) return (
-    <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+    <span className="inline-flex items-center gap-1 text-xs bg-surface-raised text-ink-muted px-2 py-0.5 rounded-full">
       Sin queue
     </span>
   )
@@ -37,7 +37,7 @@ function QueueBadge({ q, pendingCmds }: { q: any; pendingCmds: any[] }) {
     </span>
   )
   return (
-    <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+    <span className="inline-flex items-center gap-1 text-xs bg-surface-raised text-ink-muted px-2 py-0.5 rounded-full">
       {status}
     </span>
   )
@@ -202,14 +202,14 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col">
+      <div className="bg-surface-card rounded-xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col">
 
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3">
             <div className={`w-2.5 h-2.5 rounded-full ${status?.connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
             <div>
-              <h2 className="font-bold text-gray-900">EdgeOS — {router.name}</h2>
+              <h2 className="font-bold text-ink">EdgeOS — {router.name}</h2>
               <p className="text-xs text-gray-400">
                 {status?.connected ? 'Conectado' : 'Sin conexión'}
                 {status?.lastHeartbeat ? ` · último heartbeat ${new Date(status.lastHeartbeat).toLocaleTimeString('es-CL')}` : ''}
@@ -217,10 +217,10 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={loadStatus} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+            <button onClick={loadStatus} className="p-1.5 rounded-lg hover:bg-surface-raised text-gray-400 hover:text-gray-600">
               <RefreshCw className="h-4 w-4" />
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-raised text-gray-400 hover:text-gray-600">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -308,7 +308,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                         <select
                           value={netForm.iface}
                           onChange={e => setNetForm(f => ({ ...f, iface: e.target.value }))}
-                          className="w-full text-xs border rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
+                          className="w-full text-xs border rounded-lg px-2 py-1.5 bg-surface-card focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
                           {['eth0','eth1','eth2','eth3','eth4','switch0','vtun0','pppoe0'].map(i => (
                             <option key={i} value={i}>{i}</option>
                           ))}
@@ -340,9 +340,9 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                         type="button"
                         onClick={() => setNetForm(f => ({ ...f, dhcp: !f.dhcp }))}
                         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${netForm.dhcp ? 'bg-emerald-500' : 'bg-gray-300'}`}>
-                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${netForm.dhcp ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-surface-card shadow transition-transform ${netForm.dhcp ? 'translate-x-4' : 'translate-x-0.5'}`} />
                       </button>
-                      <span className="text-xs font-medium text-gray-700">Habilitar servidor DHCP</span>
+                      <span className="text-xs font-medium text-ink-soft">Habilitar servidor DHCP</span>
                     </div>
                     {/* Pool DHCP (solo si dhcp=true) */}
                     {netForm.dhcp && (
@@ -373,7 +373,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => { setShowNetForm(false); setNetError('') }}
-                        className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100">
+                        className="text-xs text-ink-muted hover:text-ink-soft px-3 py-1.5 rounded-lg hover:bg-surface-raised">
                         Cancelar
                       </button>
                       <button
@@ -425,13 +425,13 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                     {status.cmdHistory?.slice(0, 10).map((c: any) => (
                       <div key={c.id}>
                         <button onClick={() => setExpandedCmd(expandedCmd === c.id ? null : c.id)}
-                          className={`w-full flex items-center gap-2 text-xs rounded-lg px-3 py-2 border text-left transition ${c.status === 'done' ? 'bg-green-50 border-green-100' : c.status === 'cancelled' ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-100'}`}>
+                          className={`w-full flex items-center gap-2 text-xs rounded-lg px-3 py-2 border text-left transition ${c.status === 'done' ? 'bg-green-50 border-green-100' : c.status === 'cancelled' ? 'bg-surface border-line' : 'bg-red-50 border-red-100'}`}>
                           {c.status === 'done'
                             ? <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
                             : c.status === 'cancelled'
                               ? <XCircle className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                               : <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
-                          <span className={`font-medium ${c.status === 'done' ? 'text-green-800' : c.status === 'cancelled' ? 'text-gray-500 line-through' : 'text-red-800'}`}>{c.type}</span>
+                          <span className={`font-medium ${c.status === 'done' ? 'text-green-800' : c.status === 'cancelled' ? 'text-ink-muted line-through' : 'text-red-800'}`}>{c.type}</span>
                           <span className="text-gray-400 ml-auto">{c.status === 'cancelled' ? 'cancelado' : c.executedAt ? new Date(c.executedAt).toLocaleTimeString('es-CL') : ''}</span>
                           {expandedCmd === c.id ? <ChevronUp className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
                         </button>
@@ -452,14 +452,14 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
               {/* Stats resumen */}
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: 'Total', value: totalSubs, color: 'text-gray-700', bg: 'bg-gray-50 border-gray-200' },
+                  { label: 'Total', value: totalSubs, color: 'text-ink-soft', bg: 'bg-surface border-line' },
                   { label: 'Activos', value: withQueue, color: 'text-green-700', bg: 'bg-green-50 border-green-200' },
                   { label: 'Pendientes', value: pending, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
                   { label: 'Sin queue', value: withoutQueue, color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
                 ].map(s => (
                   <div key={s.label} className={`rounded-lg border px-3 py-2 text-center ${s.bg}`}>
                     <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
-                    <p className="text-[10px] text-gray-500 font-medium">{s.label}</p>
+                    <p className="text-[10px] text-ink-muted font-medium">{s.label}</p>
                   </div>
                 ))}
               </div>
@@ -470,7 +470,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                 <select
                   value={selectedIface}
                   onChange={e => setSelectedIface(e.target.value)}
-                  className="flex-1 text-xs border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
+                  className="flex-1 text-xs border rounded-md px-2 py-1 bg-surface-card focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono">
                   {availableIfaces.map((i: any) => (
                     <option key={i.iface} value={i.iface}>{i.label}</option>
                   ))}
@@ -512,7 +512,7 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                     const isActive = s.edgeosQueue?.status === 'active'
                     return (
                       <div key={s.serviceId}
-                        className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${isActive ? 'bg-white border-emerald-200 hover:border-emerald-300' : hasQ ? 'bg-white border-amber-100' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                        className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${isActive ? 'bg-surface-card border-emerald-200 hover:border-emerald-300' : hasQ ? 'bg-surface-card border-amber-100' : 'bg-surface-card border-line hover:border-line'}`}>
 
                         {/* Estado visual izquierda */}
                         <div className={`w-1.5 self-stretch rounded-full shrink-0 ${isActive ? 'bg-emerald-400' : isInQueue || s.edgeosQueue?.status === 'pending' ? 'bg-amber-400 animate-pulse' : s.edgeosQueue?.status === 'error' ? 'bg-red-400' : 'bg-gray-200'}`} />
@@ -525,11 +525,11 @@ export default function EdgeOSManager({ API, router, onClose }: Props) {
                           </div>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             {s.ipAddress
-                              ? <span className="font-mono text-xs text-gray-500">{s.ipAddress}</span>
+                              ? <span className="font-mono text-xs text-ink-muted">{s.ipAddress}</span>
                               : <span className="text-xs text-red-500 font-medium">⚠ Sin IP — asigna una IP para poder aplicar queue</span>}
                             {s.ipAddress && <>
                               <span className="text-gray-300">·</span>
-                              <span className="text-xs text-gray-500">{s.planName}</span>
+                              <span className="text-xs text-ink-muted">{s.planName}</span>
                               <span className="text-gray-300">·</span>
                               <span className="text-xs font-medium text-emerald-600">↓{s.downloadSpeed}M ↑{s.uploadSpeed}M</span>
                             </>}

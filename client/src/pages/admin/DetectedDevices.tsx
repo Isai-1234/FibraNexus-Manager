@@ -54,7 +54,7 @@ function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, string> = {
     detected: 'bg-blue-100 text-blue-700',
     adopted: 'bg-green-100 text-green-700',
-    ignored: 'bg-gray-100 text-gray-500',
+    ignored: 'bg-surface-raised text-ink-muted',
   }
   const labels: Record<string, string> = {
     detected: 'Detectado',
@@ -62,7 +62,7 @@ function StatusBadge({ status }: { status: string }) {
     ignored: 'Ignorado',
   }
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cfg[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cfg[status] || 'bg-surface-raised text-gray-600'}`}>
       {labels[status] || status}
     </span>
   )
@@ -359,12 +359,12 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex gap-1 bg-surface-raised rounded-lg p-1">
           {STATUS_FILTER_OPTIONS.map(opt => (
             <button
               key={opt.value}
               onClick={() => setStatusFilter(opt.value)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${statusFilter === opt.value ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${statusFilter === opt.value ? 'bg-surface-card shadow-sm text-blue-600' : 'text-ink-muted hover:text-ink-soft'}`}
             >
               {opt.label}
             </button>
@@ -373,7 +373,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
 
         <div className="relative">
           <select
-            className="pl-3 pr-8 py-1.5 border rounded-lg text-sm bg-white appearance-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+            className="pl-3 pr-8 py-1.5 border rounded-lg text-sm bg-surface-card appearance-none focus:ring-2 focus:ring-blue-500 text-ink-soft"
             value={routerFilter}
             onChange={e => setRouterFilter(e.target.value)}
           >
@@ -385,7 +385,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
 
         <button
           onClick={loadDevices}
-          className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg hover:bg-gray-50 text-sm text-gray-600"
+          className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg hover:bg-surface-raised text-sm text-gray-600"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Actualizar
@@ -415,7 +415,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-surface-card rounded-xl shadow-sm border border-line overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
@@ -423,7 +423,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
         ) : devices.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <Radar className="h-12 w-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium text-gray-500">
+            <p className="font-medium text-ink-muted">
               {statusFilter === 'detected' ? 'Sin dispositivos detectados' : 'Sin registros en esta vista'}
             </p>
             <p className="text-sm mt-1">
@@ -433,10 +433,10 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-surface border-b">
                 <tr>
                   {['Router', 'MAC', 'IP', 'Hostname', 'Interfaz', 'Fuente', 'Última vez', 'Estado', 'Abonado', 'Acciones'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-ink-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -446,7 +446,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                     <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                       {device.routerName || `Router #${device.equipmentId}`}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-700 whitespace-nowrap">
+                    <td className="px-4 py-3 font-mono text-xs text-ink-soft whitespace-nowrap">
                       {device.macAddress}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
@@ -455,7 +455,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                     <td className="px-4 py-3 max-w-[140px] truncate text-gray-600">
                       {device.hostname || <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                    <td className="px-4 py-3 text-ink-muted text-xs whitespace-nowrap">
                       {device.interfaceName || <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3">
@@ -498,7 +498,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                         {effStatus(device) !== 'adopted' && (
                           <button
                             onClick={() => handleIgnore(device)}
-                            className="flex items-center gap-1 px-2.5 py-1 border text-xs rounded-lg hover:bg-gray-50 text-gray-500 transition"
+                            className="flex items-center gap-1 px-2.5 py-1 border text-xs rounded-lg hover:bg-surface-raised text-ink-muted transition"
                             title={device.status === 'ignored' ? 'Restaurar' : 'Ignorar'}
                           >
                             {device.status === 'ignored' ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
@@ -509,7 +509,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                             <span className="text-xs text-green-600 font-medium">✓ Vinculado</span>
                             <button
                               onClick={() => revertAdoption(device)}
-                              className="text-xs text-gray-500 hover:text-red-600 underline"
+                              className="text-xs text-ink-muted hover:text-red-600 underline"
                               type="button"
                             >
                               Desvincular
@@ -552,11 +552,11 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
       {/* Adopt Modal */}
       {adoptTarget && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setAdoptTarget(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>
-                <h2 className="font-semibold text-gray-900">Adoptar dispositivo</h2>
-                <p className="text-xs text-gray-500 mt-0.5 font-mono">{adoptTarget.macAddress} · {adoptTarget.ipAddress || 'sin IP'}</p>
+                <h2 className="font-semibold text-ink">Adoptar dispositivo</h2>
+                <p className="text-xs text-ink-muted mt-0.5 font-mono">{adoptTarget.macAddress} · {adoptTarget.ipAddress || 'sin IP'}</p>
               </div>
               <button onClick={() => setAdoptTarget(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
@@ -566,17 +566,17 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
             <div className="px-6 py-5 space-y-5">
               {/* Modo adopción */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Asignar a</label>
+                <label className="block text-sm font-medium text-ink-soft mb-2">Asignar a</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setAdoptMode('existing')}
-                    className={`flex-1 py-2 text-sm rounded-lg border font-medium transition ${adoptMode === 'existing' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    className={`flex-1 py-2 text-sm rounded-lg border font-medium transition ${adoptMode === 'existing' ? 'bg-blue-600 text-white border-blue-600' : 'bg-surface-card text-gray-600 border-line hover:bg-surface-raised'}`}
                   >
                     Abonado existente
                   </button>
                   <button
                     onClick={() => setAdoptMode('new')}
-                    className={`flex-1 py-2 text-sm rounded-lg border font-medium transition ${adoptMode === 'new' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    className={`flex-1 py-2 text-sm rounded-lg border font-medium transition ${adoptMode === 'new' ? 'bg-blue-600 text-white border-blue-600' : 'bg-surface-card text-gray-600 border-line hover:bg-surface-raised'}`}
                   >
                     Nuevo abonado
                   </button>
@@ -587,7 +587,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
               {adoptMode === 'existing' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar abonado</label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Buscar abonado</label>
                     <input
                       type="text"
                       placeholder="Nombre o email..."
@@ -598,7 +598,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                   </div>
                   <div>
                     <select
-                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 bg-surface-card"
                       value={adoptClientId}
                       onChange={e => setAdoptClientId(e.target.value)}
                       size={Math.min(filteredClients.length + 1, 6)}
@@ -621,7 +621,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
               {adoptMode === 'new' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Nombre completo <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -631,7 +631,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Email <span className="text-red-500">*</span></label>
                     <input
                       type="email"
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -641,7 +641,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Teléfono</label>
                     <input
                       type="tel"
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -655,9 +655,9 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
 
               {/* Plan */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Plan de internet <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Plan de internet <span className="text-red-500">*</span></label>
                 <select
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 bg-surface-card"
                   value={adoptPlanId}
                   onChange={e => setAdoptPlanId(e.target.value)}
                 >
@@ -691,7 +691,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
             <div className="px-6 py-4 border-t flex gap-3">
               <button
                 onClick={() => setAdoptTarget(null)}
-                className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700 transition"
+                className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised text-sm font-medium text-ink-soft transition"
               >
                 Cancelar
               </button>

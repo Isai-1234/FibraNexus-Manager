@@ -103,10 +103,10 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex gap-1 p-2 border-b bg-gray-50">
+      <div className="flex gap-1 p-2 border-b bg-surface">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${tab === t.id ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${tab === t.id ? 'bg-surface-card shadow text-blue-700' : 'text-ink-muted hover:text-ink-soft'}`}>
             <t.icon className="h-3.5 w-3.5" /> {t.label}
           </button>
         ))}
@@ -118,9 +118,9 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {tab === 'dhcp' && (
           <>
-            <p className="text-xs text-gray-500">Crea pool → red DHCP → servidor → leases estáticos para abonados con IP fija + MAC (antena Ubiquiti).</p>
+            <p className="text-xs text-ink-muted">Crea pool → red DHCP → servidor → leases estáticos para abonados con IP fija + MAC (antena Ubiquiti).</p>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">1. Pool de IPs</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Nombre pool"
@@ -135,13 +135,13 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               {snapshot?.ipPools?.length > 0 && (
                 <ul className="text-xs space-y-1 mt-2">
                   {snapshot.ipPools.map((p: any) => (
-                    <li key={p['.id'] || p.name} className="font-mono bg-gray-50 px-2 py-1 rounded">{p.name} → {p.ranges}</li>
+                    <li key={p['.id'] || p.name} className="font-mono bg-surface px-2 py-1 rounded">{p.name} → {p.ranges}</li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">2. Red DHCP</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="172.16.140.0/24"
@@ -158,25 +158,25 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               {snapshot?.dhcpNetworks?.length > 0 && (
                 <ul className="text-xs space-y-1">
                   {snapshot.dhcpNetworks.map((n: any) => (
-                    <li key={n['.id']} className="bg-gray-50 px-2 py-1 rounded">{n.address} gw {n.gateway}</li>
+                    <li key={n['.id']} className="bg-surface px-2 py-1 rounded">{n.address} gw {n.gateway}</li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">3. Servidor DHCP</h4>
               <div className="grid grid-cols-3 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Nombre"
                   value={forms.server.name} onChange={e => setForms({ ...forms, server: { ...forms.server, name: e.target.value } })} />
-                <select className="border rounded-lg px-3 py-2 text-sm bg-white"
+                <select className="border rounded-lg px-3 py-2 text-sm bg-surface-card"
                   value={forms.server.interface} onChange={e => setForms({ ...forms, server: { ...forms.server, interface: e.target.value } })}>
                   <option value="">Interfaz…</option>
                   {(snapshot?.interfaces || []).map((i: any) => (
                     <option key={i.name} value={i.name}>{i.name} ({i.type})</option>
                   ))}
                 </select>
-                <select className="border rounded-lg px-3 py-2 text-sm bg-white"
+                <select className="border rounded-lg px-3 py-2 text-sm bg-surface-card"
                   value={forms.server.addressPool} onChange={e => setForms({ ...forms, server: { ...forms.server, addressPool: e.target.value } })}>
                   <option value="">Pool…</option>
                   {(snapshot?.ipPools || []).map((p: any) => (
@@ -199,7 +199,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               )}
             </section>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">4. Lease estático (IP + MAC abonado)</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="IP"
@@ -216,7 +216,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               {snapshot?.dhcpLeases?.length > 0 && (
                 <div className="max-h-40 overflow-y-auto space-y-1">
                   {snapshot.dhcpLeases.slice(0, 30).map((l: any) => (
-                    <div key={l['.id']} className="text-xs flex gap-2 bg-gray-50 px-2 py-1 rounded font-mono">
+                    <div key={l['.id']} className="text-xs flex gap-2 bg-surface px-2 py-1 rounded font-mono">
                       <span className="font-medium text-gray-800">{l.comment || l.address}</span>
                       <span>{l.address}</span>
                       <span className="text-gray-400">{l['mac-address'] || '—'}</span>
@@ -230,11 +230,11 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
 
         {tab === 'ppp' && (
           <>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-ink-muted">
               Pool (tab DHCP) → perfil PPPoE → servidor PPPoE en interfaz. Luego provisiona abonados con modo PPPoE + Cola.
             </p>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">1. Perfil PPPoE (pool remoto + rate-limit)</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Nombre perfil (ej: 20M)"
@@ -243,7 +243,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                   value={forms.profile.rateLimit} onChange={e => setForms({ ...forms, profile: { ...forms.profile, rateLimit: e.target.value } })} />
                 <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Local address (GW router)"
                   value={forms.profile.localAddress} onChange={e => setForms({ ...forms, profile: { ...forms.profile, localAddress: e.target.value } })} />
-                <select className="border rounded-lg px-3 py-2 text-sm bg-white"
+                <select className="border rounded-lg px-3 py-2 text-sm bg-surface-card"
                   value={forms.profile.remoteAddress} onChange={e => setForms({ ...forms, profile: { ...forms.profile, remoteAddress: e.target.value } })}>
                   <option value="">Remote pool…</option>
                   {(snapshot?.ipPools || []).map((p: any) => (
@@ -267,22 +267,22 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               {snapshot?.pppProfiles?.length > 0 && (
                 <ul className="text-xs space-y-1 mt-2">
                   {snapshot.pppProfiles.map((p: any) => (
-                    <li key={p['.id'] || p.name} className="bg-gray-50 px-2 py-1.5 rounded flex justify-between">
+                    <li key={p['.id'] || p.name} className="bg-surface px-2 py-1.5 rounded flex justify-between">
                       <span className="font-medium">{p.name}</span>
-                      <span className="text-gray-500">{p['local-address'] || ''} → {p['remote-address'] || p['rate-limit'] || ''}</span>
+                      <span className="text-ink-muted">{p['local-address'] || ''} → {p['remote-address'] || p['rate-limit'] || ''}</span>
                     </li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="rounded-xl border p-4 space-y-3 bg-white">
+            <section className="rounded-xl border p-4 space-y-3 bg-surface-card">
               <h4 className="font-semibold text-sm">2. Servidor PPPoE (escucha en interfaz)</h4>
               <div className="grid grid-cols-2 gap-2">
                 <input className="border rounded-lg px-3 py-2 text-sm font-mono" placeholder="Service name"
                   value={forms.pppServer.serviceName}
                   onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, serviceName: e.target.value } })} />
-                <select className="border rounded-lg px-3 py-2 text-sm bg-white"
+                <select className="border rounded-lg px-3 py-2 text-sm bg-surface-card"
                   value={forms.pppServer.interface}
                   onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, interface: e.target.value } })}>
                   <option value="">Interfaz…</option>
@@ -290,7 +290,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                     <option key={i.name} value={i.name}>{i.name} ({i.type})</option>
                   ))}
                 </select>
-                <select className="border rounded-lg px-3 py-2 text-sm bg-white col-span-2"
+                <select className="border rounded-lg px-3 py-2 text-sm bg-surface-card col-span-2"
                   value={forms.pppServer.defaultProfile}
                   onChange={e => setForms({ ...forms, pppServer: { ...forms.pppServer, defaultProfile: e.target.value } })}>
                   <option value="">Perfil por defecto…</option>
@@ -329,16 +329,16 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               )}
             </section>
 
-            <section className="rounded-xl border border-dashed p-3 bg-gray-50 text-xs text-gray-600 space-y-1">
+            <section className="rounded-xl border border-dashed p-3 bg-surface text-xs text-gray-600 space-y-1">
               <p className="font-medium text-gray-800">3. Abonado (Cliente → Provisionar)</p>
-              <p>Modo <strong>PPPoE + Simple Queue</strong> → crea usuario/clave en el router. La antena usa service-name <code className="bg-white px-1 rounded">{forms.pppServer.serviceName || 'internet'}</code>.</p>
+              <p>Modo <strong>PPPoE + Simple Queue</strong> → crea usuario/clave en el router. La antena usa service-name <code className="bg-surface-card px-1 rounded">{forms.pppServer.serviceName || 'internet'}</code>.</p>
             </section>
           </>
         )}
 
         {tab === 'snmp' && (
           <>
-            <p className="text-xs text-gray-500">Polling SNMP v2c — ideal para antenas Ubiquiti, OLTs y switches. Si el equipo está en la LAN del router, el poll se hace vía MikroTik automáticamente.</p>
+            <p className="text-xs text-ink-muted">Polling SNMP v2c — ideal para antenas Ubiquiti, OLTs y switches. Si el equipo está en la LAN del router, el poll se hace vía MikroTik automáticamente.</p>
             <button onClick={pollAllSnmp} disabled={snmpPolling}
               className="text-sm px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2">
               <RefreshCw className={`h-4 w-4 ${snmpPolling ? 'animate-spin' : ''}`} />
@@ -349,11 +349,11 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
               <section className="space-y-2">
                 <h4 className="font-semibold text-sm">Equipos en {routerName}</h4>
                 {cpeDevices.map((eq: any) => (
-                  <div key={eq.id} className="flex items-center gap-3 border rounded-xl p-3 bg-white">
+                  <div key={eq.id} className="flex items-center gap-3 border rounded-xl p-3 bg-surface-card">
                     <span className={`w-2.5 h-2.5 rounded-full ${eq.status === 'online' ? 'bg-green-500' : 'bg-gray-300'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{eq.name}</p>
-                      <p className="text-xs text-gray-500 font-mono">{eq.ipAddress || 'sin IP'} · community: {eq.hasSnmpCommunity || eq.snmpCommunitySet ? '••••' : '—'}</p>
+                      <p className="text-xs text-ink-muted font-mono">{eq.ipAddress || 'sin IP'} · community: {eq.hasSnmpCommunity || eq.snmpCommunitySet ? '••••' : '—'}</p>
                       {eq.credentials?.lastSnmp && (
                         <p className="text-xs text-emerald-700 mt-0.5">
                           {eq.credentials.lastSnmp.sysName} · up {eq.credentials.lastSnmp.uptime}
@@ -362,7 +362,7 @@ export default function RouterNetworkConfig({ API, routerId, routerName, siteEqu
                       )}
                     </div>
                     <button onClick={() => pollOne(eq.id)} disabled={!eq.ipAddress || !(eq.snmpCommunity || eq.hasSnmpCommunity || eq.snmpCommunitySet)}
-                      className="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50 disabled:opacity-40">
+                      className="text-xs px-2 py-1 border rounded-lg hover:bg-surface-raised disabled:opacity-40">
                       SNMP
                     </button>
                   </div>

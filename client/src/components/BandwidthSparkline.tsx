@@ -76,7 +76,7 @@ export default function BandwidthSparkline({ routerId, API, className = '', poll
   }, [poll, pollMs])
 
   if (state === 'loading') {
-    return <div className={`h-12 rounded bg-gray-100 animate-pulse ${className}`} />
+    return <div className={`h-12 rounded bg-surface-raised animate-pulse ${className}`} />
   }
 
   if (state === 'error') {

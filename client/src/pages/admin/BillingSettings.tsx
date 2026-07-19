@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Save, Play, Settings } from 'lucide-react'
 import axios from 'axios'
+import ThemeToggle from '../../components/ThemeToggle'
 
 type BillingSettingsData = {
   billingAutoEnabled: boolean
@@ -123,20 +124,21 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-50">
-      <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
+    <div className="flex-1 overflow-auto bg-surface">
+      <header className="bg-surface-card shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b border-line">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
+          <button onClick={onBack} className="p-2 hover:bg-surface-raised rounded-lg text-ink"><ArrowLeft className="h-5 w-5" /></button>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-xl font-bold text-ink flex items-center gap-2">
               <Settings className="h-5 w-5 text-blue-600" /> Ajustes de facturación
             </h1>
-            <p className="text-sm text-gray-500">{orgName} — cobro automático, morosos y suspensión</p>
+            <p className="text-sm text-ink-muted">{orgName} — cobro automático, morosos y suspensión</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <ThemeToggle />
           <button onClick={handleRunJobs} disabled={running}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-2 disabled:opacity-50">
+            className="px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium flex items-center gap-2 disabled:opacity-50 text-ink">
             <Play className="h-4 w-4" /> {running ? 'Ejecutando…' : 'Ejecutar jobs ahora'}
           </button>
           <button onClick={handleSave} disabled={saving}
@@ -155,9 +157,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
 
         {settings && (
           <div className="space-y-6">
-            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
-              <h2 className="font-semibold text-gray-900">Pasarela de cobro online (tu cuenta Flow)</h2>
-              <p className="text-sm text-gray-500">
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Pasarela de cobro online (tu cuenta Flow)</h2>
+              <p className="text-sm text-ink-muted">
                 Cada ISP configura su propia API de Flow. Las claves se guardan cifradas y no se vuelven a mostrar.
               </p>
               <div className="flex flex-wrap items-center gap-2">
@@ -168,13 +170,13 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                 }`}>
                   {paymentGateway?.mode === 'live' ? 'LIVE' : 'STUB'}
                 </span>
-                <span className="text-sm text-gray-700">
+                <span className="text-sm text-ink-soft">
                   Proveedor activo: <strong>{paymentGateway?.provider || 'stub'}</strong>
                 </span>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Proveedor</label>
                 <select
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                   value={settings.paymentProvider || 'stub'}
@@ -186,9 +188,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </div>
 
               {(settings.paymentProvider === 'flow' || settings.hasFlowApiKey) && (
-                <div className="space-y-3 pt-1 border-t border-gray-100">
+                <div className="space-y-3 pt-1 border-t border-line">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Flow API Key</label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Flow API Key</label>
                     <input
                       type="password"
                       autoComplete="off"
@@ -199,7 +201,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Flow Secret Key</label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Flow Secret Key</label>
                     <input
                       type="password"
                       autoComplete="off"
@@ -210,7 +212,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">URL API Flow (opcional)</label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">URL API Flow (opcional)</label>
                     <input
                       type="url"
                       value={settings.flowApiUrl || ''}
@@ -232,15 +234,15 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               )}
             </section>
 
-            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
-              <h2 className="font-semibold text-gray-900">Facturación automática</h2>
-              <p className="text-sm text-gray-500">Genera facturas diariamente a la hora indicada para servicios con cobro pendiente.</p>
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Facturación automática</h2>
+              <p className="text-sm text-ink-muted">Genera facturas diariamente a la hora indicada para servicios con cobro pendiente.</p>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={settings.billingAutoEnabled} onChange={() => toggle('billingAutoEnabled')} className="rounded" />
                 <span className="text-sm">Activar generación automática de facturas</span>
               </label>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hora de ejecución (0–23)</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Hora de ejecución (0–23)</label>
                 <input type="number" min={0} max={23} value={settings.billingHour}
                   onChange={(e) => setSettings({ ...settings, billingHour: parseInt(e.target.value, 10) || 8 })}
                   className="w-32 border rounded-lg px-3 py-2" />
@@ -252,9 +254,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </label>
             </section>
 
-            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
-              <h2 className="font-semibold text-gray-900">Morosos y suspensión</h2>
-              <p className="text-sm text-gray-500">
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Morosos y suspensión</h2>
+              <p className="text-sm text-ink-muted">
                 Marca facturas vencidas y suspende la IP del abonado (antena CPE o router en casa) en el EdgeRouter/MikroTik del nodo.
                 No se suspende el router del sitio — solo el tráfico del cliente moroso con acceso al portal de pago.
               </p>
@@ -275,14 +277,14 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                 <span className="text-sm">Enviar avisos de deuda al correr jobs (console/email stub)</span>
               </label>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Días de gracia antes de suspender</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Días de gracia antes de suspender</label>
                 <input type="number" min={0} max={90} value={settings.graceDaysBeforeSuspend}
                   onChange={(e) => setSettings({ ...settings, graceDaysBeforeSuspend: parseInt(e.target.value, 10) || 0 })}
                   className="w-32 border rounded-lg px-3 py-2" />
                 <p className="text-xs text-gray-400 mt-1">Ej: 5 = suspende si la factura lleva 5+ días vencida</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL pantalla de mora (cautiva)</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">URL pantalla de mora (cautiva)</label>
                 <input type="url" value={settings.suspendPortalUrl || ''}
                   placeholder="https://app.fibranexus.cl/suspended"
                   onChange={(e) => setSettings({ ...settings, suspendPortalUrl: e.target.value })}
@@ -293,20 +295,20 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </div>
             </section>
 
-            <section className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
-              <h2 className="font-semibold text-gray-900">Marca del portal (abonados)</h2>
-              <p className="text-sm text-gray-500">
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Marca del portal (abonados)</h2>
+              <p className="text-sm text-ink-muted">
                 Logo y colores que ve el abonado en su portal. Sin migración: se guarda en settings de la organización.
               </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Título del portal</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Título del portal</label>
                 <input type="text" value={settings.brandPortalTitle || ''}
                   placeholder="Portal Cliente"
                   onChange={(e) => setSettings({ ...settings, brandPortalTitle: e.target.value })}
                   className="w-full border rounded-lg px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL del logo</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">URL del logo</label>
                 <input type="url" value={settings.brandLogoUrl || ''}
                   placeholder="https://…/logo.png"
                   onChange={(e) => setSettings({ ...settings, brandLogoUrl: e.target.value })}
@@ -314,7 +316,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Color primario</label>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Color primario</label>
                   <div className="flex gap-2 items-center">
                     <input type="color" value={settings.brandPrimaryColor || '#2563eb'}
                       onChange={(e) => setSettings({ ...settings, brandPrimaryColor: e.target.value })}
@@ -325,7 +327,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Color acento</label>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Color acento</label>
                   <div className="flex gap-2 items-center">
                     <input type="color" value={settings.brandAccentColor || '#0ea5e9'}
                       onChange={(e) => setSettings({ ...settings, brandAccentColor: e.target.value })}

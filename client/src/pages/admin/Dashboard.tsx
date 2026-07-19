@@ -10,6 +10,7 @@ import DetectedDevices from './DetectedDevices'
 import StaffManager from './StaffManager'
 import WorkOrdersManager from './WorkOrdersManager'
 import FieldWorkOrders from '../technician/FieldWorkOrders'
+import ThemeToggle from '../../components/ThemeToggle'
 import { formatDateCL } from '../../lib/formatDate'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
@@ -468,11 +469,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     cancelled: 'bg-red-100 text-red-700', pending: 'bg-blue-100 text-blue-700', cut: 'bg-red-100 text-red-700',
     paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700',
     open: 'bg-yellow-100 text-yellow-700', in_progress: 'bg-blue-100 text-blue-700',
-    resolved: 'bg-green-100 text-green-700', closed: 'bg-gray-100 text-gray-600',
-    online: 'bg-green-100 text-green-700', offline: 'bg-gray-100 text-gray-600',
+    resolved: 'bg-green-100 text-green-700', closed: 'bg-surface-raised text-gray-600',
+    online: 'bg-green-100 text-green-700', offline: 'bg-surface-raised text-gray-600',
     maintenance: 'bg-yellow-100 text-yellow-700', error: 'bg-red-100 text-red-700',
     critical: 'bg-red-100 text-red-700', high: 'bg-orange-100 text-orange-700',
-    medium: 'bg-blue-100 text-blue-700', low: 'bg-gray-100 text-gray-600',
+    medium: 'bg-blue-100 text-blue-700', low: 'bg-surface-raised text-gray-600',
     individual: 'bg-blue-100 text-blue-700', business: 'bg-purple-100 text-purple-700',
   }
 
@@ -504,8 +505,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     offline: 'bg-orange-100 text-orange-700',
     suspended: 'bg-yellow-100 text-yellow-700',
     static: 'bg-blue-100 text-blue-700',
-    none: 'bg-gray-100 text-gray-500',
-    unknown: 'bg-gray-100 text-gray-500',
+    none: 'bg-surface-raised text-ink-muted',
+    unknown: 'bg-surface-raised text-ink-muted',
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
@@ -524,7 +525,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   // Vista detalle cliente
   if (selectedClientId) {
     return (
-      <div className="min-h-screen bg-gray-100 flex">
+      <div className="min-h-screen bg-surface flex">
         <Sidebar menuSections={menuSections} activeTab={sidebarActiveTab()} user={user} logout={logout}
           onTabClick={navigateMenu} />
         <ClientDetail
@@ -541,7 +542,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   // (si no, Finanzas bloquea Ajustes / Routers al dejar activeTab en 'finance')
   if (showBillingSettings) {
     return (
-      <div className="min-h-screen bg-gray-100 flex">
+      <div className="min-h-screen bg-surface flex">
         <Sidebar menuSections={menuSections} activeTab="billing-settings" user={user} logout={logout}
           onTabClick={navigateMenu} />
         <BillingSettings API={API} onBack={() => { setShowBillingSettings(false); setActiveTab('dashboard') }} />
@@ -551,7 +552,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   if (showRouters) {
     return (
-      <div className="min-h-screen bg-gray-100 flex">
+      <div className="min-h-screen bg-surface flex">
         <Sidebar menuSections={menuSections} activeTab="routers" user={user} logout={logout}
           onTabClick={navigateMenu} />
         <RouterManager API={API} onBack={() => { setShowRouters(false); openRedIsp() }} />
@@ -561,7 +562,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   if (redIspOpen) {
     return (
-      <div className="min-h-screen bg-gray-100 flex">
+      <div className="min-h-screen bg-surface flex">
         <Sidebar menuSections={menuSections} activeTab="red-isp" user={user} logout={logout}
           onTabClick={navigateMenu} />
         <NetworkManager
@@ -575,7 +576,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   if (activeTab === 'finance') {
     return (
-      <div className="min-h-screen bg-slate-950 flex">
+      <div className="min-h-screen bg-surface flex">
         <Sidebar menuSections={menuSections} activeTab="finance" user={user} logout={logout}
           onTabClick={navigateMenu} />
         <FinanceDashboard API={API} />
@@ -587,11 +588,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const canEdit = ['clients', 'plans', 'services', 'equipment', 'ips', 'tickets']
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="min-h-screen bg-surface flex">
       {/* Modal Form */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowForm(false)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface-card rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5 border-b pb-4">
               <h3 className="text-lg font-bold">{editingItem ? '✏️ Editar' : '➕ Nuevo'} {{
                 ips: 'registro IP', services: 'suscripción', clients: 'abonado',
@@ -602,20 +603,20 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <div className="space-y-4">
               {(formFields[activeTab] || []).map(f => (
                 <div key={f.name}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
                   {f.type === 'client-select' ? (
-                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
+                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-surface-card" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
                       <option value="">Seleccionar abonado...</option>
                       {clients.length === 0 && <option disabled value="">— Sin abonados (créalos en Abonados) —</option>}
                       {clients.map((c: any) => <option key={c.id} value={c.id}>{c.user?.fullName || c.id} — {c.city || ''}</option>)}
                     </select>
                   ) : f.type === 'plan-select' ? (
-                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
+                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-surface-card" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
                       <option value="">Seleccionar plan...</option>
                       {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} — ${Number(p.price).toLocaleString('es-CL')}/mes</option>)}
                     </select>
                   ) : f.type === 'select' ? (
-                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
+                    <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-surface-card" value={form[f.name] || ''} onChange={e => setForm({...form, [f.name]: e.target.value})}>
                       <option value="">Seleccionar...</option>
                       {f.options?.map((o: string) => <option key={o} value={o}>{statusLabel[o] || o}</option>)}
                     </select>
@@ -628,7 +629,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               ))}
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t">
-              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Cancelar</button>
+              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Cancelar</button>
               <button onClick={handleSave} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
                 {editingItem ? '💾 Guardar cambios' : '✅ Crear'}
               </button>
@@ -641,7 +642,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         onTabClick={navigateMenu} />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto bg-gray-50">
+      <div className="flex-1 overflow-auto bg-surface">
         {user?.organization?.plan === 'trial' && user?.organization?.trialDaysLeft != null && (
           <div className={`px-8 py-3 text-sm flex items-center justify-between ${user.organization.trialDaysLeft <= 3 ? 'bg-amber-50 text-amber-900 border-b border-amber-200' : 'bg-sky-50 text-sky-900 border-b border-sky-200'}`}>
             <span>
@@ -650,19 +651,20 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <span className="text-xs opacity-75">Tú operas <strong>{user.organization.name}</strong> · tus abonados son otra cosa</span>
           </div>
         )}
-        <header className="bg-white shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b">
+        <header className="bg-surface-card shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b border-line">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">{tabLabels[activeTab === 'equipment' ? 'inventory' : activeTab] || activeTab}</h1>
+            <h1 className="text-xl font-bold text-ink">{tabLabels[activeTab === 'equipment' ? 'inventory' : activeTab] || activeTab}</h1>
             {tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab] && (
-              <p className="text-sm text-gray-500 mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
+              <p className="text-sm text-ink-muted mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
-              <p className="text-xs text-gray-400 mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
+            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && activeTab !== 'finance' && (
+              <p className="text-xs text-ink-muted mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <ThemeToggle />
             {activeTab !== 'staff' && activeTab !== 'work-orders' && (
-              <button onClick={loadData} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium">🔄 Actualizar</button>
+              <button onClick={loadData} className="px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium text-ink">🔄 Actualizar</button>
             )}
             {activeTab === 'invoices' && (
               <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
@@ -727,8 +729,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   return (
                     <div
                       key={s.label}
-                      className={`bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border ${
-                        isOpen ? 'border-orange-400 ring-2 ring-orange-100' : hasAlerts ? 'border-orange-200' : 'border-gray-100'
+                      className={`bg-surface-card p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border ${
+                        isOpen ? 'border-orange-400 ring-2 ring-orange-100' : hasAlerts ? 'border-orange-200' : 'border-line'
                       }`}
                       onClick={() => {
                         if (s.alertBucket && hasAlerts) openAlertBucket(s.alertBucket)
@@ -739,14 +741,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
-                        <p className="text-xs text-gray-500 font-medium leading-tight flex-1">{s.label}</p>
+                        <p className="text-xs text-ink-muted font-medium leading-tight flex-1">{s.label}</p>
                         {hasAlerts && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-800">
                             {bucketAlerts.length}
                           </span>
                         )}
                       </div>
-                      <p className="text-xl font-bold text-gray-900">{s.value}</p>
+                      <p className="text-xl font-bold text-ink">{s.value}</p>
                       {hasAlerts && (
                         <p className="text-[10px] text-orange-700 mt-1 font-medium">
                           {isOpen ? 'Cerrar detalle ↑' : 'Ver alertas →'}
@@ -758,7 +760,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               </div>
 
               {alertPanel && (
-                <div className="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
+                <div className="bg-surface-card rounded-xl border border-orange-200 shadow-sm overflow-hidden">
                   <div className="px-5 py-3 bg-orange-50 border-b border-orange-100 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h2 className="font-semibold text-orange-950 text-sm flex items-center gap-2">
@@ -774,18 +776,18 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     <div className="flex gap-2">
                       {(user?.role === 'admin' || user?.role === 'superadmin') && (
                         <button type="button" onClick={refreshAlerts}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-orange-200 hover:bg-orange-50 text-orange-900">
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-card border border-orange-200 hover:bg-orange-50 text-orange-900">
                           Actualizar
                         </button>
                       )}
                       <button type="button" onClick={() => setAlertPanel(null)}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-700">
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-card border border-line hover:bg-surface-raised text-ink-soft">
                         Cerrar
                       </button>
                     </div>
                   </div>
                   {alertsForBucket(alertPanel).length === 0 ? (
-                    <p className="px-5 py-8 text-sm text-gray-500 text-center">Sin alertas abiertas en esta categoría.</p>
+                    <p className="px-5 py-8 text-sm text-ink-muted text-center">Sin alertas abiertas en esta categoría.</p>
                   ) : (
                     <ul className="divide-y max-h-96 overflow-y-auto">
                       {alertsForBucket(alertPanel).map((a: any) => (
@@ -799,16 +801,16 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                       : 'bg-amber-100 text-amber-800'
                                 }`}>{a.severity}</span>
                                 {a.status === 'acked' && (
-                                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">vista</span>
+                                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-surface-raised text-gray-600">vista</span>
                                 )}
-                                <span className="font-medium text-sm text-gray-900">{a.title}</span>
+                                <span className="font-medium text-sm text-ink">{a.title}</span>
                               </div>
-                              <p className="text-xs text-gray-700">
-                                <span className="font-semibold text-gray-500">Qué:</span>{' '}
+                              <p className="text-xs text-ink-soft">
+                                <span className="font-semibold text-ink-muted">Qué:</span>{' '}
                                 {a.message || 'Sin detalle adicional.'}
                               </p>
                               <p className="text-xs text-gray-600">
-                                <span className="font-semibold text-gray-500">Por qué:</span>{' '}
+                                <span className="font-semibold text-ink-muted">Por qué:</span>{' '}
                                 {ALERT_WHY[a.kind] || 'Condición operativa detectada por el monitoreo.'}
                               </p>
                             </div>
@@ -819,7 +821,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               </button>
                               {a.status === 'open' && (
                                 <button type="button" onClick={() => ackAlert(a.id)}
-                                  className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700">
+                                  className="text-xs px-2.5 py-1 rounded-lg border border-line bg-surface-card hover:bg-surface-raised text-ink-soft">
                                   Visto
                                 </button>
                               )}
@@ -839,7 +841,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               )}
 
               {clientsWithProblems.length > 0 && (
-                <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden">
+                <div className="bg-surface-card rounded-xl border border-red-100 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 bg-red-50 border-b border-red-100 flex justify-between items-center">
                     <div>
                       <h2 className="font-semibold text-red-900 flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Abonados que requieren atención</h2>
@@ -849,7 +851,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                      <thead className="bg-surface text-xs uppercase text-ink-muted">
                         <tr>
                           {['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Tickets', ''].map(h => (
                             <th key={h} className="text-left p-4">{h}</th>
@@ -865,12 +867,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             </td>
                             <td className="p-4 text-sm">
                               {c.planName || '—'}
-                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[c.serviceStatus] || 'bg-gray-100'}`}>
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[c.serviceStatus] || 'bg-surface-raised'}`}>
                                 {statusLabel[c.serviceStatus] || c.serviceStatus}
                               </span>
                             </td>
                             <td className="p-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[c.connectionStatus] || 'bg-gray-100'}`}>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[c.connectionStatus] || 'bg-surface-raised'}`}>
                                 {connectionLabel[c.connectionStatus] || c.connectionStatus}
                               </span>
                             </td>
@@ -891,7 +893,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               )}
 
               {overdueInvoices.length > 0 && (
-                <div className="bg-white rounded-xl border border-amber-100 shadow-sm overflow-hidden">
+                <div className="bg-surface-card rounded-xl border border-amber-100 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex justify-between items-center">
                     <div>
                       <h2 className="font-semibold text-amber-900 flex items-center gap-2"><DollarSign className="h-5 w-5" /> Facturas vencidas</h2>
@@ -901,7 +903,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                      <thead className="bg-surface text-xs uppercase text-ink-muted">
                         <tr>
                           {['Factura', 'Abonado', 'Total', 'Vencimiento', 'Atraso', ''].map(h => (
                             <th key={h} className="text-left p-4">{h}</th>
@@ -928,7 +930,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div className="bg-surface-card rounded-xl border shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b flex justify-between items-center">
                     <h2 className="font-semibold">Abonados (estilo UISP)</h2>
                     <button onClick={() => setActiveTab('clients')} className="text-sm text-blue-600 hover:underline">Ver listado completo →</button>
@@ -942,7 +944,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   ) : (
                     <div className="divide-y max-h-96 overflow-y-auto">
                       {clientOverview.map((c: any) => (
-                        <div key={c.id} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50 gap-4">
+                        <div key={c.id} className="px-6 py-3 flex items-center justify-between hover:bg-surface-raised gap-4">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium text-sm truncate">{c.fullName}</p>
@@ -977,7 +979,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div className="bg-surface-card rounded-xl border shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b">
                     <h2 className="font-semibold">Tickets recientes</h2>
                   </div>
@@ -986,13 +988,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   ) : (
                     <div className="divide-y">
                       {recentTickets.map((t: any) => (
-                        <div key={t.id} className="px-6 py-3 hover:bg-gray-50">
+                        <div key={t.id} className="px-6 py-3 hover:bg-surface-raised">
                           <div className="flex justify-between items-start">
                             <div>
                               <p className="text-sm font-medium">{t.subject}</p>
                               <p className="text-xs text-gray-400">{t.clientName || 'Cliente'} · {new Date(t.createdAt).toLocaleDateString('es-CL')}</p>
                             </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[t.priority] || 'bg-gray-100'}`}>{statusLabel[t.priority] || t.priority}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[t.priority] || 'bg-surface-raised'}`}>{statusLabel[t.priority] || t.priority}</span>
                           </div>
                         </div>
                       ))}
@@ -1024,7 +1026,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
                 <span><strong>Inventario global</strong> — todos los equipos del ISP. Para ver por nodo y torre, usa Red ISP.</span>
                 <button type="button" onClick={openRedIsp}
-                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
+                  className="px-3 py-1.5 bg-surface-card border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
                   Ir a Red ISP →
                 </button>
               </div>
@@ -1042,31 +1044,31 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               </div>
 
               {/* Tabla equipos */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="bg-surface-card rounded-xl shadow-sm border border-line">
                 {loading ? (
                   <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>
                 ) : data.length === 0 ? (
                   <div className="text-center py-16 text-gray-400">
                     <Server className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                    <p className="font-medium text-gray-500">Sin equipos registrados</p>
+                    <p className="font-medium text-ink-muted">Sin equipos registrados</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50 border-b">
-                        <tr>{['Equipo', 'Tipo', 'IP / Host', 'RouterOS', 'Uptime', 'CPU', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}</tr>
+                      <thead className="bg-surface border-b">
+                        <tr>{['Equipo', 'Tipo', 'IP / Host', 'RouterOS', 'Uptime', 'CPU', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {data.map((item: any) => (
                           <tr key={item.id} className="hover:bg-blue-50/30 transition">
                             <td className="p-4 font-medium">{item.name}<br/><span className="text-xs text-gray-400">{item.brand} {item.model}</span></td>
-                            <td className="p-4"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
+                            <td className="p-4"><span className="px-2 py-1 bg-surface-raised text-ink-soft rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
                             <td className="p-4 font-mono text-sm">{item.ipAddress || item.credentials?.tunnelHostname || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-xs">{item.routerInfo?.version?.split(' ')[0] || item.firmware || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-xs">{item.snmpUptime || item.credentials?.lastSnmp?.uptime || item.routerInfo?.uptime || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-xs">{item.routerInfo?.cpuLoad != null ? `${item.routerInfo.cpuLoad}%` : <span className="text-gray-400">—</span>}</td>
                             <td className="p-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${item.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                              <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${item.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-surface-raised text-gray-600'}`}>
                                 <span className={`w-2 h-2 rounded-full ${item.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
                                 {statusLabel[item.status] || item.status}
                               </span>
@@ -1119,13 +1121,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   )}
                 </div>
               )}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="bg-surface-card rounded-xl shadow-sm border border-line">
               {loading ? (
                 <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div></div>
               ) : data.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                   <div className="text-6xl mb-4">📭</div>
-                  <p className="text-lg font-medium text-gray-500">No hay {activeTab === 'ips' ? 'IPs' : activeTab} registrados</p>
+                  <p className="text-lg font-medium text-ink-muted">No hay {activeTab === 'ips' ? 'IPs' : activeTab} registrados</p>
                   <p className="text-sm mt-1">Usa el botón "+ Nuevo" para agregar</p>
                 </div>
               ) : activeTab === 'clients' ? (
@@ -1137,11 +1139,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           {(item.fullName || '?').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-gray-900 truncate">{item.fullName || 'Sin nombre'}</p>
-                          <p className="text-sm text-gray-500 truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
+                          <p className="font-semibold text-ink truncate">{item.fullName || 'Sin nombre'}</p>
+                          <p className="text-sm text-ink-muted truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             {item.siteName && (
-                              <span className="text-xs text-gray-500 inline-flex items-center gap-1">
+                              <span className="text-xs text-ink-muted inline-flex items-center gap-1">
                                 <MapPin className="h-3 w-3" /> {item.siteName}
                               </span>
                             )}
@@ -1162,9 +1164,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                       </div>
                       <div className="flex flex-wrap items-center gap-2 lg:max-w-md">
                         {item.planName ? (
-                          <span className="text-sm text-gray-700 bg-gray-50 border px-2.5 py-1 rounded-lg">
+                          <span className="text-sm text-ink-soft bg-surface border px-2.5 py-1 rounded-lg">
                             {item.planName}
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-gray-100'}`}>
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-surface-raised'}`}>
                               {statusLabel[item.serviceStatus] || item.serviceStatus}
                             </span>
                           </span>
@@ -1172,7 +1174,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           <span className="text-sm text-gray-400">Sin plan</span>
                         )}
                         <span
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-gray-100'}`}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-surface-raised'}`}
                           title={item.connectionDetail || ''}
                         >
                           {connectionLabel[item.connectionStatus] || item.connectionStatus}
@@ -1213,14 +1215,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
+                    <thead className="bg-surface border-b">
                       <tr>
-                        {activeTab === 'clients' && ['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'services' && ['ID', 'Abonado', 'Plan comercial', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'plans' && ['Plan comercial', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'ips' && ['Dirección IP', 'Subred', 'Gateway', 'VLAN', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'invoices' && ['Nº Factura', 'Cliente', 'Período', 'Neto', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
-                        {activeTab === 'tickets' && ['Ticket', 'Cliente', 'Categoría', 'Prioridad', 'Estado', 'Fecha', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'clients' && ['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'services' && ['ID', 'Abonado', 'Plan comercial', 'IP', 'MAC', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'plans' && ['Plan comercial', 'Tipo', 'Velocidad', 'Precio', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'ips' && ['Dirección IP', 'Subred', 'Gateway', 'VLAN', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'invoices' && ['Nº Factura', 'Cliente', 'Período', 'Neto', 'IVA', 'Total', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
+                        {activeTab === 'tickets' && ['Ticket', 'Cliente', 'Categoría', 'Prioridad', 'Estado', 'Fecha', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1228,17 +1230,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         <tr key={item.id} className="hover:bg-blue-50/30 transition">
                           {activeTab === 'clients' && <>
                             <td className="p-4">
-                              <p className="font-medium text-gray-900">{item.fullName || 'N/A'}</p>
+                              <p className="font-medium text-ink">{item.fullName || 'N/A'}</p>
                               <p className="text-xs text-gray-400">{item.email} · {item.city || '—'}</p>
                             </td>
                             <td className="p-4 text-sm">
                               {item.planName || '—'}
-                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-gray-100'}`}>
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-surface-raised'}`}>
                                 {statusLabel[item.serviceStatus] || item.serviceStatus}
                               </span>
                             </td>
                             <td className="p-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-gray-100'}`}>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-surface-raised'}`}>
                                 {connectionLabel[item.connectionStatus] || item.connectionStatus}
                               </span>
                             </td>
@@ -1264,8 +1266,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                                 </span>
                               ) : <span className="text-gray-400">—</span>}
                             </td>
-                            <td className="p-4 font-mono text-xs text-gray-500">{item.macAddress || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4 font-mono text-xs text-ink-muted">{item.macAddress || <span className="text-gray-400">—</span>}</td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-surface-raised'}`}>{statusLabel[item.status] || item.status}</span></td>
                           </>}
                           {activeTab === 'plans' && <>
                             <td className="p-4 font-medium">{item.name}</td>
@@ -1278,7 +1280,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm">{item.subnet || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-sm">{item.gateway || <span className="text-gray-400">—</span>}</td>
                             <td className="p-4 text-sm">{item.vlan || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'available' ? 'bg-green-100 text-green-700' : item.status === 'assigned' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{item.status === 'available' ? 'Disponible' : item.status === 'assigned' ? 'Asignada' : 'Reservada'}</span></td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'available' ? 'bg-green-100 text-green-700' : item.status === 'assigned' ? 'bg-blue-100 text-blue-700' : 'bg-surface-raised text-gray-600'}`}>{item.status === 'available' ? 'Disponible' : item.status === 'assigned' ? 'Asignada' : 'Reservada'}</span></td>
                           </>}
                           {activeTab === 'invoices' && <>
                             <td className="p-4 font-mono text-sm text-indigo-600">{item.invoiceNumber}</td>
@@ -1288,7 +1290,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm">${Number(item.tax).toLocaleString('es-CL')}</td>
                             <td className="p-4 font-bold">${Number(item.total).toLocaleString('es-CL')}</td>
                             <td className="p-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-surface-raised'}`}>{statusLabel[item.status] || item.status}</span>
                               {item.status === 'overdue' && item.dueDate && (
                                 <p className="text-xs text-red-600 mt-1">Atrasada {Math.max(0, Math.floor((Date.now() - new Date(String(item.dueDate).split('T')[0]).getTime()) / 86400000))} días</p>
                               )}
@@ -1298,9 +1300,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4"><span className="font-medium text-sm">{item.subject}</span><br/><span className="text-xs text-gray-400 font-mono">{item.ticketNumber}</span></td>
                             <td className="p-4 text-sm">{item.client?.fullName || 'N/A'}</td>
                             <td className="p-4 text-sm text-gray-600">{item.category || '—'}</td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.priority] || 'bg-gray-100'}`}>{statusLabel[item.priority] || item.priority}</span></td>
-                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-gray-100'}`}>{statusLabel[item.status] || item.status}</span></td>
-                            <td className="p-4 text-sm text-gray-500">{new Date(item.createdAt).toLocaleDateString('es-CL')}</td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.priority] || 'bg-surface-raised'}`}>{statusLabel[item.priority] || item.priority}</span></td>
+                            <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-surface-raised'}`}>{statusLabel[item.status] || item.status}</span></td>
+                            <td className="p-4 text-sm text-ink-muted">{new Date(item.createdAt).toLocaleDateString('es-CL')}</td>
                           </>}
                           <td className="p-4">
                             <div className="flex items-center gap-1">

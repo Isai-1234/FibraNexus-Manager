@@ -81,14 +81,14 @@ const toneStyles = {
   pending: 'bg-amber-50 border-amber-200 text-amber-900',
   active: 'bg-yellow-50 border-yellow-200 text-yellow-900',
   error: 'bg-red-50 border-red-200 text-red-900',
-  warning: 'bg-gray-50 border-gray-200 text-gray-700',
+  warning: 'bg-surface border-line text-ink-soft',
 }
 
 const iconStyles = {
   pending: 'text-amber-600',
   active: 'text-yellow-700',
   error: 'text-red-600',
-  warning: 'text-gray-500',
+  warning: 'text-ink-muted',
 }
 
 export default function NetworkSuspendStatus({ serviceStatus, suspendState, compact = false }: Props) {

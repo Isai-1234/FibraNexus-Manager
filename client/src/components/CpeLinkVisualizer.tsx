@@ -477,7 +477,7 @@ function SignalBeams({
 function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: boolean; color: string }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
   return (
-    <div className="mt-2 h-1 rounded-full bg-white/5 overflow-hidden">
+    <div className="mt-2 h-1 rounded-full bg-surface-card/5 overflow-hidden">
       <div
         className="h-full rounded-full transition-all duration-700 ease-out"
         style={{ width: `${pct}%`, background: ok ? color : '#fbbf24' }}
@@ -497,10 +497,10 @@ export default function CpeLinkVisualizer({
   if (!equipment) {
     return (
       <div className="rounded-3xl bg-[#070b14] p-10 text-center border border-white/[0.06]">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/[0.03] flex items-center justify-center">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-card/[0.03] flex items-center justify-center">
           <Radio className="h-7 w-7 text-slate-600" />
         </div>
-        <p className="text-sm text-slate-500">Sin antena CPE vinculada</p>
+        <p className="text-sm text-ink-muted">Sin antena CPE vinculada</p>
         <p className="text-xs text-slate-600 mt-1">Asigna una LiteBeam en la pestaña Equipos</p>
       </div>
     )
@@ -561,12 +561,12 @@ export default function CpeLinkVisualizer({
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] uppercase tracking-[0.25em] text-cyan-400/50 font-medium">Radio enlace</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.05] text-slate-400 border border-white/[0.06]">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-card/[0.05] text-ink-muted border border-white/[0.06]">
                 {theme.label}
               </span>
             </div>
             <h3 className="text-xl font-semibold text-white tracking-tight">{equipment.name || 'Antena CPE'}</h3>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <p className="text-sm text-ink-muted mt-0.5">
               {equipment.brand || 'Ubiquiti'} {equipment.model || 'LiteBeam M5'}
             </p>
             <p className="text-xs font-mono text-slate-600 mt-1">{equipment.ipAddress || 'sin IP'}</p>
@@ -581,7 +581,7 @@ export default function CpeLinkVisualizer({
                 onClick={onRefresh}
                 disabled={refreshing}
                 title="Actualizar SNMP"
-                className="p-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition disabled:opacity-40"
+                className="p-2 rounded-xl bg-surface-card/[0.05] border border-white/[0.08] text-ink-muted hover:text-cyan-300 hover:border-cyan-500/30 transition disabled:opacity-40"
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
@@ -591,7 +591,7 @@ export default function CpeLinkVisualizer({
                 type="button"
                 onClick={onExpand}
                 title="Pantalla completa"
-                className="p-2 rounded-xl bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition"
+                className="p-2 rounded-xl bg-surface-card/[0.05] border border-white/[0.08] text-ink-muted hover:text-cyan-300 hover:border-cyan-500/30 transition"
               >
                 <Maximize2 className="h-4 w-4" />
               </button>
@@ -742,9 +742,9 @@ export default function CpeLinkVisualizer({
         ].map((m) => (
           <div
             key={m.label}
-            className="rounded-2xl bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] px-4 py-3 hover:bg-white/[0.05] transition-colors"
+            className="rounded-2xl bg-surface-card/[0.03] backdrop-blur-sm border border-white/[0.06] px-4 py-3 hover:bg-surface-card/[0.05] transition-colors"
           >
-            <p className="text-[10px] uppercase tracking-widest text-slate-500">{m.label}</p>
+            <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
             <p className="mt-1 flex items-baseline gap-1">
               <span className={`text-lg font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
               <span className="text-[10px] text-slate-600">{m.unit}</span>
@@ -766,7 +766,7 @@ export default function CpeLinkVisualizer({
       )}
 
       {!signal && online && (
-        <div className="mx-4 mb-4 flex flex-col gap-1 text-xs text-slate-500 rounded-xl bg-white/[0.02] border border-white/[0.04] px-4 py-3">
+        <div className="mx-4 mb-4 flex flex-col gap-1 text-xs text-ink-muted rounded-xl bg-surface-card/[0.02] border border-white/[0.04] px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
             <span>

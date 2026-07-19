@@ -6,6 +6,7 @@ import axios from 'axios'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
+import ThemeToggle from '../../components/ThemeToggle'
 
 type MoneyCount = { count: number; total: number }
 type PeriodBucket = {
@@ -104,13 +105,13 @@ function MetricCard({
   const pct = pctChange(total, prevTotal)
   const up = pct != null && pct >= 0
   return (
-    <div className="rounded-xl border border-slate-700/80 bg-slate-900/80 p-4 shadow-lg">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{title}</p>
+    <div className="rounded-xl border border-line bg-surface-card/80 p-4 shadow-lg">
+      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{title}</p>
       <p className="mt-2 text-2xl font-bold tabular-nums" style={{ color: accent }}>{formatCLP(total)}</p>
       <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-        <span className="text-slate-400">{count} registro{count === 1 ? '' : 's'}</span>
+        <span className="text-ink-muted">{count} registro{count === 1 ? '' : 's'}</span>
         {pct == null ? (
-          <span className="text-slate-500">vs anterior: —</span>
+          <span className="text-ink-muted">vs anterior: —</span>
         ) : (
           <span className={`inline-flex items-center gap-0.5 font-medium ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
             {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
@@ -136,18 +137,18 @@ function MonthColumn({
     { label: 'Vencidas', v: data.overdueInvoices },
   ]
   return (
-    <div className={`rounded-xl border p-4 ${highlight ? 'border-sky-500/50 bg-slate-900' : 'border-slate-700/80 bg-slate-900/60'}`}>
-      <p className="text-sm font-semibold text-slate-100 capitalize">{title}</p>
-      {data.label && <p className="text-xs text-slate-400 mb-3 capitalize">{data.label}</p>}
+    <div className={`rounded-xl border p-4 ${highlight ? 'border-sky-500/50 bg-surface-card' : 'border-line bg-surface-card/60'}`}>
+      <p className="text-sm font-semibold text-ink capitalize">{title}</p>
+      {data.label && <p className="text-xs text-ink-muted mb-3 capitalize">{data.label}</p>}
       {!data.label && <div className="mb-3" />}
       <div className="space-y-2.5">
         {rows.map((r) => (
           <div key={r.label} className="flex items-start justify-between gap-2 text-sm">
             <div>
-              <p className="text-slate-300">{r.label}</p>
-              <p className="text-[11px] text-slate-500">{r.v.count} ítems</p>
+              <p className="text-ink-soft">{r.label}</p>
+              <p className="text-[11px] text-ink-muted">{r.v.count} ítems</p>
             </div>
-            <p className="font-mono text-slate-100 tabular-nums">{formatCLP(r.v.total)}</p>
+            <p className="font-mono text-ink tabular-nums">{formatCLP(r.v.total)}</p>
           </div>
         ))}
       </div>
@@ -287,20 +288,21 @@ export default function FinanceDashboard({ API }: { API: string }) {
   const prev = summary?.previous
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 backdrop-blur px-4 sm:px-8 py-4">
+    <div className="flex-1 overflow-auto bg-surface text-ink">
+      <header className="sticky top-0 z-10 border-b border-line bg-surface/95 backdrop-blur px-4 sm:px-8 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
               <TrendingUp className="h-5 w-5 text-emerald-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Finanzas</h1>
-              <p className="text-xs text-slate-400">Ingresos, facturación y egresos del ISP</p>
+              <h1 className="text-xl font-bold text-ink">Finanzas</h1>
+              <p className="text-xs text-ink-muted">Ingresos, facturación y egresos del ISP</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+            <ThemeToggle />
+            <div className="inline-flex rounded-lg border border-line bg-surface-card p-0.5">
               {([
                 ['month', 'Mes'],
                 ['quarter', 'Trimestre'],
@@ -311,7 +313,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                   type="button"
                   onClick={() => setPeriod(v)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                    period === v ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'
+                    period === v ? 'bg-sky-600 text-white' : 'text-ink-muted hover:text-white'
                   }`}
                 >
                   {label}
@@ -321,7 +323,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
             <button
               type="button"
               onClick={exportCsv}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-600 bg-slate-900 text-sm hover:bg-slate-800"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-surface-card text-sm hover:bg-surface-raised"
             >
               <Download className="h-4 w-4" /> Exportar CSV
             </button>
@@ -335,7 +337,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
         )}
 
         {loading && !summary ? (
-          <div className="flex items-center justify-center py-24 text-slate-400 gap-2">
+          <div className="flex items-center justify-center py-24 text-ink-muted gap-2">
             <Loader2 className="h-5 w-5 animate-spin" /> Cargando…
           </div>
         ) : summary && cur && prev ? (
@@ -381,8 +383,8 @@ export default function FinanceDashboard({ API }: { API: string }) {
 
             {/* Fila 3 — gráficos */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-200">Tendencias</h2>
-              <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-0.5 self-start">
+              <h2 className="text-sm font-semibold text-ink">Tendencias</h2>
+              <div className="inline-flex rounded-lg border border-line bg-surface-card p-0.5 self-start">
                 {([
                   ['month', 'Mes'],
                   ['quarter', 'Trimestre'],
@@ -393,7 +395,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                     type="button"
                     onClick={() => setChartPeriod(v)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                      chartPeriod === v ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'
+                      chartPeriod === v ? 'bg-violet-600 text-white' : 'text-ink-muted hover:text-white'
                     }`}
                   >
                     {label}
@@ -403,8 +405,8 @@ export default function FinanceDashboard({ API }: { API: string }) {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-slate-700/80 bg-slate-900/80 p-4">
-                <p className="text-sm font-medium text-slate-200 mb-3">Facturación por mes</p>
+              <div className="rounded-xl border border-line bg-surface-card/80 p-4">
+                <p className="text-sm font-medium text-ink mb-3">Facturación por mes</p>
                 <div className="h-64 sm:h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartInv} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -426,8 +428,8 @@ export default function FinanceDashboard({ API }: { API: string }) {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-700/80 bg-slate-900/80 p-4">
-                <p className="text-sm font-medium text-slate-200 mb-3">Pagos por método</p>
+              <div className="rounded-xl border border-line bg-surface-card/80 p-4">
+                <p className="text-sm font-medium text-ink mb-3">Pagos por método</p>
                 <div className="h-64 sm:h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartPay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -451,18 +453,18 @@ export default function FinanceDashboard({ API }: { API: string }) {
             </div>
 
             {/* Fila 4 — egresos */}
-            <div className="rounded-xl border border-slate-700/80 bg-slate-900/80 overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-slate-800">
+            <div className="rounded-xl border border-line bg-surface-card/80 overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-line">
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-100">Egresos</h2>
-                  <p className="text-xs text-slate-400">Gastos operativos del período</p>
+                  <h2 className="text-sm font-semibold text-ink">Egresos</h2>
+                  <p className="text-xs text-ink-muted">Gastos operativos del período</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="month"
                     value={expenseMonth}
                     onChange={(e) => setExpenseMonth(e.target.value)}
-                    className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-sm text-slate-200"
+                    className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-ink"
                   />
                   <button
                     type="button"
@@ -477,7 +479,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-800">
+                    <tr className="text-left text-xs uppercase tracking-wide text-ink-muted border-b border-line">
                       <th className="px-4 py-3 font-medium">Fecha</th>
                       <th className="px-4 py-3 font-medium">Proveedor</th>
                       <th className="px-4 py-3 font-medium">Descripción</th>
@@ -489,26 +491,26 @@ export default function FinanceDashboard({ API }: { API: string }) {
                   <tbody>
                     {expenses.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                        <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
                           Sin egresos en este mes
                         </td>
                       </tr>
                     ) : expenses.map((exp) => (
-                      <tr key={exp.id} className="border-b border-slate-800/80 hover:bg-slate-800/40">
-                        <td className="px-4 py-3 font-mono text-xs text-slate-300">{String(exp.date).slice(0, 10)}</td>
-                        <td className="px-4 py-3 text-slate-200">{exp.provider || '—'}</td>
-                        <td className="px-4 py-3 text-slate-400 max-w-[220px] truncate">{exp.description || '—'}</td>
+                      <tr key={exp.id} className="border-b border-line/80 hover:bg-surface-raised/40">
+                        <td className="px-4 py-3 font-mono text-xs text-ink-soft">{String(exp.date).slice(0, 10)}</td>
+                        <td className="px-4 py-3 text-ink">{exp.provider || '—'}</td>
+                        <td className="px-4 py-3 text-ink-muted max-w-[220px] truncate">{exp.description || '—'}</td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-surface-raised text-ink-soft border border-line">
                             {CATEGORY_LABELS[exp.category] || exp.category}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-rose-300">{formatCLP(Number(exp.amount))}</td>
                         <td className="px-4 py-3 text-right">
-                          <button type="button" onClick={() => openEdit(exp)} className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white" title="Editar">
+                          <button type="button" onClick={() => openEdit(exp)} className="p-1.5 rounded-lg hover:bg-slate-700 text-ink-muted hover:text-white" title="Editar">
                             <Pencil className="h-4 w-4" />
                           </button>
-                          <button type="button" onClick={() => deleteExpense(exp.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400" title="Eliminar">
+                          <button type="button" onClick={() => deleteExpense(exp.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-ink-muted hover:text-rose-400" title="Eliminar">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </td>
@@ -524,52 +526,52 @@ export default function FinanceDashboard({ API }: { API: string }) {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-line">
               <h3 className="font-semibold text-white">{editing ? 'Editar egreso' : 'Agregar egreso'}</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400">
+              <button type="button" onClick={() => setShowModal(false)} className="p-1 rounded-lg hover:bg-surface-raised text-ink-muted">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={saveExpense} className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Fecha</label>
+                  <label className="block text-xs text-ink-muted mb-1">Fecha</label>
                   <input required type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm" />
+                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Monto</label>
+                  <label className="block text-xs text-ink-muted mb-1">Monto</label>
                   <input required type="number" min="1" step="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-mono" placeholder="0" />
+                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-mono" placeholder="0" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Categoría</label>
+                <label className="block text-xs text-ink-muted mb-1">Categoría</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm">
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm">
                   {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Proveedor</label>
+                <label className="block text-xs text-ink-muted mb-1">Proveedor</label>
                 <input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm" />
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Descripción</label>
+                <label className="block text-xs text-ink-muted mb-1">Descripción</label>
                 <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm" />
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Nº factura / boleta</label>
+                <label className="block text-xs text-ink-muted mb-1">Nº factura / boleta</label>
                 <input value={form.invoiceNumber} onChange={(e) => setForm({ ...form, invoiceNumber: e.target.value })}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-mono" />
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm font-mono" />
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2.5 rounded-lg border border-slate-600 text-sm hover:bg-slate-800">
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2.5 rounded-lg border border-line text-sm hover:bg-surface-raised">
                   Cancelar
                 </button>
                 <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-sm font-medium disabled:opacity-50">

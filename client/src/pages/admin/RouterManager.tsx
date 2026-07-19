@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud, ChevronDown, HelpCircle, BookOpen, Loader2, ExternalLink, Router, Zap, Settings } from 'lucide-react'
 import axios from 'axios'
+import ThemeToggle from '../../components/ThemeToggle'
 
 interface Props { API: string; onBack: () => void }
 
@@ -318,21 +319,21 @@ function WizardHelpPanel({
   copiedKey: string
 }) {
   return (
-    <div className="rounded-xl border border-slate-700/60 bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="rounded-xl border border-line/60 bg-surface-card text-ink overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/80 transition"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-raised/80 transition"
       >
         <HelpCircle className="h-4 w-4 text-sky-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">¿Cómo configuro mi router?</p>
-          <p className="text-xs text-slate-400 truncate">{guide.title}</p>
+          <p className="text-xs text-ink-muted truncate">{guide.title}</p>
         </div>
-        <ChevronDown className={`h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-4 w-4 text-ink-muted transition ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="px-4 pb-4 space-y-3 border-t border-slate-700/80 pt-3">
+        <div className="px-4 pb-4 space-y-3 border-t border-line pt-3">
           <p className="text-sm font-medium text-sky-300">{guide.title}</p>
           <ol className="space-y-3">
             {guide.steps.map((s, i) => {
@@ -343,13 +344,13 @@ function WizardHelpPanel({
                   {i + 1}
                 </span>
                 <div className="flex-1 min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-slate-100 flex items-center gap-2">
+                  <p className="text-sm font-medium text-ink flex items-center gap-2">
                     <StepIcon className="h-3.5 w-3.5 text-sky-400 flex-shrink-0" />
                     {s.title}
                   </p>
-                  {s.detail && <p className="text-xs text-slate-400">{s.detail}</p>}
+                  {s.detail && <p className="text-xs text-ink-muted">{s.detail}</p>}
                   {s.code && (
-                    <div className="relative mt-1 bg-black/50 rounded-lg border border-slate-700 p-2.5">
+                    <div className="relative mt-1 bg-black/50 rounded-lg border border-line p-2.5">
                       <code className="text-[11px] text-emerald-400 font-mono whitespace-pre-wrap break-all block pr-8">{s.code}</code>
                       <button
                         type="button"
@@ -359,7 +360,7 @@ function WizardHelpPanel({
                       >
                         {copiedKey === `help-${i}`
                           ? <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                          : <Copy className="h-3.5 w-3.5 text-slate-300" />}
+                          : <Copy className="h-3.5 w-3.5 text-ink-soft" />}
                       </button>
                     </div>
                   )}
@@ -576,9 +577,9 @@ export default function RouterManager({ API, onBack }: Props) {
           <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
             <p className="font-semibold text-sky-900 text-sm mb-2">Cloudflare (MikroTik de borde)</p>
             <p className="text-xs text-sky-800 mb-2">El túnel sigue en tu MikroTik. Publica el EdgeRouter con un hostname nuevo:</p>
-            <ol className="space-y-1.5 text-xs text-gray-700">
+            <ol className="space-y-1.5 text-xs text-ink-soft">
               <li>Zero Trust → Tunnels → tu túnel del MikroTik → Public Hostname</li>
-              <li>URL: <code className="font-mono bg-white px-1 rounded">https://{router?.credentials?.routerLocalIp || credForm.tunnelHostname || router?.ipAddress || '172.16.11.254'}:443</code></li>
+              <li>URL: <code className="font-mono bg-surface-card px-1 rounded">https://{router?.credentials?.routerLocalIp || credForm.tunnelHostname || router?.ipAddress || '172.16.11.254'}:443</code></li>
               <li>Hostname: <strong>{router?.credentials?.tunnelHostname || credForm.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
             </ol>
           </div>
@@ -599,7 +600,7 @@ export default function RouterManager({ API, onBack }: Props) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Script completo</label>
+          <label className="block text-sm font-medium text-ink-soft mb-2">Script completo</label>
           <div className={`bg-gray-900 rounded-lg p-3 relative overflow-y-auto ${opts?.compact ? 'max-h-48' : 'max-h-72'}`}>
             <code className="text-green-400 text-xs block whitespace-pre-wrap break-all font-mono">{routerScriptText(script)}</code>
             <button
@@ -613,8 +614,8 @@ export default function RouterManager({ API, onBack }: Props) {
         </div>
 
         {script.installInstructions?.length > 0 && (
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Pasos</p>
+          <div className="bg-surface rounded-lg p-4">
+            <p className="text-sm font-medium text-ink-soft mb-2">Pasos</p>
             <ol className="space-y-1.5">
               {script.installInstructions.map((step: string, i: number) => (
                 <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
@@ -754,10 +755,10 @@ export default function RouterManager({ API, onBack }: Props) {
   )
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-50">
+    <div className="flex-1 overflow-auto bg-surface">
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface-card rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="bg-blue-600 px-6 py-4 flex justify-between items-center sticky top-0">
               <div>
@@ -777,7 +778,7 @@ export default function RouterManager({ API, onBack }: Props) {
               {/* PASO 1 — Fabricante → subtipo */}
               {step === 1 && (
                 <div>
-                  <p className="text-sm text-gray-500 mb-4">¿Qué tipo de dispositivo quieres agregar?</p>
+                  <p className="text-sm text-ink-muted mb-4">¿Qué tipo de dispositivo quieres agregar?</p>
                   {wizardFamily && (
                     <button
                       type="button"
@@ -800,7 +801,7 @@ export default function RouterManager({ API, onBack }: Props) {
                             className={`w-full text-left p-4 border-2 rounded-xl transition ${
                               selected
                                 ? family.borderActive
-                                : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/50'
+                                : 'border-line hover:border-blue-400 hover:bg-blue-50/50'
                             }`}
                           >
                             <div className="flex items-center gap-3">
@@ -808,8 +809,8 @@ export default function RouterManager({ API, onBack }: Props) {
                                 <FamilyIcon className={`h-5 w-5 ${family.iconColor}`} />
                               </div>
                               <div className="min-w-0">
-                                <p className="font-semibold text-sm text-gray-900">{family.label}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">{family.description}</p>
+                                <p className="font-semibold text-sm text-ink">{family.label}</p>
+                                <p className="text-xs text-ink-muted mt-0.5">{family.description}</p>
                               </div>
                             </div>
                           </button>
@@ -824,17 +825,17 @@ export default function RouterManager({ API, onBack }: Props) {
                                   key={st.value}
                                   type="button"
                                   onClick={() => applyRouterTypeSelection(st.value)}
-                                  className="w-full text-left p-3 rounded-xl border-2 border-dashed border-gray-200 hover:border-blue-500 hover:bg-white bg-gray-50/80 transition"
+                                  className="w-full text-left p-3 rounded-xl border-2 border-dashed border-line hover:border-blue-500 hover:bg-surface-card bg-surface/80 transition"
                                 >
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="font-medium text-sm text-gray-900">{st.label}</p>
+                                    <p className="font-medium text-sm text-ink">{st.label}</p>
                                     {st.recommended && (
                                       <span className="text-[10px] font-semibold uppercase tracking-wide bg-emerald-500 text-white px-2 py-0.5 rounded-full">
                                         Recomendado
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-xs text-gray-500 mt-0.5">{st.description}</p>
+                                  <p className="text-xs text-ink-muted mt-0.5">{st.description}</p>
                                 </button>
                               ))}
                             </div>
@@ -860,9 +861,9 @@ export default function RouterManager({ API, onBack }: Props) {
                     <p className="text-sm font-medium text-blue-900">{selectedType?.label}</p>
                     <button onClick={goBackToStep1} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
                   </div>
-                  <p className="text-sm text-gray-500 mb-2">¿Cómo se conectará FibraNexus a tu equipo?</p>
+                  <p className="text-sm text-ink-muted mb-2">¿Cómo se conectará FibraNexus a tu equipo?</p>
                   {DEVICE_PROFILES[form.routerType]?.hint && (
-                    <p className="text-xs text-gray-600 bg-gray-50 border rounded-lg px-3 py-2 mb-4">{DEVICE_PROFILES[form.routerType].hint}</p>
+                    <p className="text-xs text-gray-600 bg-surface border rounded-lg px-3 py-2 mb-4">{DEVICE_PROFILES[form.routerType].hint}</p>
                   )}
                   <div className="space-y-3">
                     {methodsForDevice(form.routerType).map(m => (
@@ -878,7 +879,7 @@ export default function RouterManager({ API, onBack }: Props) {
                               {m.recommended && <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">Más común</span>}
                               {m.advanced && <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full">Avanzado</span>}
                             </p>
-                            <p className="text-xs text-gray-500 mb-2">{m.description}</p>
+                            <p className="text-xs text-ink-muted mb-2">{m.description}</p>
                             <div className="flex flex-wrap gap-2">
                               {m.pros.map(p => <span key={p} className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ {p}</span>)}
                               {m.cons.map(c => <span key={c} className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">⚠ {c}</span>)}
@@ -910,13 +911,13 @@ export default function RouterManager({ API, onBack }: Props) {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del equipo <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Nombre del equipo <span className="text-red-500">*</span></label>
                     <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="ej: Router Nodo Central" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-ink-soft mb-1">
                         {form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter
                           ? 'IP local del EdgeRouter (LAN)'
                           : form.connectionMethod === 'cloudflare_tunnel'
@@ -931,7 +932,7 @@ export default function RouterManager({ API, onBack }: Props) {
                         value={form.routerIp || ''} onChange={e => setForm({ ...form, routerIp: e.target.value })} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Puerto</label>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">Puerto</label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
                         placeholder={defaultPort} 
                         value={form.routerPort || ''} onChange={e => setForm({ ...form, routerPort: e.target.value })} />
@@ -949,7 +950,7 @@ export default function RouterManager({ API, onBack }: Props) {
                             El túnel sigue corriendo en tu MikroTik (ej. L009). Solo agregas un hostname nuevo en Cloudflare que apunte a la IP local del EdgeRouter.
                           </p>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">MikroTik de borde (opcional)</label>
+                            <label className="block text-sm font-medium text-ink-soft mb-1">MikroTik de borde (opcional)</label>
                             <select className="w-full border rounded-lg px-3 py-2 text-sm"
                               value={form.parentRouterId || ''}
                               onChange={e => setForm({ ...form, parentRouterId: e.target.value || null })}>
@@ -962,23 +963,23 @@ export default function RouterManager({ API, onBack }: Props) {
                         </>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-ink-soft mb-1">
                           {isEdgeRouter ? 'Hostname Cloudflare del EdgeRouter' : 'Hostname del túnel'} <span className="text-red-500">*</span>
                         </label>
                         <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
                           placeholder={isEdgeRouter ? 'nodo2-isp.fibranexus.cl' : 'l009-cliente.fibranexus.cl'} 
                           value={form.tunnelHostname || ''} onChange={e => setForm({ ...form, tunnelHostname: e.target.value })} />
                         {isEdgeRouter && (
-                          <p className="text-xs text-gray-500 mt-1">En Cloudflare Zero Trust → tu túnel → Public Hostname → URL: <code className="font-mono">https://IP_LOCAL:443</code></p>
+                          <p className="text-xs text-ink-muted mt-1">En Cloudflare Zero Trust → tu túnel → Public Hostname → URL: <code className="font-mono">https://IP_LOCAL:443</code></p>
                         )}
                       </div>
                       {!isEdgeRouter && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Token del túnel <span className="text-red-500">*</span></label>
+                          <label className="block text-sm font-medium text-ink-soft mb-1">Token del túnel <span className="text-red-500">*</span></label>
                           <input type="password" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono text-xs" 
                             placeholder="eyJhIjoi..." 
                             value={form.tunnelToken || ''} onChange={e => setForm({ ...form, tunnelToken: e.target.value })} />
-                          <p className="text-xs text-gray-500 mt-1">Cloudflare Zero Trust → Networks → Tunnels → copiar token</p>
+                          <p className="text-xs text-ink-muted mt-1">Cloudflare Zero Trust → Networks → Tunnels → copiar token</p>
                         </div>
                       )}
                     </div>
@@ -989,14 +990,14 @@ export default function RouterManager({ API, onBack }: Props) {
                       <p className="text-sm font-medium text-violet-900">Red del nodo (LAN clientes)</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Subred LAN</label>
+                          <label className="block text-sm font-medium text-ink-soft mb-1">Subred LAN</label>
                           <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
                             placeholder="192.168.2.0/24"
                             value={form.lanSubnet || ''}
                             onChange={e => setForm({ ...form, lanSubnet: e.target.value })} />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Interfaz LAN</label>
+                          <label className="block text-sm font-medium text-ink-soft mb-1">Interfaz LAN</label>
                           <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
                             placeholder="ether2"
                             value={form.lanInterface || ''}
@@ -1004,30 +1005,30 @@ export default function RouterManager({ API, onBack }: Props) {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Shared network DHCP (EdgeOS)</label>
+                        <label className="block text-sm font-medium text-ink-soft mb-1">Shared network DHCP (EdgeOS)</label>
                         <input className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
                           placeholder="LAN"
                           value={form.dhcpSharedNetwork || ''}
                           onChange={e => setForm({ ...form, dhcpSharedNetwork: e.target.value })} />
-                        <p className="text-xs text-gray-500 mt-1">Nombre del shared-network en EdgeOS donde vive la subred de clientes.</p>
+                        <p className="text-xs text-ink-muted mt-1">Nombre del shared-network en EdgeOS donde vive la subred de clientes.</p>
                       </div>
                     </div>
                   )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Usuario del router <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">Usuario del router <span className="text-red-500">*</span></label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" 
                         placeholder="admin" 
                         value={form.routerUser || ''} onChange={e => setForm({ ...form, routerUser: e.target.value })} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">Contraseña <span className="text-red-500">*</span></label>
                       <div className="flex gap-1">
                         <input type={showPass ? 'text' : 'password'} className="flex-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" 
                           placeholder="••••••••" 
                           value={form.routerPass || ''} onChange={e => setForm({ ...form, routerPass: e.target.value })} />
-                        <button onClick={() => setShowPass(!showPass)} className="p-2 border rounded-lg hover:bg-gray-50">
+                        <button onClick={() => setShowPass(!showPass)} className="p-2 border rounded-lg hover:bg-surface-raised">
                           {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
@@ -1036,11 +1037,11 @@ export default function RouterManager({ API, onBack }: Props) {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Ubicación/Nodo</label>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">Ubicación/Nodo</label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="ej: Nodo Centro" value={form.location || ''} onChange={e => setForm({ ...form, location: e.target.value })} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">Modelo</label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="ej: L009, CCR1036" value={form.model || ''} onChange={e => setForm({ ...form, model: e.target.value })} />
                     </div>
                   </div>
@@ -1083,7 +1084,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   )}
 
                   <div className="flex gap-3 pt-2">
-                    <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Atrás</button>
+                    <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Atrás</button>
                     <button onClick={handleCreate} disabled={
                       !form.name || !form.routerUser || !form.routerPass
                       || (form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter && (!form.tunnelHostname || !form.routerIp))
@@ -1133,7 +1134,7 @@ export default function RouterManager({ API, onBack }: Props) {
                         <button
                           type="button"
                           onClick={() => copyText(wizardScriptText, 'wizard-script')}
-                          className="w-full py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium flex items-center justify-center gap-2"
+                          className="w-full py-2.5 bg-surface-card text-white rounded-lg hover:bg-surface-raised font-medium flex items-center justify-center gap-2"
                         >
                           {copied === 'wizard-script'
                             ? <><CheckCircle className="h-4 w-4 text-emerald-400" /> Script copiado</>
@@ -1146,15 +1147,15 @@ export default function RouterManager({ API, onBack }: Props) {
                       <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
                         <p className="font-semibold text-sky-900 text-sm mb-2">☁️ Un paso en Cloudflare (2 minutos)</p>
                         <p className="text-xs text-sky-800 mb-3">El cloudflared sigue en tu MikroTik. Solo publica el EdgeRouter con un hostname nuevo:</p>
-                        <ol className="space-y-2 text-xs text-gray-700">
+                        <ol className="space-y-2 text-xs text-ink-soft">
                           <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
                           <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
-                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">3</span> Service: <code className="font-mono bg-surface-card px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
                           <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
                           <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
                         </ol>
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                      <div className="bg-surface rounded-lg p-3 text-sm">
                         <div className="flex justify-between"><span>Hostname:</span><span className="font-mono text-xs">{form.tunnelHostname}</span></div>
                         <div className="flex justify-between mt-1"><span>IP local EdgeRouter:</span><span className="font-mono text-xs">{form.routerIp}</span></div>
                       </div>
@@ -1162,7 +1163,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   ) : form.connectionMethod === 'agent' ? (
                     <>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                        <label className="block text-sm font-medium text-ink-soft mb-2 flex items-center gap-2">
                           <Shield className="h-4 w-4 text-blue-600" /> Token del agente
                           <span className="text-xs text-red-500">(guárdalo — no se mostrará de nuevo)</span>
                         </label>
@@ -1170,16 +1171,16 @@ export default function RouterManager({ API, onBack }: Props) {
                           <div className="flex-1 font-mono text-sm bg-gray-900 text-green-400 rounded-lg px-3 py-2 overflow-x-auto">
                             {showToken ? newRouter.agentToken : '••••••••••••••••••••••••••••••••••••'}
                           </div>
-                          <button onClick={() => setShowToken(!showToken)} className="p-2 border rounded-lg hover:bg-gray-50">
+                          <button onClick={() => setShowToken(!showToken)} className="p-2 border rounded-lg hover:bg-surface-raised">
                             {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
-                          <button onClick={() => copyText(newRouter.agentToken, 'token')} className="p-2 border rounded-lg hover:bg-gray-50">
+                          <button onClick={() => copyText(newRouter.agentToken, 'token')} className="p-2 border rounded-lg hover:bg-surface-raised">
                             {copied === 'token' ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                           </button>
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                        <label className="block text-sm font-medium text-ink-soft mb-2 flex items-center gap-2">
                           <Terminal className="h-4 w-4" /> Comando de instalación
                         </label>
                         <div className="bg-gray-900 rounded-lg p-3 relative">
@@ -1191,7 +1192,7 @@ export default function RouterManager({ API, onBack }: Props) {
                         <button
                           type="button"
                           onClick={() => copyText(installCmd, 'wizard-script')}
-                          className="mt-2 w-full py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium flex items-center justify-center gap-2"
+                          className="mt-2 w-full py-2.5 bg-surface-card text-white rounded-lg hover:bg-surface-raised font-medium flex items-center justify-center gap-2"
                         >
                           {copied === 'wizard-script'
                             ? <><CheckCircle className="h-4 w-4 text-emerald-400" /> Script copiado</>
@@ -1217,7 +1218,7 @@ export default function RouterManager({ API, onBack }: Props) {
                         ? 'bg-emerald-50 border-emerald-200'
                         : agentWaitStatus === 'timeout'
                           ? 'bg-amber-50 border-amber-200'
-                          : 'bg-slate-900 border-slate-700 text-slate-100'
+                          : 'bg-surface-card border-line text-ink'
                     }`}>
                       {agentWaitStatus === 'connected' ? (
                         <div className="flex items-center gap-3">
@@ -1252,8 +1253,8 @@ export default function RouterManager({ API, onBack }: Props) {
                         <div className="flex items-start gap-3">
                           <Loader2 className="h-5 w-5 text-sky-400 animate-spin flex-shrink-0 mt-0.5" />
                           <div>
-                            <p className="font-semibold text-slate-100">Esperando conexión...</p>
-                            <p className="text-xs text-slate-400 mt-1">
+                            <p className="font-semibold text-ink">Esperando conexión...</p>
+                            <p className="text-xs text-ink-muted mt-1">
                               Consultando el agente cada 5 segundos. Suele tardar menos de un minuto tras pegar el script.
                             </p>
                           </div>
@@ -1271,7 +1272,7 @@ export default function RouterManager({ API, onBack }: Props) {
                     <button
                       type="button"
                       onClick={resetForm}
-                      className="w-full py-2 text-sm text-gray-500 hover:text-gray-700"
+                      className="w-full py-2 text-sm text-ink-muted hover:text-ink-soft"
                     >
                       Cerrar y continuar después
                     </button>
@@ -1283,16 +1284,17 @@ export default function RouterManager({ API, onBack }: Props) {
         </div>
       )}
 
-      <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-10">
+      <header className="bg-surface-card border-b border-line px-8 py-4 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="h-5 w-5" /></button>
+          <button onClick={onBack} className="p-2 hover:bg-surface-raised rounded-lg text-ink"><ArrowLeft className="h-5 w-5" /></button>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Gestión de Routers</h1>
-            <p className="text-sm text-gray-500">{routers.length} router{routers.length !== 1 ? 's' : ''} registrado{routers.length !== 1 ? 's' : ''}</p>
+            <h1 className="text-xl font-bold text-ink">Gestión de Routers</h1>
+            <p className="text-sm text-ink-muted">{routers.length} router{routers.length !== 1 ? 's' : ''} registrado{routers.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={loadRouters} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Actualizar</button>
+        <div className="flex gap-2 items-center">
+          <ThemeToggle />
+          <button onClick={loadRouters} className="px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium flex items-center gap-2 text-ink"><RefreshCw className="h-4 w-4" /> Actualizar</button>
           <button onClick={() => { setShowForm(true); setWizardFamily(null); setStep(1) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar Router</button>
         </div>
       </header>
@@ -1309,10 +1311,10 @@ export default function RouterManager({ API, onBack }: Props) {
         {loading ? (
           <div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>
         ) : routers.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm text-center py-20 px-8">
+          <div className="bg-surface-card rounded-xl border border-line shadow-sm text-center py-20 px-8">
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Server className="h-8 w-8 text-blue-400" /></div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Sin routers registrados</h3>
-            <p className="text-gray-500 mb-6 max-w-md mx-auto">Agrega tu primer router para gestionar tu red desde FibraNexus.</p>
+            <h3 className="text-lg font-semibold text-ink mb-2">Sin routers registrados</h3>
+            <p className="text-ink-muted mb-6 max-w-md mx-auto">Agrega tu primer router para gestionar tu red desde FibraNexus.</p>
             <button onClick={() => { setShowForm(true); setWizardFamily(null); setStep(1) }} className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar primer router</button>
           </div>
         ) : (
@@ -1325,13 +1327,13 @@ export default function RouterManager({ API, onBack }: Props) {
               const online = isRouterOnline(router)
               const host = resolveHost(router)
               return (
-                <div key={router.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition p-5">
+                <div key={router.id} className="bg-surface-card rounded-xl border border-line shadow-sm hover:shadow-md transition p-5">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-3 h-3 rounded-full ${online ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
                       <div>
-                        <h3 className="font-bold text-gray-900">{router.name}</h3>
-                        <p className="text-xs text-gray-500">{router.brand} {router.model}</p>
+                        <h3 className="font-bold text-ink">{router.name}</h3>
+                        <p className="text-xs text-ink-muted">{router.brand} {router.model}</p>
                       </div>
                     </div>
                     <button onClick={() => handleDelete(router.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
@@ -1356,7 +1358,7 @@ export default function RouterManager({ API, onBack }: Props) {
 
                   <div className="space-y-2 text-sm mb-4">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-500">Host</span>
+                      <span className="text-ink-muted">Host</span>
                       <span className="font-mono text-xs flex items-center gap-1">
                         {host ? (
                           <a
@@ -1373,27 +1375,27 @@ export default function RouterManager({ API, onBack }: Props) {
                         )}
                       </span>
                     </div>
-                    <div className="flex justify-between"><span className="text-gray-500">Ubicación</span><span>{router.location || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-ink-muted">Ubicación</span><span>{router.location || '—'}</span></div>
                     {router.credentials?.lanSubnet && (
-                      <div className="flex justify-between"><span className="text-gray-500">LAN nodo</span><span className="font-mono text-xs">{router.credentials.lanSubnet} · {router.credentials.lanInterface || '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-ink-muted">LAN nodo</span><span className="font-mono text-xs">{router.credentials.lanSubnet} · {router.credentials.lanInterface || '—'}</span></div>
                     )}
                     {!info && router.firmware && (
-                      <div className="flex justify-between"><span className="text-gray-500">Firmware</span><span className="text-xs">{router.firmware}</span></div>
+                      <div className="flex justify-between"><span className="text-ink-muted">Firmware</span><span className="text-xs">{router.firmware}</span></div>
                     )}
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-500">Tipo</span>
+                      <span className="text-ink-muted">Tipo</span>
                       <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
                         {ROUTER_TYPES.find(t => t.value === router.credentials?.routerType)?.label || router.brand}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-500">Conexión</span>
+                      <span className="text-ink-muted">Conexión</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${method === 'cloudflare_tunnel' ? 'bg-sky-100 text-sky-800' : 'bg-blue-100 text-blue-700'}`}>
                         <MethodIcon className="h-3 w-3" /> {methodInfo?.label || 'IP directa'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-500">API REST</span>
+                      <span className="text-ink-muted">API REST</span>
                       {router.hasApiCredentials ? (
                         <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">Configurada</span>
                       ) : (
@@ -1403,20 +1405,20 @@ export default function RouterManager({ API, onBack }: Props) {
                   </div>
                   <div className="flex gap-2 mb-3">
                     <button onClick={() => openCredentials(router, 'credentials')}
-                      className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-blue-700 border-blue-200">
+                      className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-surface-raised text-blue-700 border-blue-200">
                       {router.hasApiCredentials ? 'Editar API' : 'Configurar API'}
                     </button>
                     {(String(router.credentials?.routerType || '').startsWith('mikrotik')
                       || String(router.credentials?.routerType || '').startsWith('edgerouter')) && (
                       <button
                         onClick={() => openCredentials(router, 'script')}
-                        className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 text-purple-700 border-purple-200 flex items-center justify-center gap-1"
+                        className="flex-1 py-2 text-sm font-medium border rounded-lg hover:bg-surface-raised text-purple-700 border-purple-200 flex items-center justify-center gap-1"
                       >
                         <Terminal className="h-3.5 w-3.5" /> Script
                       </button>
                     )}
                   </div>
-                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${online ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-amber-600'}`}>
+                  <div className={`rounded-lg px-3 py-2 flex items-center gap-2 text-sm ${online ? 'bg-green-50 text-green-700' : 'bg-surface text-amber-600'}`}>
                     {online ? <><CheckCircle className="h-4 w-4" /> Conectado</> : <><AlertTriangle className="h-4 w-4" /> Sin conexión</>}
                     {(router.agentLastSeen || router.lastSeen) && (
                       <span className="ml-auto text-xs text-gray-400 flex items-center gap-1">
@@ -1434,11 +1436,11 @@ export default function RouterManager({ API, onBack }: Props) {
 
       {editingRouter && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className={`bg-white rounded-xl p-6 w-full shadow-2xl max-h-[90vh] overflow-y-auto ${routerModalTab === 'script' ? 'max-w-2xl' : 'max-w-md'}`}>
+          <div className={`bg-surface-card rounded-xl p-6 w-full shadow-2xl max-h-[90vh] overflow-y-auto ${routerModalTab === 'script' ? 'max-w-2xl' : 'max-w-md'}`}>
             <div className="flex justify-between mb-4">
               <div>
                 <h3 className="font-bold text-lg">{editingRouter.name}</h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-ink-muted">
                   {routerModalTab === 'script'
                     ? 'Script para pegar en el router (heartbeat + SNMP antenas)'
                     : 'Credenciales API para provisionar y monitorear'}
@@ -1447,11 +1449,11 @@ export default function RouterManager({ API, onBack }: Props) {
               <button type="button" onClick={() => { setEditingRouter(null); setRouterModalTab('credentials') }}><X className="h-5 w-5" /></button>
             </div>
 
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+            <div className="flex gap-1 bg-surface-raised rounded-lg p-1 mb-4">
               <button
                 type="button"
                 onClick={() => setRouterModalTab('credentials')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'credentials' ? 'bg-white shadow text-blue-700' : 'text-gray-500'}`}
+                className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'credentials' ? 'bg-surface-card shadow text-blue-700' : 'text-ink-muted'}`}
               >
                 Credenciales API
               </button>
@@ -1460,7 +1462,7 @@ export default function RouterManager({ API, onBack }: Props) {
                 <button
                   type="button"
                   onClick={() => { setRouterModalTab('script'); if (!routerScript) loadRouterScript(editingRouter) }}
-                  className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'script' ? 'bg-white shadow text-purple-700' : 'text-gray-500'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-medium ${routerModalTab === 'script' ? 'bg-surface-card shadow text-purple-700' : 'text-ink-muted'}`}
                 >
                   Script de instalación
                 </button>
@@ -1480,7 +1482,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   value={credForm.tunnelHostname || ''}
                   onChange={e => setCredForm({ ...credForm, tunnelHostname: e.target.value })} />
                 {String(editingRouter.credentials?.routerType || '').startsWith('edgerouter') && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-ink-muted mt-1">
                     IP local del EdgeRouter (LAN): <span className="font-mono">{editingRouter.credentials?.routerLocalIp || editingRouter.ipAddress || '—'}</span>
                     {' '}— se configura al registrar el router, no en este campo.
                   </p>
@@ -1516,7 +1518,7 @@ export default function RouterManager({ API, onBack }: Props) {
                       <option key={r.id} value={r.id}>{r.name} ({r.credentials?.tunnelHostname || r.ipAddress})</option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">Para EdgeRouter detrás de MikroTik: indica el router de borde en la topología.</p>
+                  <p className="text-xs text-ink-muted mt-1">Para EdgeRouter detrás de MikroTik: indica el router de borde en la topología.</p>
                 </div>
               )}
               {credTestResult && (
@@ -1528,7 +1530,7 @@ export default function RouterManager({ API, onBack }: Props) {
             ) : (
               <div className="space-y-3">
                 {scriptLoading && (
-                  <div className="text-center py-8 text-gray-500 text-sm">Generando script…</div>
+                  <div className="text-center py-8 text-ink-muted text-sm">Generando script…</div>
                 )}
                 {scriptError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{scriptError}</div>

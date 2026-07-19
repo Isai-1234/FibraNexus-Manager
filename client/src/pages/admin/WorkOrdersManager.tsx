@@ -36,7 +36,7 @@ const STATUS_COLOR: Record<string, string> = {
   open: 'bg-yellow-100 text-yellow-800',
   in_progress: 'bg-blue-100 text-blue-800',
   done: 'bg-green-100 text-green-800',
-  cancelled: 'bg-gray-100 text-gray-600',
+  cancelled: 'bg-surface-raised text-gray-600',
 }
 
 export default function WorkOrdersManager({ API }: { API: string }) {
@@ -160,7 +160,7 @@ export default function WorkOrdersManager({ API }: { API: string }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-500">{rows.length} orden{rows.length !== 1 ? 'es' : ''}</p>
+        <p className="text-sm text-ink-muted">{rows.length} orden{rows.length !== 1 ? 'es' : ''}</p>
         <button
           onClick={() => setShowForm(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
@@ -174,9 +174,9 @@ export default function WorkOrdersManager({ API }: { API: string }) {
       {loading ? (
         <div className="flex justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="bg-surface-card rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <thead className="bg-surface text-xs uppercase text-ink-muted">
               <tr>
                 {['OT', 'Abonado', 'Tipo', 'Estado', 'Programada', ''].map((h) => (
                   <th key={h || 'a'} className="text-left p-4">{h}</th>
@@ -185,18 +185,18 @@ export default function WorkOrdersManager({ API }: { API: string }) {
             </thead>
             <tbody className="divide-y">
               {rows.map((wo) => (
-                <tr key={wo.id} className="hover:bg-gray-50">
+                <tr key={wo.id} className="hover:bg-surface-raised">
                   <td className="p-4">
                     <p className="font-medium">#{wo.id} · {wo.title}</p>
                   </td>
                   <td className="p-4 text-sm">{wo.clientName || `Cliente #${wo.clientId}`}</td>
                   <td className="p-4 text-sm">{TYPE_LABEL[wo.type] || wo.type}</td>
                   <td className="p-4">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[wo.status] || 'bg-gray-100'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[wo.status] || 'bg-surface-raised'}`}>
                       {STATUS_LABEL[wo.status] || wo.status}
                     </span>
                   </td>
-                  <td className="p-4 text-sm text-gray-500">
+                  <td className="p-4 text-sm text-ink-muted">
                     {wo.scheduledAt ? new Date(wo.scheduledAt).toLocaleString('es-CL') : '—'}
                   </td>
                   <td className="p-4">
@@ -216,7 +216,7 @@ export default function WorkOrdersManager({ API }: { API: string }) {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <form onSubmit={createOrder} className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <form onSubmit={createOrder} className="bg-surface-card rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="font-semibold text-lg">Nueva orden de trabajo</h3>
               <button type="button" onClick={() => setShowForm(false)}><X className="h-5 w-5 text-gray-400" /></button>
@@ -296,11 +296,11 @@ export default function WorkOrdersManager({ API }: { API: string }) {
 
       {detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface-card rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="font-semibold text-lg">#{detail.id} · {detail.title}</h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-ink-muted">
                   {TYPE_LABEL[detail.type] || detail.type} · {STATUS_LABEL[detail.status] || detail.status}
                 </p>
               </div>
@@ -308,11 +308,11 @@ export default function WorkOrdersManager({ API }: { API: string }) {
             </div>
 
             {detail.notes && (
-              <p className="text-sm bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">{detail.notes}</p>
+              <p className="text-sm bg-surface rounded-lg p-3 whitespace-pre-wrap">{detail.notes}</p>
             )}
 
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">Checklist</h4>
+              <h4 className="text-sm font-semibold text-ink-soft mb-2">Checklist</h4>
               <ul className="space-y-2">
                 {(detail.checklist || []).map((c) => (
                   <li key={c.id}>

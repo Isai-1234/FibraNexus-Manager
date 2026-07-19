@@ -639,7 +639,7 @@ export default function NetworkTopologyMap({
 
   if (!tree.length) {
     return (
-      <div className="h-full min-h-[420px] bg-white rounded-xl border flex flex-col items-center justify-center text-gray-400 p-8">
+      <div className="h-full min-h-[420px] bg-surface-card rounded-xl border flex flex-col items-center justify-center text-gray-400 p-8">
         <Radio className="h-14 w-14 mb-3 opacity-25" />
         <p className="font-medium text-gray-600">Sin nodos en el mapa</p>
         <p className="text-sm mt-1 text-center max-w-sm">Crea tu primer sitio (torre o POP) en la pestaña Árbol para ver la topología aquí.</p>
@@ -648,7 +648,7 @@ export default function NetworkTopologyMap({
   }
 
   return (
-    <div className="h-full min-h-[420px] bg-white rounded-xl border flex flex-col overflow-hidden">
+    <div className="h-full min-h-[420px] bg-surface-card rounded-xl border flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2 bg-slate-50/80">
         <div className="min-w-0">
           <div className="flex items-center gap-1 text-sm flex-wrap">
@@ -660,13 +660,13 @@ export default function NetworkTopologyMap({
               Red ISP
             </button>
             {breadcrumb.map((s) => (
-              <span key={s.id} className="flex items-center gap-1 text-gray-500">
+              <span key={s.id} className="flex items-center gap-1 text-ink-muted">
                 <ChevronRight className="h-3.5 w-3.5" />
                 <span className={s.id === focusSiteId ? 'font-semibold text-gray-800' : ''}>{s.name}</span>
               </span>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-ink-muted mt-0.5">
             {focusSite
               ? `${layout.routerCount} router(s) · ${layout.cpeCount} CPE(s) dentro del nodo — clic IP = interfaz web`
               : `${layout.routerCount} router(s) · ${layout.cpeCount} CPE(s) — clic en nodo para entrar y ver equipos`}
@@ -677,16 +677,16 @@ export default function NetworkTopologyMap({
             <button
               type="button"
               onClick={backToOverview}
-              className="px-2.5 py-1.5 rounded-lg border bg-white hover:bg-gray-50 text-xs font-medium flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-lg border bg-surface-card hover:bg-surface-raised text-xs font-medium flex items-center gap-1"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Volver al árbol
             </button>
           )}
-          <button type="button" onClick={() => setZoom((z) => Math.max(0.6, z - 0.1))} className="p-2 rounded-lg border bg-white hover:bg-gray-50" title="Alejar">
+          <button type="button" onClick={() => setZoom((z) => Math.max(0.6, z - 0.1))} className="p-2 rounded-lg border bg-surface-card hover:bg-surface-raised" title="Alejar">
             <ZoomOut className="h-4 w-4" />
           </button>
-          <span className="text-xs text-gray-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => setZoom((z) => Math.min(1.4, z + 0.1))} className="p-2 rounded-lg border bg-white hover:bg-gray-50" title="Acercar">
+          <span className="text-xs text-ink-muted w-10 text-center">{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom((z) => Math.min(1.4, z + 0.1))} className="p-2 rounded-lg border bg-surface-card hover:bg-surface-raised" title="Acercar">
             <ZoomIn className="h-4 w-4" />
           </button>
         </div>
