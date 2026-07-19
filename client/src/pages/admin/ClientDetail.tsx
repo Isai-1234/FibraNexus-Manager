@@ -7,6 +7,7 @@ import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import NetworkSuspendStatus, { suspendToastMessage } from '../../components/NetworkSuspendStatus'
 import CpeLinkVisualizer, { computeLinkScore, linkTheme } from '../../components/CpeLinkVisualizer'
 import DeviceIpLink from '../../components/DeviceIpLink'
+import ServiceEditPanel from '../../components/ServiceEditPanel'
 
 interface Props {
   clientId: number
@@ -87,6 +88,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [routers, setRouters] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
   const [showServiceForm, setShowServiceForm] = useState(false)
+  const [editingBillingService, setEditingBillingService] = useState<any>(null)
   const [serviceForm, setServiceForm] = useState<any>(defaultServiceForm())
   const [provisionRouterId, setProvisionRouterId] = useState<number | null>(null)
   const [provisionMode, setProvisionMode] = useState('both')
@@ -502,35 +504,6 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     setSavingDteFlag(false)
   }
 
-  async function editServiceCustomPrice(service: any) {
-    const current = serviceBillingPrice(service)
-    const raw = window.prompt(
-      `Precio efectivo mensual para «${service.plan?.name || 'servicio'}» (deja vacío para usar precio de lista del plan $${Number(service.plan?.price || 0).toLocaleString('es-CL')}):`,
-      String(current),
-    )
-    if (raw === null) return
-    const trimmed = raw.trim()
-    try {
-      if (trimmed === '') {
-        await api().put(`/services/${service.id}`, { customPrice: null })
-        // Alinear snapshot del cliente con precio de lista del plan
-        await api().put(`/clients/${clientId}`, { precioEfectivo: Number(service.plan?.price) || null }).catch(() => {})
-      } else {
-        const n = Number(trimmed.replace(',', '.'))
-        if (!Number.isFinite(n) || n < 0) {
-          toast('Precio inválido', 'error')
-          return
-        }
-        await api().put(`/services/${service.id}`, { customPrice: n })
-        await api().put(`/clients/${clientId}`, { precioEfectivo: n }).catch(() => {})
-      }
-      toast('Precio efectivo actualizado', 'success')
-      loadAll()
-    } catch (e: any) {
-      toast('Error: ' + (e.response?.data?.error || e.message), 'error')
-    }
-  }
-
   function openPayModal(inv: any) {
     setPayMethod('transfer')
     setPayEmitirDte(Boolean(client?.dteHabilitado))
@@ -825,6 +798,20 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       )}
 
       {/* Modal nuevo servicio */}
+      {editingBillingService && (
+        <ServiceEditPanel
+          API={API}
+          clientId={clientId}
+          service={editingBillingService}
+          onClose={() => setEditingBillingService(null)}
+          onSaved={() => {
+            setEditingBillingService(null)
+            toast('Servicio actualizado', 'success')
+            loadAll()
+          }}
+        />
+      )}
+
       {showServiceForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-surface-card rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1450,10 +1437,10 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <div className="flex items-center gap-1">
                         <span className="text-slate-600">Precio:</span>
                         <span>${serviceBillingPrice(s).toLocaleString('es-CL')}</span>
-                        <button type="button" onClick={() => editServiceCustomPrice(s)}
-                          className="text-cyan-400 hover:text-cyan-300 p-0.5" title="Editar precio efectivo">
-                          <Pencil className="h-3 w-3" />
-                        </button>
+                            <button type="button" onClick={() => setEditingBillingService(s)}
+                              className="text-cyan-400 hover:text-cyan-300 p-0.5" title="Editar facturación del servicio">
+                              <Pencil className="h-3 w-3" />
+                            </button>
                       </div>
                     </div>
                     <div className="flex gap-2 mt-3">
@@ -1673,8 +1660,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                             {s.customPrice != null && s.customPrice !== '' && (
                               <span className="text-xs text-emerald-600">(efectivo)</span>
                             )}
-                            <button type="button" onClick={() => editServiceCustomPrice(s)}
-                              className="text-cyan-600 hover:text-cyan-500 p-0.5" title="Editar precio efectivo">
+                            <button type="button" onClick={() => setEditingBillingService(s)}
+                              className="text-cyan-600 hover:text-cyan-500 p-0.5" title="Editar facturación del servicio">
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           </p>

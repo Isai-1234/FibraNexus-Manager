@@ -76,6 +76,43 @@ export const dteEmitirSchema = z.object({
 /** Body vacío — importa con credenciales guardadas en settings de la org. */
 export const wisphubImportSchema = z.object({}).passthrough();
 
+const optionalMoney = z.union([
+  z.null(),
+  z.literal(''),
+  z.coerce.number().nonnegative(),
+]).optional();
+
+export const serviceBillingUpdateSchema = z.object({
+  status: z.enum(['active', 'suspended', 'pending', 'cancelled', 'cut']).optional(),
+  pppProfile: z.string().max(64).optional().nullable(),
+  ipAddress: z.string().max(45).optional().nullable(),
+  macAddress: z.string().max(17).optional().nullable(),
+  customPrice: optionalMoney,
+  contratoTipo: z.enum(['abierto', 'cerrado']).optional(),
+  contratoId: z.string().max(64).optional().nullable(),
+  costoInstalacion: optionalMoney,
+  cargoCancelacionAnticipada: optionalMoney,
+  duracionMinimaMeses: z.union([z.null(), z.coerce.number().int().min(0).max(120)]).optional(),
+  diaComienzoPeriodo: z.coerce.number().int().min(1).max(31).optional(),
+  tipoFacturacion: z.enum(['retroactiva', 'anticipada']).optional(),
+  prorratearPrimeraFactura: z.boolean().optional(),
+  crearFacturaDiasAntes: z.coerce.number().int().min(0).max(60).optional(),
+  facturarPorSeparado: z.boolean().optional(),
+  aprobarEnviarAutomaticamente: z.boolean().optional(),
+  usarCreditoAutomaticamente: z.boolean().optional(),
+  tipoDescuento: z.enum(['sin_descuento', 'porcentaje', 'monto_fijo']).optional(),
+  valorDescuento: optionalMoney,
+  impuestoOverride: z.union([
+    z.null(),
+    z.literal(''),
+    z.coerce.number().min(0).max(100),
+  ]).optional(),
+  atributosPersonalizados: z.record(z.string().max(120), z.string().max(500)).optional(),
+  etiquetaFactura: z.string().max(255).optional().nullable(),
+  billingDueDay: z.coerce.number().int().min(0).max(31).optional(),
+  notes: z.string().max(4000).optional().nullable(),
+}).strict();
+
 export function parseBody(schema, body) {
   const result = schema.safeParse(body);
   if (!result.success) {

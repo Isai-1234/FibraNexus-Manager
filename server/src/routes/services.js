@@ -7,12 +7,19 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getClientInOrg, getPlanInOrg, getServiceInOrg } from '../lib/tenant.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { billingDayFromInstall, computeNextBillingDate } from '../lib/billing.js';
-import { createInvoiceForService } from '../lib/invoiceService.js';
+import { createInvoiceForService, calcularProximasFacturas } from '../lib/invoiceService.js';
 import { deleteClientServiceWithCleanup } from '../lib/serviceDelete.js';
+import { parseBody, serviceBillingUpdateSchema } from '../lib/validators.js';
 
 export const servicesRouter = Router();
 
 const BLOCKING_STATUSES = ['active', 'suspended', 'pending'];
+
+function moneyOrNull(v) {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  return String(v);
+}
 
 async function findServiceConflict(orgId, { clientId, planId, ipAddress, excludeId }) {
   const baseOrg = orgFilter(clients, orgId);
@@ -86,6 +93,24 @@ servicesRouter.get('/', requireRole('admin', 'technician'), async (req, res) => 
       billingDay: clientServices.billingDay,
       billingDueDay: clientServices.billingDueDay,
       customPrice: clientServices.customPrice,
+      contratoTipo: clientServices.contratoTipo,
+      contratoId: clientServices.contratoId,
+      costoInstalacion: clientServices.costoInstalacion,
+      cargoCancelacionAnticipada: clientServices.cargoCancelacionAnticipada,
+      duracionMinimaMeses: clientServices.duracionMinimaMeses,
+      diaComienzoPeriodo: clientServices.diaComienzoPeriodo,
+      tipoFacturacion: clientServices.tipoFacturacion,
+      prorratearPrimeraFactura: clientServices.prorratearPrimeraFactura,
+      crearFacturaDiasAntes: clientServices.crearFacturaDiasAntes,
+      facturarPorSeparado: clientServices.facturarPorSeparado,
+      aprobarEnviarAutomaticamente: clientServices.aprobarEnviarAutomaticamente,
+      usarCreditoAutomaticamente: clientServices.usarCreditoAutomaticamente,
+      tipoDescuento: clientServices.tipoDescuento,
+      valorDescuento: clientServices.valorDescuento,
+      impuestoOverride: clientServices.impuestoOverride,
+      atributosPersonalizados: clientServices.atributosPersonalizados,
+      etiquetaFactura: clientServices.etiquetaFactura,
+      notes: clientServices.notes,
       createdAt: clientServices.createdAt,
       client: { id: clients.id, fullName: users.fullName, email: users.email },
       plan: { id: plans.id, name: plans.name, downloadSpeed: plans.downloadSpeed, uploadSpeed: plans.uploadSpeed, price: plans.price },
@@ -228,6 +253,22 @@ servicesRouter.post('/', requireRole('admin'), async (req, res) => {
   }
 });
 
+servicesRouter.get('/:id/billing-preview', requireRole('admin', 'office', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id, 10);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const cantidad = parseInt(String(req.query.cantidad || '3'), 10);
+    const preview = await calcularProximasFacturas(orgId, serviceId, cantidad);
+    res.json(preview);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Error al calcular preview' });
+  }
+});
+
 servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -236,30 +277,59 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
     if (!await getServiceInOrg(serviceId, orgId)) {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
-    const { status, pppProfile, ipAddress, macAddress, customPrice } = req.body;
+
+    const parsed = parseBody(serviceBillingUpdateSchema, req.body || {});
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const body = parsed.data;
+
     const patch = { updatedAt: new Date() };
-    if (status !== undefined) patch.status = status;
-    if (pppProfile !== undefined) patch.pppProfile = pppProfile;
-    if (ipAddress !== undefined) patch.ipAddress = ipAddress;
-    if (macAddress !== undefined) patch.macAddress = macAddress;
-    if (customPrice !== undefined) {
-      if (customPrice === null || customPrice === '') {
-        patch.customPrice = null;
-      } else {
-        const n = Number(customPrice);
-        if (!Number.isFinite(n) || n < 0) {
-          return res.status(400).json({ error: 'customPrice inválido' });
-        }
-        patch.customPrice = String(n);
-      }
+    if (body.status !== undefined) patch.status = body.status;
+    if (body.pppProfile !== undefined) patch.pppProfile = body.pppProfile;
+    if (body.ipAddress !== undefined) patch.ipAddress = body.ipAddress;
+    if (body.macAddress !== undefined) patch.macAddress = body.macAddress;
+    if (body.customPrice !== undefined) patch.customPrice = moneyOrNull(body.customPrice);
+    if (body.contratoTipo !== undefined) patch.contratoTipo = body.contratoTipo;
+    if (body.contratoId !== undefined) patch.contratoId = body.contratoId || null;
+    if (body.costoInstalacion !== undefined) patch.costoInstalacion = moneyOrNull(body.costoInstalacion);
+    if (body.cargoCancelacionAnticipada !== undefined) {
+      patch.cargoCancelacionAnticipada = moneyOrNull(body.cargoCancelacionAnticipada);
     }
+    if (body.duracionMinimaMeses !== undefined) {
+      patch.duracionMinimaMeses = body.duracionMinimaMeses == null ? null : body.duracionMinimaMeses;
+    }
+    if (body.diaComienzoPeriodo !== undefined) {
+      patch.diaComienzoPeriodo = body.diaComienzoPeriodo;
+      patch.billingDay = body.diaComienzoPeriodo; // mantener sync con ciclo aniversario legacy
+    }
+    if (body.tipoFacturacion !== undefined) patch.tipoFacturacion = body.tipoFacturacion;
+    if (body.prorratearPrimeraFactura !== undefined) patch.prorratearPrimeraFactura = body.prorratearPrimeraFactura;
+    if (body.crearFacturaDiasAntes !== undefined) patch.crearFacturaDiasAntes = body.crearFacturaDiasAntes;
+    if (body.facturarPorSeparado !== undefined) patch.facturarPorSeparado = body.facturarPorSeparado;
+    if (body.aprobarEnviarAutomaticamente !== undefined) {
+      patch.aprobarEnviarAutomaticamente = body.aprobarEnviarAutomaticamente;
+    }
+    if (body.usarCreditoAutomaticamente !== undefined) {
+      patch.usarCreditoAutomaticamente = body.usarCreditoAutomaticamente;
+    }
+    if (body.tipoDescuento !== undefined) patch.tipoDescuento = body.tipoDescuento;
+    if (body.valorDescuento !== undefined) patch.valorDescuento = moneyOrNull(body.valorDescuento);
+    if (body.impuestoOverride !== undefined) patch.impuestoOverride = moneyOrNull(body.impuestoOverride);
+    if (body.atributosPersonalizados !== undefined) patch.atributosPersonalizados = body.atributosPersonalizados || {};
+    if (body.etiquetaFactura !== undefined) {
+      patch.etiquetaFactura = body.etiquetaFactura == null || body.etiquetaFactura === ''
+        ? null
+        : String(body.etiquetaFactura).slice(0, 255);
+    }
+    if (body.billingDueDay !== undefined) patch.billingDueDay = body.billingDueDay;
+    if (body.notes !== undefined) patch.notes = body.notes;
+
     const [updated] = await db.update(clientServices)
       .set(patch)
       .where(eq(clientServices.id, serviceId))
       .returning();
     res.json(updated);
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar servicio' });
+    res.status(500).json({ error: 'Error al actualizar servicio: ' + error.message });
   }
 });
 

@@ -24,6 +24,9 @@ export const alertStatusEnum = pgEnum('alert_status', ['open', 'acked', 'resolve
 export const expenseCategoryEnum = pgEnum('expense_category', [
   'equipment', 'services', 'rent', 'salary', 'taxes', 'other',
 ]);
+export const contratoTipoEnum = pgEnum('contrato_tipo', ['abierto', 'cerrado']);
+export const tipoFacturacionEnum = pgEnum('tipo_facturacion', ['retroactiva', 'anticipada']);
+export const tipoDescuentoEnum = pgEnum('tipo_descuento', ['sin_descuento', 'porcentaje', 'monto_fijo']);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
@@ -178,6 +181,24 @@ export const clientServices = pgTable('client_services', {
   billingDueDay: integer('billing_due_day').default(5),
   /** Precio cobrado a este abonado; si NULL se usa plans.price. */
   customPrice: decimal('custom_price', { precision: 12, scale: 2 }),
+  /** Facturación estilo UISP */
+  contratoTipo: contratoTipoEnum('contrato_tipo').notNull().default('abierto'),
+  contratoId: varchar('contrato_id', { length: 64 }),
+  costoInstalacion: decimal('costo_instalacion', { precision: 12, scale: 2 }),
+  cargoCancelacionAnticipada: decimal('cargo_cancelacion_anticipada', { precision: 12, scale: 2 }),
+  duracionMinimaMeses: integer('duracion_minima_meses'),
+  diaComienzoPeriodo: integer('dia_comienzo_periodo').default(1),
+  tipoFacturacion: tipoFacturacionEnum('tipo_facturacion').notNull().default('retroactiva'),
+  prorratearPrimeraFactura: boolean('prorratear_primera_factura').notNull().default(true),
+  crearFacturaDiasAntes: integer('crear_factura_dias_antes').notNull().default(0),
+  facturarPorSeparado: boolean('facturar_por_separado').notNull().default(false),
+  aprobarEnviarAutomaticamente: boolean('aprobar_enviar_automaticamente').notNull().default(true),
+  usarCreditoAutomaticamente: boolean('usar_credito_automaticamente').notNull().default(true),
+  tipoDescuento: tipoDescuentoEnum('tipo_descuento').notNull().default('sin_descuento'),
+  valorDescuento: decimal('valor_descuento', { precision: 12, scale: 2 }),
+  impuestoOverride: decimal('impuesto_override', { precision: 5, scale: 2 }),
+  atributosPersonalizados: jsonb('atributos_personalizados').default({}),
+  etiquetaFactura: varchar('etiqueta_factura', { length: 255 }),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
