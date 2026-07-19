@@ -15,11 +15,17 @@ import {
   sanitizeDteSecretsFromSettings,
   publicDteProviderStatus,
 } from '../lib/orgDte.js';
+import {
+  sanitizeWisphubSecretsFromSettings,
+  publicWisphubStatus,
+} from '../lib/orgWisphub.js';
 
 export const settingsRouter = Router();
 
 function sanitizeBillingSettingsForApi(merged) {
-  return sanitizeDteSecretsFromSettings(sanitizeSettingsForApi(merged));
+  return sanitizeWisphubSecretsFromSettings(
+    sanitizeDteSecretsFromSettings(sanitizeSettingsForApi(merged)),
+  );
 }
 
 settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
@@ -41,9 +47,11 @@ settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
         webpayCommerceCode: undefined,
         webpayApiKey: undefined,
         dteApiKey: undefined,
+        wisphubApiKey: undefined,
       },
       paymentGateway: publicPaymentGatewayStatus(merged),
       dteProvider: publicDteProviderStatus(merged),
+      wisphub: publicWisphubStatus(merged),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -66,6 +74,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       'paymentProvider', 'flowApiUrl', 'webpayEnv',
       'dteProvider', 'dteApiUrl', 'dteRutEmisor', 'dteRazonSocial', 'dteAmbiente',
       'flowDelegacionBoletaActiva',
+      'wisphubBaseUrl',
     ];
     const patch = {};
     for (const key of allowed) {
@@ -104,6 +113,12 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
     } else if (typeof req.body.dteApiKey === 'string' && req.body.dteApiKey.trim()) {
       patch.dteApiKey = encryptSecret(req.body.dteApiKey.trim());
     }
+    // clearWisphubCredentials: true borra API key WispHub.
+    if (req.body.clearWisphubCredentials === true) {
+      patch.wisphubApiKey = '';
+    } else if (typeof req.body.wisphubApiKey === 'string' && req.body.wisphubApiKey.trim()) {
+      patch.wisphubApiKey = encryptSecret(req.body.wisphubApiKey.trim());
+    }
 
     const settings = mergeOrgSettings({ ...current, ...patch });
 
@@ -117,6 +132,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       settings: sanitizeBillingSettingsForApi(merged),
       paymentGateway: publicPaymentGatewayStatus(merged),
       dteProvider: publicDteProviderStatus(merged),
+      wisphub: publicWisphubStatus(merged),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

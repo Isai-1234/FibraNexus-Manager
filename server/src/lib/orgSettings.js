@@ -36,6 +36,9 @@ export const DEFAULT_ORG_SETTINGS = {
    * Pasar a false solo el día que se retire la delegación en el portal SII (manual).
    */
   flowDelegacionBoletaActiva: true,
+  // Importación WispHub (solo lectura sobre su API)
+  wisphubApiKey: '',
+  wisphubBaseUrl: '',
 };
 
 export function mergeOrgSettings(raw) {
@@ -71,6 +74,8 @@ export function mergeOrgSettings(raw) {
     dteRazonSocial: String(s.dteRazonSocial || '').trim().slice(0, 120),
     dteAmbiente: s.dteAmbiente === 'produccion' ? 'produccion' : 'certificacion',
     flowDelegacionBoletaActiva: s.flowDelegacionBoletaActiva === false ? false : true,
+    wisphubApiKey: s.wisphubApiKey != null ? String(s.wisphubApiKey) : '',
+    wisphubBaseUrl: String(s.wisphubBaseUrl || '').trim().replace(/\/+$/, '').slice(0, 200),
   };
 }
 

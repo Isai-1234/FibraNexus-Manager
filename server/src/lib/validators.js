@@ -73,6 +73,9 @@ export const dteEmitirSchema = z.object({
   items: z.array(dteItemSchema).max(200).optional(),
 }).passthrough();
 
+/** Body vacío — importa con credenciales guardadas en settings de la org. */
+export const wisphubImportSchema = z.object({}).passthrough();
+
 export function parseBody(schema, body) {
   const result = schema.safeParse(body);
   if (!result.success) {

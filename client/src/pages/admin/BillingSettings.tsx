@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Save, Play, Settings, Plug } from 'lucide-react'
+import { ArrowLeft, Save, Play, Settings, Plug, Download } from 'lucide-react'
 import axios from 'axios'
 import ThemeToggle from '../../components/ThemeToggle'
 
@@ -28,6 +28,19 @@ type BillingSettingsData = {
   dteAmbiente?: string
   hasDteApiKey?: boolean
   flowDelegacionBoletaActiva?: boolean
+  wisphubBaseUrl?: string
+  hasWisphubApiKey?: boolean
+}
+
+type WisphubImportSummary = {
+  ok?: boolean
+  total?: number
+  remoteCount?: number
+  created?: number
+  updated?: number
+  errorCount?: number
+  errors?: { wisphubId?: string; message?: string }[]
+  error?: string
 }
 
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
@@ -36,14 +49,18 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   const [organizationId, setOrganizationId] = useState<number | null>(null)
   const [paymentGateway, setPaymentGateway] = useState<{ provider?: string; mode?: string; configured?: boolean } | null>(null)
   const [dteStatus, setDteStatus] = useState<{ provider?: string; mode?: string; configured?: boolean } | null>(null)
+  const [wisphubStatus, setWisphubStatus] = useState<{ configured?: boolean; hasWisphubApiKey?: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
   const [testingDte, setTestingDte] = useState(false)
+  const [importingWisphub, setImportingWisphub] = useState(false)
+  const [wisphubImportResult, setWisphubImportResult] = useState<WisphubImportSummary | null>(null)
   const [message, setMessage] = useState('')
   const [flowApiKeyInput, setFlowApiKeyInput] = useState('')
   const [flowSecretInput, setFlowSecretInput] = useState('')
   const [dteApiKeyInput, setDteApiKeyInput] = useState('')
+  const [wisphubApiKeyInput, setWisphubApiKeyInput] = useState('')
 
   function api() {
     return axios.create({
@@ -60,6 +77,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
         setOrganizationId(r.data.organizationId ?? null)
         setPaymentGateway(r.data.paymentGateway || null)
         setDteStatus(r.data.dteProvider || null)
+        setWisphubStatus(r.data.wisphub || null)
       })
       .catch((err) => setMessage(err.response?.data?.error || err.message))
       .finally(() => setLoading(false))
@@ -75,16 +93,20 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       delete payload.hasFlowSecretKey
       delete payload.hasWebpayCredentials
       delete payload.hasDteApiKey
+      delete payload.hasWisphubApiKey
       if (flowApiKeyInput.trim()) payload.flowApiKey = flowApiKeyInput.trim()
       if (flowSecretInput.trim()) payload.flowSecretKey = flowSecretInput.trim()
       if (dteApiKeyInput.trim()) payload.dteApiKey = dteApiKeyInput.trim()
+      if (wisphubApiKeyInput.trim()) payload.wisphubApiKey = wisphubApiKeyInput.trim()
       const res = await api().patch('/settings/billing', payload)
       setSettings(res.data.settings)
       setPaymentGateway(res.data.paymentGateway || null)
       setDteStatus(res.data.dteProvider || null)
+      setWisphubStatus(res.data.wisphub || null)
       setFlowApiKeyInput('')
       setFlowSecretInput('')
       setDteApiKeyInput('')
+      setWisphubApiKeyInput('')
       setMessage('Ajustes guardados correctamente')
     } catch (err: any) {
       setMessage('Error: ' + (err.response?.data?.error || err.message))
@@ -151,6 +173,49 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       setMessage('Error: ' + (data?.message || data?.error || err.message))
     }
     setTestingDte(false)
+  }
+
+  async function clearWisphub() {
+    if (!confirm('¿Quitar la API key de WispHub?')) return
+    setSaving(true)
+    try {
+      const res = await api().patch('/settings/billing', { clearWisphubCredentials: true })
+      setSettings(res.data.settings)
+      setWisphubStatus(res.data.wisphub || null)
+      setWisphubApiKeyInput('')
+      setMessage('Credenciales WispHub eliminadas')
+    } catch (err: any) {
+      setMessage('Error: ' + (err.response?.data?.error || err.message))
+    }
+    setSaving(false)
+  }
+
+  async function importWisphubClients() {
+    if (!organizationId) {
+      setMessage('Error: no se pudo resolver el ID de organización')
+      return
+    }
+    if (!confirm('¿Importar (o actualizar) todos los clientes desde WispHub? Puede tardar varios minutos.')) return
+    setImportingWisphub(true)
+    setWisphubImportResult(null)
+    setMessage('')
+    try {
+      const res = await api().post(
+        `/orgs/${organizationId}/wisphub/importar-clientes`,
+        {},
+        { timeout: 10 * 60 * 1000 },
+      )
+      setWisphubImportResult(res.data)
+      setMessage(
+        `Importación WispHub: ${res.data.created ?? 0} creados, ${res.data.updated ?? 0} actualizados`
+        + (res.data.errorCount ? `, ${res.data.errorCount} errores` : ''),
+      )
+    } catch (err: any) {
+      const data = err.response?.data
+      setWisphubImportResult(data || null)
+      setMessage('Error: ' + (data?.error || data?.message || err.message))
+    }
+    setImportingWisphub(false)
   }
 
   async function handleRunJobs() {
@@ -421,6 +486,93 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   </span>
                 </label>
               </div>
+            </section>
+
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Importar desde WispHub</h2>
+              <p className="text-sm text-ink-muted">
+                Trae clientes desde la API de WispHub (solo lectura). Re-ejecutable: usa <code className="text-xs">wisphub_id</code> para no duplicar.
+                No toca routers ni activa DTE — eso se hace después, cliente a cliente.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  wisphubStatus?.configured || settings.hasWisphubApiKey
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {wisphubStatus?.configured || settings.hasWisphubApiKey ? 'CONFIGURADO' : 'SIN KEY'}
+                </span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">URL base API (producción)</label>
+                <input
+                  type="url"
+                  value={settings.wisphubBaseUrl || ''}
+                  onChange={(e) => setSettings({ ...settings, wisphubBaseUrl: e.target.value })}
+                  placeholder="https://api.wisphub.net  (o la URL de consulta de tu empresa)"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  En WispHub: Mi Empresa → Empresa → “URL de consulta de API”. No uses sandbox.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">API Key WispHub</label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={wisphubApiKeyInput}
+                  onChange={(e) => setWisphubApiKeyInput(e.target.value)}
+                  placeholder={settings.hasWisphubApiKey ? '•••••• ya configurada — escribe para cambiar' : 'Pega tu API Key (Staff → Generar Mi APIKey)'}
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={importWisphubClients}
+                  disabled={importingWisphub || saving || !organizationId}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {importingWisphub ? 'Importando… (puede tardar)' : 'Importar clientes'}
+                </button>
+                {settings.hasWisphubApiKey && (
+                  <button type="button" onClick={clearWisphub} disabled={saving || importingWisphub}
+                    className="text-sm text-red-600 hover:underline disabled:opacity-50">
+                    Quitar credenciales WispHub
+                  </button>
+                )}
+              </div>
+              {importingWisphub && (
+                <div className="text-sm text-ink-soft flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                  Recorriendo páginas de WispHub (limit/offset)…
+                </div>
+              )}
+              {wisphubImportResult && !importingWisphub && (
+                <div className="rounded-lg border border-line bg-surface-raised p-4 text-sm space-y-2">
+                  <p className="font-medium text-ink">Resumen de importación</p>
+                  <ul className="text-ink-soft space-y-1">
+                    <li>Procesados: <strong>{wisphubImportResult.total ?? 0}</strong>
+                      {wisphubImportResult.remoteCount != null ? ` (remotos: ${wisphubImportResult.remoteCount})` : ''}
+                    </li>
+                    <li>Creados: <strong>{wisphubImportResult.created ?? 0}</strong></li>
+                    <li>Actualizados: <strong>{wisphubImportResult.updated ?? 0}</strong></li>
+                    <li>Errores: <strong>{wisphubImportResult.errorCount ?? wisphubImportResult.errors?.length ?? 0}</strong></li>
+                  </ul>
+                  {(wisphubImportResult.errors?.length ?? 0) > 0 && (
+                    <div className="max-h-40 overflow-auto text-xs text-red-700 space-y-1 border-t border-line pt-2">
+                      {wisphubImportResult.errors!.slice(0, 30).map((e, i) => (
+                        <div key={i}><code>{e.wisphubId}</code>: {e.message}</div>
+                      ))}
+                      {(wisphubImportResult.errors!.length > 30) && (
+                        <div>… y {wisphubImportResult.errors!.length - 30} más</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
