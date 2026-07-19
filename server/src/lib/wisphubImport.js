@@ -27,6 +27,19 @@ function planName(row) {
   return String(p.nombre || p.name || '').trim();
 }
 
+/**
+ * Precio efectivo cobrado a ese cliente en WispHub.
+ * OpenAPI Cliente.precio_plan — monto del servicio (puede diferir del precio de lista
+ * del plan global cuando el ISP crea variantes por cliente).
+ */
+function effectivePrice(row) {
+  const raw = row.precio_plan ?? row.precio ?? null;
+  if (raw == null || raw === '') return null;
+  const n = Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 function mapLifecycle(estado) {
   const e = String(estado || '').toLowerCase();
   if (!e) return 'active';
@@ -135,8 +148,16 @@ async function upsertOneClient(orgId, row) {
   if (row.informacion_adicional) notesParts.push(String(row.informacion_adicional).trim());
   if (row.saldo != null && row.saldo !== '') notesParts.push(`Saldo WispHub: ${row.saldo}`);
   if (row.fecha_corte) notesParts.push(`Fecha corte WispHub: ${row.fecha_corte}`);
-  if (planName(row)) notesParts.push(`Plan WispHub: ${planName(row)}`);
+  const planNombre = planName(row) || null;
+  const precioEfectivo = effectivePrice(row);
+  if (planNombre) notesParts.push(`Plan WispHub: ${planNombre}`);
+  if (precioEfectivo != null) notesParts.push(`Precio efectivo WispHub: ${precioEfectivo}`);
   const notes = notesParts.filter(Boolean).join('\n') || null;
+
+  const planFields = {
+    planNombre,
+    precioEfectivo: precioEfectivo != null ? String(precioEfectivo) : null,
+  };
 
   const [existing] = await db.select().from(clients)
     .where(and(eq(clients.organizationId, orgId), eq(clients.wisphubId, wisphubId)))
@@ -160,12 +181,19 @@ async function upsertOneClient(orgId, row) {
       longitude,
       notes,
       tags,
+      ...planFields,
       lifecycleStatus: existing.deletedAt ? existing.lifecycleStatus : lifecycleStatus,
       // dteHabilitado NO se toca
       updatedAt: new Date(),
     }).where(eq(clients.id, existing.id)).returning();
 
-    return { action: 'updated', clientId: updated.id, wisphubId };
+    return {
+      action: 'updated',
+      clientId: updated.id,
+      wisphubId,
+      hasPlan: Boolean(planNombre),
+      hasPrecio: precioEfectivo != null,
+    };
   }
 
   // Email único global: si choca, sufijo con id_servicio
@@ -203,6 +231,7 @@ async function upsertOneClient(orgId, row) {
       notes,
       tags: buildWisphubTags(row, null),
       wisphubId,
+      ...planFields,
       dteHabilitado: false,
       lifecycleStatus,
     }).returning();
@@ -213,7 +242,13 @@ async function upsertOneClient(orgId, row) {
     throw err;
   }
 
-  return { action: 'created', clientId: client.id, wisphubId };
+  return {
+    action: 'created',
+    clientId: client.id,
+    wisphubId,
+    hasPlan: Boolean(planNombre),
+    hasPrecio: precioEfectivo != null,
+  };
 }
 
 /**
@@ -244,6 +279,8 @@ export async function importWisphubClients(organizationId) {
   let created = 0;
   let updated = 0;
   let processed = 0;
+  let sinPlan = 0;
+  let sinPrecio = 0;
   const errors = [];
 
   while (true) {
@@ -265,6 +302,8 @@ export async function importWisphubClients(organizationId) {
         processed += 1;
         if (r.action === 'created') created += 1;
         else updated += 1;
+        if (!r.hasPlan) sinPlan += 1;
+        if (!r.hasPrecio) sinPrecio += 1;
       } catch (err) {
         errors.push({
           wisphubId: idLabel,
@@ -284,6 +323,8 @@ export async function importWisphubClients(organizationId) {
     remoteCount: totalRemote,
     created,
     updated,
+    sinPlan,
+    sinPrecio,
     errors,
     errorCount: errors.length,
   };

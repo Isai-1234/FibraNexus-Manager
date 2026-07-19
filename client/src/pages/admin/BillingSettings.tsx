@@ -38,6 +38,8 @@ type WisphubImportSummary = {
   remoteCount?: number
   created?: number
   updated?: number
+  sinPlan?: number
+  sinPrecio?: number
   errorCount?: number
   errors?: { wisphubId?: string; message?: string }[]
   error?: string
@@ -237,6 +239,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       setMessage(
         `Importación WispHub: ${res.data.created ?? 0} creados, ${res.data.updated ?? 0} actualizados`
         + (res.data.errorCount ? `, ${res.data.errorCount} errores` : '')
+        + (res.data.sinPrecio ? `, ${res.data.sinPrecio} sin precio efectivo` : '')
+        + (res.data.sinPlan ? `, ${res.data.sinPlan} sin plan` : '')
         + (res.data.remoteCount != null ? ` (remotos: ${res.data.remoteCount})` : ''),
       )
     } catch (err: any) {
@@ -607,6 +611,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                     </li>
                     <li>Creados: <strong>{wisphubImportResult.created ?? 0}</strong></li>
                     <li>Actualizados: <strong>{wisphubImportResult.updated ?? 0}</strong></li>
+                    <li>Sin plan: <strong>{wisphubImportResult.sinPlan ?? 0}</strong></li>
+                    <li>Sin precio efectivo: <strong>{wisphubImportResult.sinPrecio ?? 0}</strong></li>
                     <li>Errores: <strong>{wisphubImportResult.errorCount ?? wisphubImportResult.errors?.length ?? 0}</strong></li>
                   </ul>
                   {(wisphubImportResult.errors?.length ?? 0) > 0 && (

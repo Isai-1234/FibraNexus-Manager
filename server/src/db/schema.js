@@ -131,6 +131,10 @@ export const clients = pgTable('clients', {
   dteHabilitado: boolean('dte_habilitado').default(false).notNull(),
   /** id_servicio de WispHub — reconciliación de importaciones (unique por org). */
   wisphubId: varchar('wisphub_id', { length: 64 }),
+  /** Snapshot import WispHub: plan_internet.nombre */
+  planNombre: varchar('plan_nombre', { length: 255 }),
+  /** Snapshot import WispHub: precio_plan (precio efectivo del cliente, no lista global). */
+  precioEfectivo: decimal('precio_efectivo', { precision: 12, scale: 2 }),
   lifecycleStatus: clientLifecycleEnum('lifecycle_status').notNull().default('prospect'),
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),

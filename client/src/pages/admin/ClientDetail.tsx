@@ -1316,6 +1316,18 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   { label: 'Ciudad', value: client.city || '—', icon: MapPin },
                   { label: 'Región', value: client.region || '—', icon: MapPin },
                   { label: 'Tipo', value: statusLabel[client.clientType] || client.clientType, icon: User },
+                  ...(client.planNombre || client.precioEfectivo != null
+                    ? [
+                        { label: 'Plan (WispHub)', value: client.planNombre || '—', icon: Wifi },
+                        {
+                          label: 'Precio efectivo',
+                          value: client.precioEfectivo != null
+                            ? `$${Number(client.precioEfectivo).toLocaleString('es-CL')}`
+                            : '—',
+                          icon: CreditCard,
+                        },
+                      ]
+                    : []),
                 ].map(f => (
                   <div key={f.label} className="flex items-start gap-3 py-2 border-b border-white/[0.05] last:border-0">
                     <f.icon className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
@@ -1362,8 +1374,23 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 )}
                 {services.length === 0 ? (
                   <div className="text-center py-6 text-ink-muted">
-                    <Wifi className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">Sin servicios asignados</p>
+                    {(client.planNombre || client.precioEfectivo != null) ? (
+                      <div className="text-left space-y-2 mb-4 p-3 rounded-xl border border-white/[0.08] bg-surface-card/[0.02]">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-400">Snapshot WispHub (solo lectura)</p>
+                        <p className="text-sm text-white font-medium">{client.planNombre || 'Plan sin nombre'}</p>
+                        <p className="text-sm text-emerald-300">
+                          {client.precioEfectivo != null
+                            ? `$${Number(client.precioEfectivo).toLocaleString('es-CL')} / mes`
+                            : 'Sin precio efectivo'}
+                        </p>
+                        <p className="text-xs text-slate-500">Aún no hay servicio FibraNexus vinculado — el contrato/prorrateo viene después.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Wifi className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">Sin servicios asignados</p>
+                      </>
+                    )}
                     <button onClick={() => setShowServiceForm(true)} className="mt-2 text-cyan-400 text-sm hover:underline">+ Crear servicio</button>
                   </div>
                 ) : services.map(s => (
