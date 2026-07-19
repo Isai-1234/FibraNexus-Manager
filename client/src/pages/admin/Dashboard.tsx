@@ -114,6 +114,26 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setLoading(false)
   }
 
+  async function loadClientsOverview() {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api().get('/clients/overview')
+      setData(Array.isArray(res.data) ? res.data : [])
+    } catch (err: any) {
+      setError('Error al cargar datos: ' + (err.response?.data?.error || err.message))
+    }
+    setLoading(false)
+  }
+
+  function closeClientProfile() {
+    setSelectedClientId(null)
+    setClientInitialTab('overview')
+    setActiveTab('clients')
+    // Si ya estábamos en Abonados, el useEffect no dispara loadData — forzar recarga.
+    void loadClientsOverview()
+  }
+
   async function ackAlert(id: number) {
     try {
       await api().post(`/alerts/${id}/ack`)
@@ -322,11 +342,21 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       setActiveTab('billing-settings')
       return
     }
+    const leavingClient = selectedClientId != null
+    const sameTab = activeTab === id
     setSelectedClientId(null)
     setShowBillingSettings(false)
     setActiveTab(id)
-    setData([])
     setError('')
+    // Misma pestaña (p.ej. Abonados desde el perfil): useEffect no corre → recargar.
+    // No vaciar data antes: evita "0 registros" hasta pulsar Actualizar.
+    if (sameTab) {
+      if (id === 'clients') void loadClientsOverview()
+      else void loadData()
+    } else if (leavingClient && id === 'clients') {
+      void loadClientsOverview()
+    }
+    // Si cambió de pestaña, el useEffect([activeTab]) dispara loadData.
   }
 
   const role = user?.role || 'admin'
@@ -532,7 +562,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           clientId={selectedClientId}
           API={API}
           initialTab={clientInitialTab}
-          onBack={() => { setSelectedClientId(null); setClientInitialTab('overview'); setActiveTab('clients') }}
+          onBack={closeClientProfile}
         />
       </div>
     )
