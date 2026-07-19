@@ -254,7 +254,7 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     const clientId = parseInt(req.params.id);
     const {
       fullName, email, phone, clientType, rut, address, city, region, password,
-      latitude, longitude, lifecycleStatus, dteHabilitado,
+      latitude, longitude, lifecycleStatus, dteHabilitado, precioEfectivo, planNombre,
     } = req.body;
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
@@ -281,6 +281,20 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     if (latitude !== undefined) patch.latitude = latitude != null && latitude !== '' ? String(latitude) : null;
     if (longitude !== undefined) patch.longitude = longitude != null && longitude !== '' ? String(longitude) : null;
     if (typeof dteHabilitado === 'boolean') patch.dteHabilitado = dteHabilitado;
+    if (precioEfectivo !== undefined) {
+      if (precioEfectivo === null || precioEfectivo === '') {
+        patch.precioEfectivo = null;
+      } else {
+        const n = Number(precioEfectivo);
+        if (!Number.isFinite(n) || n < 0) {
+          return res.status(400).json({ error: 'precioEfectivo inválido' });
+        }
+        patch.precioEfectivo = String(n);
+      }
+    }
+    if (planNombre !== undefined) {
+      patch.planNombre = planNombre == null || planNombre === '' ? null : String(planNombre).slice(0, 255);
+    }
     if (lifecycleStatus) {
       const allowed = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
       if (!allowed.includes(lifecycleStatus)) {

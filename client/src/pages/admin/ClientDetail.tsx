@@ -513,6 +513,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     try {
       if (trimmed === '') {
         await api().put(`/services/${service.id}`, { customPrice: null })
+        // Alinear snapshot del cliente con precio de lista del plan
+        await api().put(`/clients/${clientId}`, { precioEfectivo: Number(service.plan?.price) || null }).catch(() => {})
       } else {
         const n = Number(trimmed.replace(',', '.'))
         if (!Number.isFinite(n) || n < 0) {
@@ -520,6 +522,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
           return
         }
         await api().put(`/services/${service.id}`, { customPrice: n })
+        await api().put(`/clients/${clientId}`, { precioEfectivo: n }).catch(() => {})
       }
       toast('Precio efectivo actualizado', 'success')
       loadAll()
@@ -1351,7 +1354,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   { label: 'Ciudad', value: client.city || '—', icon: MapPin },
                   { label: 'Región', value: client.region || '—', icon: MapPin },
                   { label: 'Tipo', value: statusLabel[client.clientType] || client.clientType, icon: User },
-                  ...(client.planNombre || client.precioEfectivo != null
+                  // Snapshot WispHub solo si aún no hay servicio FN (evita precio viejo vs servicio actual).
+                  ...(services.length === 0 && (client.planNombre || client.precioEfectivo != null)
                     ? [
                         { label: 'Plan (WispHub)', value: client.planNombre || '—', icon: Wifi },
                         {
