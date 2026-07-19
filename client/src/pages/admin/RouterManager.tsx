@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud, ChevronDown, HelpCircle, BookOpen, Loader2, ExternalLink } from 'lucide-react'
 import axios from 'axios'
 
 interface Props { API: string; onBack: () => void }
@@ -126,6 +126,171 @@ function resolveHost(router: any): string | null {
   return router.ipAddress?.trim() || creds.tunnelHostname?.trim() || null
 }
 
+type HelpStep = { title: string; detail?: string; code?: string; icon: typeof Monitor }
+type HelpGuide = { title: string; steps: HelpStep[]; note: string }
+
+function getWizardHelpGuide(routerType: string, method: string): HelpGuide | null {
+  const isMikro = String(routerType || '').startsWith('mikrotik')
+  const isEdge = String(routerType || '').startsWith('edgerouter')
+
+  if (isMikro && method === 'agent') {
+    return {
+      title: 'Sin IP pública — instala el agente en tu MikroTik',
+      steps: [
+        { title: 'Abre Winbox y conéctate a tu router', icon: Monitor },
+        { title: 'Ve a System → Scripts → clic en "+"', icon: Terminal },
+        { title: 'Nombre del script', detail: 'Usa exactamente:', code: 'fibranexus-agent', icon: Server },
+        { title: 'Pega el script en "Source"', detail: 'Se genera al registrar el router (paso 4).', icon: Copy },
+        { title: 'Ve a System → Scheduler → clic en "+"', icon: Clock },
+        { title: 'Configura el scheduler', detail: 'Nombre e intervalo:', code: 'fibranexus-heartbeat\nInterval: 00:00:30', icon: RefreshCw },
+        { title: 'On Event', detail: 'Apunta al script y guarda:', code: 'fibranexus-agent', icon: CheckCircle },
+      ],
+      note: 'El router se conectará solo a FibraNexus cada 30 segundos sin necesitar IP pública ni abrir puertos.',
+    }
+  }
+
+  if (isMikro && method === 'direct') {
+    return {
+      title: 'IP pública / DDNS — prepara la API del MikroTik',
+      steps: [
+        { title: 'Abre Winbox → New Terminal', icon: Terminal },
+        { title: 'Habilita el servicio web seguro', code: '/ip service enable www-ssl', icon: Lock },
+        {
+          title: 'Crea un usuario de solo lectura',
+          code: '/user add name=fibranexus password=TU_CLAVE group=read',
+          icon: Shield,
+        },
+        { title: 'Asegura acceso externo', detail: 'El puerto 443 (o el que indiques) debe estar accesible desde internet.', icon: Globe },
+      ],
+      note: 'Necesitas IP pública o DDNS apuntando a tu router.',
+    }
+  }
+
+  if (isEdge && method === 'agent') {
+    return {
+      title: 'Agente EdgeOS — SSH al EdgeRouter',
+      steps: [
+        { title: 'Conéctate por SSH a tu EdgeRouter', code: 'ssh ubnt@IP_LOCAL', icon: Terminal },
+        { title: 'Ejecuta el comando / script curl', detail: 'Se genera al registrar (paso 4) con el token real.', icon: Cloud },
+        { title: 'El agente queda corriendo como servicio', detail: 'Persiste tras reinicios vía post-config.d.', icon: RefreshCw },
+      ],
+      note: 'Sin IP pública: el EdgeRouter inicia la conexión hacia FibraNexus.',
+    }
+  }
+
+  if (isMikro && method === 'cloudflare_tunnel') {
+    return {
+      title: 'Cloudflare Tunnel en el MikroTik',
+      steps: [
+        { title: 'Instala el container de Cloudflare en tu MikroTik', detail: 'RouterOS 7 con container mode (CHR, L009, x86…).', icon: Cloud },
+        { title: 'Usa el token generado al registrar', detail: 'Zero Trust → Tunnels → copiar token e instalarlo en el container.', icon: Shield },
+        { title: 'Publica el hostname', detail: 'Apunta el hostname a la IP/puerto local del router.', icon: Globe },
+      ],
+      note: 'Requiere MikroTik con soporte de containers (CHR o hardware compatible).',
+    }
+  }
+
+  if (isEdge && method === 'cloudflare_tunnel') {
+    return {
+      title: 'Cloudflare vía MikroTik de borde (EdgeRouter)',
+      steps: [
+        { title: 'El túnel sigue en tu MikroTik de borde', detail: 'No instalas cloudflared en el EdgeRouter.', icon: Cloud },
+        { title: 'Agrega un Public Hostname en Cloudflare', detail: 'Apunta a la IP LAN del EdgeRouter (https://IP:443).', icon: Globe },
+        { title: 'Verifica ruta LAN desde el MikroTik', detail: 'El MikroTik debe alcanzar la subred del EdgeRouter.', icon: Wifi },
+      ],
+      note: 'Ideal cuando el EdgeRouter está detrás del L009/MikroTik con túnel ya activo.',
+    }
+  }
+
+  if (method === 'vpn') {
+    return {
+      title: 'VPN WireGuard',
+      steps: [
+        { title: 'Levanta el túnel VPN entre el nodo y FibraNexus', icon: Lock },
+        { title: 'Usa la IP interna del router en el formulario', icon: Server },
+        { title: 'Prueba la conexión antes de registrar', icon: Wifi },
+      ],
+      note: 'Útil cuando no hay IP pública pero sí un túnel VPN estable.',
+    }
+  }
+
+  return null
+}
+
+function WizardHelpPanel({
+  guide,
+  open,
+  onToggle,
+  onCopy,
+  copiedKey,
+}: {
+  guide: HelpGuide
+  open: boolean
+  onToggle: () => void
+  onCopy: (text: string, key: string) => void
+  copiedKey: string
+}) {
+  return (
+    <div className="rounded-xl border border-slate-700/60 bg-slate-900 text-slate-100 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/80 transition"
+      >
+        <HelpCircle className="h-4 w-4 text-sky-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">¿Cómo configuro mi router?</p>
+          <p className="text-xs text-slate-400 truncate">{guide.title}</p>
+        </div>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-slate-700/80 pt-3">
+          <p className="text-sm font-medium text-sky-300">{guide.title}</p>
+          <ol className="space-y-3">
+            {guide.steps.map((s, i) => {
+              const StepIcon = s.icon
+              return (
+              <li key={i} className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-7 h-7 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 flex items-center justify-center text-xs font-bold">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="text-sm font-medium text-slate-100 flex items-center gap-2">
+                    <StepIcon className="h-3.5 w-3.5 text-sky-400 flex-shrink-0" />
+                    {s.title}
+                  </p>
+                  {s.detail && <p className="text-xs text-slate-400">{s.detail}</p>}
+                  {s.code && (
+                    <div className="relative mt-1 bg-black/50 rounded-lg border border-slate-700 p-2.5">
+                      <code className="text-[11px] text-emerald-400 font-mono whitespace-pre-wrap break-all block pr-8">{s.code}</code>
+                      <button
+                        type="button"
+                        onClick={() => onCopy(s.code!, `help-${i}`)}
+                        className="absolute top-1.5 right-1.5 p-1 rounded bg-slate-700 hover:bg-slate-600"
+                        title="Copiar"
+                      >
+                        {copiedKey === `help-${i}`
+                          ? <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                          : <Copy className="h-3.5 w-3.5 text-slate-300" />}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </li>
+              )
+            })}
+          </ol>
+          <div className="flex gap-2 items-start rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+            <BookOpen className="h-4 w-4 text-amber-300 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-100/90">{guide.note}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function RouterManager({ API, onBack }: Props) {
   const [routers, setRouters] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -148,6 +313,9 @@ export default function RouterManager({ API, onBack }: Props) {
   const [credSaving, setCredSaving] = useState(false)
   const [credTesting, setCredTesting] = useState(false)
   const [credTestResult, setCredTestResult] = useState<any>(null)
+  const [wizardHelpOpen, setWizardHelpOpen] = useState(false)
+  const [agentWaitStatus, setAgentWaitStatus] = useState<'idle' | 'waiting' | 'connected' | 'timeout'>('idle')
+  const waitStartedRef = useRef<number | null>(null)
 
   function api() {
     return axios.create({ baseURL: API, headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` } })
@@ -159,6 +327,48 @@ export default function RouterManager({ API, onBack }: Props) {
     const interval = setInterval(loadRouters, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Paso 4: esperar heartbeat del agente (poll /stats cada 5s, timeout 5 min)
+  useEffect(() => {
+    const needsWait = step === 4 && newRouter?.id && (
+      form.connectionMethod === 'agent'
+      || (form.connectionMethod === 'cloudflare_tunnel' && String(form.routerType || '').startsWith('mikrotik'))
+    )
+    if (!needsWait) {
+      setAgentWaitStatus('idle')
+      waitStartedRef.current = null
+      return
+    }
+
+    setAgentWaitStatus('waiting')
+    waitStartedRef.current = Date.now()
+    let cancelled = false
+
+    const poll = async () => {
+      if (cancelled || !newRouter?.id) return
+      const elapsed = Date.now() - (waitStartedRef.current || Date.now())
+      if (elapsed >= 5 * 60 * 1000) {
+        setAgentWaitStatus(prev => (prev === 'connected' ? prev : 'timeout'))
+        return
+      }
+      try {
+        const res = await api().get(`/routers/${newRouter.id}/stats`)
+        if (!cancelled && res.data?.connected) {
+          setAgentWaitStatus('connected')
+          return
+        }
+      } catch {
+        /* 503 = aún no conectado */
+      }
+    }
+
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [step, newRouter?.id, form.connectionMethod, form.routerType])
 
   async function loadRouters() {
     setLoading(true)
@@ -403,14 +613,22 @@ export default function RouterManager({ API, onBack }: Props) {
     setNewRouter(null)
     setTestResult(null)
     setMikrotikScript(null)
+    setWizardHelpOpen(false)
+    setAgentWaitStatus('idle')
+    waitStartedRef.current = null
   }
 
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
   const selectedMethod = CONNECTION_METHODS.find(m => m.value === form.connectionMethod)
   const defaultPort = form.routerType === 'mikrotik_v6' ? '8728' : '443'
   const isEdgeRouter = form.routerType === 'edgerouter_v4'
-
+  const wizardHelp = getWizardHelpGuide(form.routerType, form.connectionMethod)
+  const wizardScriptText = mikrotikScript ? routerScriptText(mikrotikScript) : ''
   const installCmd = newRouter ? `AGENT_TOKEN=${newRouter.agentToken} ROUTER_IP=${form.routerIp || '192.168.X.X'} ROUTER_TYPE=${form.routerType} ROUTER_USER=${form.routerUser || 'admin'} ROUTER_PASS=${form.routerPass || 'TU_PASSWORD'} node fibranexus-agent.js` : ''
+  const showAgentWait = step === 4 && newRouter?.id && (
+    form.connectionMethod === 'agent'
+    || (form.connectionMethod === 'cloudflare_tunnel' && String(form.routerType || '').startsWith('mikrotik'))
+  )
 
   return (
     <div className="flex-1 overflow-auto bg-gray-50">
@@ -686,6 +904,16 @@ export default function RouterManager({ API, onBack }: Props) {
                     <p className="text-xs text-amber-800">Las credenciales se guardan cifradas con AES-256 y nunca se muestran en texto plano.</p>
                   </div>
 
+                  {wizardHelp && (
+                    <WizardHelpPanel
+                      guide={wizardHelp}
+                      open={wizardHelpOpen}
+                      onToggle={() => setWizardHelpOpen(v => !v)}
+                      onCopy={copyText}
+                      copiedKey={copied}
+                    />
+                  )}
+
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-gray-50 font-medium">Atrás</button>
                     <button onClick={handleCreate} disabled={
@@ -704,39 +932,58 @@ export default function RouterManager({ API, onBack }: Props) {
               {/* PASO 4 — Token / instrucciones */}
               {step === 4 && newRouter && (
                 <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                  <div className={`rounded-lg p-4 flex items-center gap-3 border ${
+                    agentWaitStatus === 'connected'
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-green-50 border-green-200'
+                  }`}>
                     <CheckCircle className="h-6 w-6 text-green-600 flex-shrink-0" />
                     <div>
                       <p className="font-semibold text-green-900">Router registrado exitosamente</p>
                       <p className="text-sm text-green-700">
-                        {form.connectionMethod === 'agent' ? 'Instala el agente en tu red para activarlo' : 'Las credenciales están guardadas de forma segura'}
+                        {form.connectionMethod === 'agent' || showAgentWait
+                          ? 'Instala el script en tu equipo y espera la primera conexión'
+                          : 'Las credenciales están guardadas de forma segura'}
                       </p>
                     </div>
                   </div>
 
-                  {/* Script de instalación */}
+                  {/* Script de instalación con token real */}
                   {mikrotikScript ? (
-                    renderScriptPanel(mikrotikScript, {
-                      ...newRouter,
-                      credentials: {
-                        ...newRouter.credentials,
-                        routerType: form.routerType,
-                        connectionMethod: form.connectionMethod,
-                        tunnelHostname: form.tunnelHostname,
-                        routerLocalIp: form.routerIp,
-                      },
-                    })
+                    <div className="space-y-3">
+                      {renderScriptPanel(mikrotikScript, {
+                        ...newRouter,
+                        credentials: {
+                          ...newRouter.credentials,
+                          routerType: form.routerType,
+                          connectionMethod: form.connectionMethod,
+                          tunnelHostname: form.tunnelHostname,
+                          routerLocalIp: form.routerIp,
+                        },
+                      })}
+                      {wizardScriptText && (
+                        <button
+                          type="button"
+                          onClick={() => copyText(wizardScriptText, 'wizard-script')}
+                          className="w-full py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium flex items-center justify-center gap-2"
+                        >
+                          {copied === 'wizard-script'
+                            ? <><CheckCircle className="h-4 w-4 text-emerald-400" /> Script copiado</>
+                            : <><Copy className="h-4 w-4" /> Copiar script</>}
+                        </button>
+                      )}
+                    </div>
                   ) : form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter ? (
                     <div className="space-y-4">
                       <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
                         <p className="font-semibold text-sky-900 text-sm mb-2">☁️ Un paso en Cloudflare (2 minutos)</p>
                         <p className="text-xs text-sky-800 mb-3">El cloudflared sigue en tu MikroTik. Solo publica el EdgeRouter con un hostname nuevo:</p>
                         <ol className="space-y-2 text-xs text-gray-700">
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
-                          <li className="flex gap-2"><span className="font-mono bg-white px-1.5 rounded border">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">1</span> Cloudflare Zero Trust → Networks → Tunnels → el mismo túnel del MikroTik</li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">2</span> Public Hostname → Add: <strong>{form.tunnelHostname || 'nodo2-isp.fibranexus.cl'}</strong></li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">3</span> Service: <code className="font-mono bg-white px-1 rounded">https://{form.routerIp || '172.16.11.254'}:443</code></li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">4</span> En el MikroTik: ruta a la subred del EdgeRouter (si no existe)</li>
+                          <li className="flex gap-2"><span className="w-6 h-6 rounded-full bg-sky-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0">5</span> Pulsa &quot;Probar conexión&quot; en FibraNexus — debe quedar Online en ~1 min</li>
                         </ol>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-3 text-sm">
@@ -768,11 +1015,20 @@ export default function RouterManager({ API, onBack }: Props) {
                           <Terminal className="h-4 w-4" /> Comando de instalación
                         </label>
                         <div className="bg-gray-900 rounded-lg p-3 relative">
-                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all">{installCmd}</code>
+                          <code className="text-green-400 text-xs block whitespace-pre-wrap break-all pr-10">{installCmd}</code>
                           <button onClick={() => copyText(installCmd, 'cmd')} className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded">
                             {copied === 'cmd' ? <CheckCircle className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5 text-gray-300" />}
                           </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => copyText(installCmd, 'wizard-script')}
+                          className="mt-2 w-full py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium flex items-center justify-center gap-2"
+                        >
+                          {copied === 'wizard-script'
+                            ? <><CheckCircle className="h-4 w-4 text-emerald-400" /> Script copiado</>
+                            : <><Copy className="h-4 w-4" /> Copiar script</>}
+                        </button>
                       </div>
                     </>
                   ) : (
@@ -786,7 +1042,72 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   )}
 
-                  <button onClick={resetForm} className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Listo</button>
+                  {/* Esperando conexión del agente */}
+                  {showAgentWait && (
+                    <div className={`rounded-xl border p-4 ${
+                      agentWaitStatus === 'connected'
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : agentWaitStatus === 'timeout'
+                          ? 'bg-amber-50 border-amber-200'
+                          : 'bg-slate-900 border-slate-700 text-slate-100'
+                    }`}>
+                      {agentWaitStatus === 'connected' ? (
+                        <div className="flex items-center gap-3">
+                          <CheckCircle className="h-6 w-6 text-emerald-600 flex-shrink-0" />
+                          <div>
+                            <p className="font-semibold text-emerald-900">✅ Router conectado exitosamente</p>
+                            <p className="text-sm text-emerald-700">El agente ya envía heartbeat a FibraNexus.</p>
+                          </div>
+                        </div>
+                      ) : agentWaitStatus === 'timeout' ? (
+                        <div className="space-y-3">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-semibold text-amber-900">Aún no detectamos conexión</p>
+                              <p className="text-sm text-amber-800 mt-1">
+                                Revisa que el script/scheduler esté activo en el router. Puedes cerrar este asistente y volver más tarde.
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href="https://github.com/Isai-1234/FibraNexus-Manager/blob/main/docs/arquitectura.md"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:underline"
+                          >
+                            <BookOpen className="h-4 w-4" /> ¿Necesitas ayuda? Ver documentación
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-3">
+                          <Loader2 className="h-5 w-5 text-sky-400 animate-spin flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold text-slate-100">Esperando conexión...</p>
+                            <p className="text-xs text-slate-400 mt-1">
+                              Consultando el agente cada 5 segundos. Suele tardar menos de un minuto tras pegar el script.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(agentWaitStatus === 'connected' || agentWaitStatus === 'timeout' || !showAgentWait) && (
+                    <button onClick={resetForm} className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                      Listo
+                    </button>
+                  )}
+                  {showAgentWait && agentWaitStatus === 'waiting' && (
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="w-full py-2 text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Cerrar y continuar después
+                    </button>
+                  )}
                 </div>
               )}
             </div>
