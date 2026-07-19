@@ -231,7 +231,7 @@ export async function importWisphubClients(organizationId) {
   if (!apiKey || !baseUrl) {
     return {
       ok: false,
-      error: 'Configura wisphubApiKey y wisphubBaseUrl en Ajustes de facturación',
+      error: 'Configura y guarda wisphubApiKey + wisphubBaseUrl en Ajustes antes de importar (el campo con puntos del navegador no cuenta si no está guardado).',
       total: 0,
       created: 0,
       updated: 0,

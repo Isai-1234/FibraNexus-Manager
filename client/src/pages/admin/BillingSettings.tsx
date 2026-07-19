@@ -191,29 +191,67 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   }
 
   async function importWisphubClients() {
-    if (!organizationId) {
+    if (!organizationId || !settings) {
       setMessage('Error: no se pudo resolver el ID de organización')
       return
     }
+
+    const typedKey = wisphubApiKeyInput.trim()
+    const baseUrl = String(settings.wisphubBaseUrl || '').trim()
+    const hasSavedKey = Boolean(settings.hasWisphubApiKey)
+
+    if (!baseUrl) {
+      setMessage('Error: indica la URL base de WispHub y pulsa Guardar (o Importar, que también guarda).')
+      return
+    }
+    if (!hasSavedKey && !typedKey) {
+      setMessage('Error: pega la API Key de WispHub. Los puntos del navegador no cuentan si no guardaste.')
+      return
+    }
     if (!confirm('¿Importar (o actualizar) todos los clientes desde WispHub? Puede tardar varios minutos.')) return
+
     setImportingWisphub(true)
     setWisphubImportResult(null)
     setMessage('')
+
     try {
+      // Si hay key/URL en el formulario, guardarlas ANTES de importar (evita "SIN KEY" + 0/0/0/0).
+      if (typedKey || baseUrl) {
+        const patchPayload: any = { wisphubBaseUrl: baseUrl }
+        if (typedKey) patchPayload.wisphubApiKey = typedKey
+        const saveRes = await api().patch('/settings/billing', patchPayload)
+        setSettings(saveRes.data.settings)
+        setWisphubStatus(saveRes.data.wisphub || null)
+        setWisphubApiKeyInput('')
+        if (!saveRes.data.settings?.hasWisphubApiKey && !saveRes.data.wisphub?.hasWisphubApiKey) {
+          throw new Error('La API key no quedó guardada. Revisa CREDENTIALS_ENCRYPTION_KEY en el servidor.')
+        }
+      }
+
       const res = await api().post(
         `/orgs/${organizationId}/wisphub/importar-clientes`,
         {},
         { timeout: 10 * 60 * 1000 },
       )
-      setWisphubImportResult(res.data)
+      setWisphubImportResult({ ...res.data, ok: true })
       setMessage(
         `Importación WispHub: ${res.data.created ?? 0} creados, ${res.data.updated ?? 0} actualizados`
-        + (res.data.errorCount ? `, ${res.data.errorCount} errores` : ''),
+        + (res.data.errorCount ? `, ${res.data.errorCount} errores` : '')
+        + (res.data.remoteCount != null ? ` (remotos: ${res.data.remoteCount})` : ''),
       )
     } catch (err: any) {
       const data = err.response?.data
-      setWisphubImportResult(data || null)
-      setMessage('Error: ' + (data?.error || data?.message || err.message))
+      // No mostrar "resumen 0/0/0/0" como si hubiera corrido OK
+      if (data && data.ok === false) {
+        setWisphubImportResult(null)
+        setMessage('Error: ' + (data.error || data.message || 'Importación falló (¿API key no guardada?)'))
+      } else if (data && (data.created != null || data.total != null)) {
+        setWisphubImportResult({ ...data, ok: data.ok !== false })
+        setMessage('Error: ' + (data.error || data.message || err.message))
+      } else {
+        setWisphubImportResult(null)
+        setMessage('Error: ' + (data?.error || data?.message || err.message))
+      }
     }
     setImportingWisphub(false)
   }
@@ -496,13 +534,23 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                  wisphubStatus?.configured || settings.hasWisphubApiKey
+                  settings.hasWisphubApiKey || wisphubStatus?.hasWisphubApiKey
                     ? 'bg-green-100 text-green-800'
-                    : 'bg-amber-100 text-amber-800'
+                    : wisphubApiKeyInput.trim()
+                      ? 'bg-sky-100 text-sky-800'
+                      : 'bg-amber-100 text-amber-800'
                 }`}>
-                  {wisphubStatus?.configured || settings.hasWisphubApiKey ? 'CONFIGURADO' : 'SIN KEY'}
+                  {settings.hasWisphubApiKey || wisphubStatus?.hasWisphubApiKey
+                    ? 'CONFIGURADO'
+                    : wisphubApiKeyInput.trim()
+                      ? 'EN FORMULARIO — se guarda al importar'
+                      : 'SIN KEY GUARDADA'}
                 </span>
               </div>
+              <p className="text-xs text-ink-muted">
+                Si el campo de API Key muestra puntos pero el badge dice SIN KEY, es autofill del navegador:
+                vuelve a pegar la key y pulsa <strong>Importar clientes</strong> (guarda sola) o <strong>Guardar</strong> arriba.
+              </p>
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">URL base API (producción)</label>
                 <input
@@ -550,7 +598,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   Recorriendo páginas de WispHub (limit/offset)…
                 </div>
               )}
-              {wisphubImportResult && !importingWisphub && (
+              {wisphubImportResult && wisphubImportResult.ok !== false && !importingWisphub && (
                 <div className="rounded-lg border border-line bg-surface-raised p-4 text-sm space-y-2">
                   <p className="font-medium text-ink">Resumen de importación</p>
                   <ul className="text-ink-soft space-y-1">
