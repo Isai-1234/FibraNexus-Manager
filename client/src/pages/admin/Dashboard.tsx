@@ -289,9 +289,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setShowBillingSettings(false)
     setShowRedIsp(false)
     setShowRouters(true)
+    setActiveTab('routers')
   }
 
   function sidebarActiveTab() {
+    if (showBillingSettings) return 'billing-settings'
     if (showRedIsp || activeTab === 'red-isp' || activeTab === 'network') return 'red-isp'
     if (showRouters) return 'routers'
     if (activeTab === 'equipment') return 'inventory'
@@ -312,14 +314,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       return
     }
     setShowRedIsp(false)
+    setShowRouters(false)
     if (id === 'billing-settings') {
       setSelectedClientId(null)
       setShowBillingSettings(true)
+      setActiveTab('billing-settings')
       return
     }
     setSelectedClientId(null)
     setShowBillingSettings(false)
-    setShowRouters(false)
     setActiveTab(id)
     setData([])
     setError('')
@@ -534,40 +537,28 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     )
   }
 
-  // Vista Finanzas
-  if (activeTab === 'finance') {
-    return (
-      <div className="min-h-screen bg-slate-950 flex">
-        <Sidebar menuSections={menuSections} activeTab="finance" user={user} logout={logout}
-          onTabClick={navigateMenu} />
-        <FinanceDashboard API={API} />
-      </div>
-    )
-  }
-
-  // Vista ajustes facturación
+  // Vistas overlay / dedicadas: deben ir ANTES de activeTab === 'finance'
+  // (si no, Finanzas bloquea Ajustes / Routers al dejar activeTab en 'finance')
   if (showBillingSettings) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="billing-settings" user={user} logout={logout}
-          onTabClick={(id) => { setShowBillingSettings(false); navigateMenu(id) }} />
+          onTabClick={navigateMenu} />
         <BillingSettings API={API} onBack={() => { setShowBillingSettings(false); setActiveTab('dashboard') }} />
       </div>
     )
   }
 
-  // Vista gestión de routers (antes que Red ISP: se abre desde NetworkManager)
   if (showRouters) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar menuSections={menuSections} activeTab="routers" user={user} logout={logout}
-          onTabClick={(id) => { setShowRouters(false); navigateMenu(id) }} />
+          onTabClick={navigateMenu} />
         <RouterManager API={API} onBack={() => { setShowRouters(false); openRedIsp() }} />
       </div>
     )
   }
 
-  // Vista red ISP — única pantalla (sin tabla "network" intermedia)
   if (redIspOpen) {
     return (
       <div className="min-h-screen bg-gray-100 flex">
@@ -578,6 +569,16 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           onBack={() => { setShowRedIsp(false); setActiveTab('dashboard') }}
           onOpenClient={(id, tab) => openClientProfile(id, tab || 'overview')}
         />
+      </div>
+    )
+  }
+
+  if (activeTab === 'finance') {
+    return (
+      <div className="min-h-screen bg-slate-950 flex">
+        <Sidebar menuSections={menuSections} activeTab="finance" user={user} logout={logout}
+          onTabClick={navigateMenu} />
+        <FinanceDashboard API={API} />
       </div>
     )
   }

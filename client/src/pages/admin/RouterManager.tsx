@@ -1,17 +1,99 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud, ChevronDown, HelpCircle, BookOpen, Loader2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Plus, Server, RefreshCw, X, Copy, CheckCircle, AlertTriangle, Clock, Trash2, Terminal, Shield, Eye, EyeOff, Wifi, Globe, Lock, Monitor, Cloud, ChevronDown, HelpCircle, BookOpen, Loader2, ExternalLink, Router, Zap, Settings } from 'lucide-react'
 import axios from 'axios'
 
 interface Props { API: string; onBack: () => void }
 
+/** Values persistentes en BD — no renombrar sin migración */
 const ROUTER_TYPES = [
-  { value: 'mikrotik_v7', label: 'Mikrotik RouterOS 7', description: 'REST API nativa (recomendado)', brand: 'Mikrotik' },
-  { value: 'mikrotik_v6', label: 'Mikrotik RouterOS 6', description: 'API puerto 8728', brand: 'Mikrotik' },
-  { value: 'edgerouter_v4', label: 'Ubiquiti EdgeRouter 4', description: 'EdgeOS — nodo aguas abajo del MikroTik', brand: 'Ubiquiti' },
-  { value: 'ubiquiti', label: 'Ubiquiti UniFi/AirMax', description: 'UISP API', brand: 'Ubiquiti' },
+  { value: 'mikrotik_v7', label: 'MikroTik RouterOS 7', description: 'REST API nativa (recomendado)', brand: 'MikroTik' },
+  { value: 'mikrotik_v6', label: 'MikroTik RouterOS 6', description: 'API puerto 8728', brand: 'MikroTik' },
+  { value: 'edgerouter_v4', label: 'Ubiquiti EdgeRouter', description: 'EdgeOS — nodo aguas abajo del MikroTik', brand: 'Ubiquiti' },
+  { value: 'ubiquiti', label: 'Ubiquiti UniFi / AirMax', description: 'UISP API / SNMP AirMax', brand: 'Ubiquiti' },
   { value: 'olt_huawei', label: 'OLT Huawei', description: 'SNMP + Telnet', brand: 'Huawei' },
   { value: 'olt_zte', label: 'OLT ZTE', description: 'SNMP + Telnet', brand: 'ZTE' },
+  { value: 'ont_generic', label: 'ONT/ONU genérico', description: 'ONU/ONT vía SNMP', brand: 'Fibra' },
   { value: 'snmp', label: 'Genérico SNMP', description: 'Cualquier dispositivo SNMP', brand: 'Generic' },
+]
+
+type DeviceSubtype = {
+  value: string
+  label: string
+  description: string
+  recommended?: boolean
+}
+
+type DeviceFamily = {
+  id: string
+  label: string
+  description: string
+  icon: typeof Router
+  accent: string
+  iconBg: string
+  iconColor: string
+  borderActive: string
+  /** Si no hay subtipos, al clic selecciona este value y avanza */
+  directValue?: string
+  subtypes?: DeviceSubtype[]
+}
+
+const DEVICE_FAMILIES: DeviceFamily[] = [
+  {
+    id: 'mikrotik',
+    label: 'MikroTik',
+    description: 'RouterOS — CCR, RB, L009, CHR',
+    icon: Router,
+    accent: 'red',
+    iconBg: 'bg-red-100',
+    iconColor: 'text-red-600',
+    borderActive: 'border-red-500 bg-red-50',
+    subtypes: [
+      { value: 'mikrotik_v7', label: 'RouterOS 7', description: 'REST API nativa', recommended: true },
+      { value: 'mikrotik_v6', label: 'RouterOS 6', description: 'API puerto 8728' },
+    ],
+  },
+  {
+    id: 'ubiquiti',
+    label: 'Ubiquiti',
+    description: 'EdgeRouter, UniFi y AirMax',
+    icon: Wifi,
+    accent: 'blue',
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-600',
+    borderActive: 'border-blue-500 bg-blue-50',
+    subtypes: [
+      // value histórico en BD: edgerouter_v4 (no ubiquiti_edgerouter)
+      { value: 'edgerouter_v4', label: 'EdgeRouter (EdgeOS)', description: 'ER-X, ER-4, ERLite' },
+      // value histórico en BD: ubiquiti (no ubiquiti_unifi)
+      { value: 'ubiquiti', label: 'UniFi / AirMax', description: 'UISP, LiteBeam, NanoStation' },
+    ],
+  },
+  {
+    id: 'fiber',
+    label: 'Fibra Óptica (OLT/ONT)',
+    description: 'GPON / EPON — Huawei, ZTE, ONU',
+    icon: Zap,
+    accent: 'amber',
+    iconBg: 'bg-amber-100',
+    iconColor: 'text-amber-600',
+    borderActive: 'border-amber-500 bg-amber-50',
+    subtypes: [
+      { value: 'olt_huawei', label: 'OLT Huawei', description: 'SNMP + Telnet' },
+      { value: 'olt_zte', label: 'OLT ZTE', description: 'SNMP + Telnet' },
+      { value: 'ont_generic', label: 'ONT/ONU genérico', description: 'ONU/ONT vía SNMP' },
+    ],
+  },
+  {
+    id: 'snmp',
+    label: 'Genérico SNMP',
+    description: 'Cualquier dispositivo con SNMP',
+    icon: Settings,
+    accent: 'slate',
+    iconBg: 'bg-slate-200',
+    iconColor: 'text-slate-600',
+    borderActive: 'border-slate-500 bg-slate-100',
+    directValue: 'snmp',
+  },
 ]
 
 const DEVICE_PROFILES: Record<string, { defaultMethod: string; methods: string[]; hint: string }> = {
@@ -44,6 +126,11 @@ const DEVICE_PROFILES: Record<string, { defaultMethod: string; methods: string[]
     defaultMethod: 'direct',
     methods: ['direct', 'vpn', 'agent'],
     hint: 'OLT ZTE: igual que Huawei — requiere acceso de red al equipo.',
+  },
+  ont_generic: {
+    defaultMethod: 'direct',
+    methods: ['direct', 'vpn', 'agent'],
+    hint: 'ONT/ONU genérico: monitoreo SNMP cuando hay conectividad de red.',
   },
   snmp: {
     defaultMethod: 'direct',
@@ -314,6 +401,7 @@ export default function RouterManager({ API, onBack }: Props) {
   const [credTesting, setCredTesting] = useState(false)
   const [credTestResult, setCredTestResult] = useState<any>(null)
   const [wizardHelpOpen, setWizardHelpOpen] = useState(false)
+  const [wizardFamily, setWizardFamily] = useState<string | null>(null)
   const [agentWaitStatus, setAgentWaitStatus] = useState<'idle' | 'waiting' | 'connected' | 'timeout'>('idle')
   const waitStartedRef = useRef<number | null>(null)
 
@@ -614,8 +702,43 @@ export default function RouterManager({ API, onBack }: Props) {
     setTestResult(null)
     setMikrotikScript(null)
     setWizardHelpOpen(false)
+    setWizardFamily(null)
     setAgentWaitStatus('idle')
     waitStartedRef.current = null
+  }
+
+  function applyRouterTypeSelection(rtValue: string) {
+    const profile = DEVICE_PROFILES[rtValue]
+    const base: any = { routerType: rtValue, connectionMethod: profile?.defaultMethod || 'direct' }
+    if (rtValue === 'edgerouter_v4') {
+      base.location = 'Nodo 2'
+      base.model = 'EdgeRouter 4'
+      base.lanSubnet = '192.168.2.0/24'
+      base.lanInterface = 'ether2'
+      base.dhcpSharedNetwork = 'LAN'
+      base.routerIp = '172.16.11.254'
+      base.connectionMethod = 'cloudflare_tunnel'
+    }
+    setForm({ ...form, ...base })
+    setStep(2)
+  }
+
+  function selectDeviceFamily(family: DeviceFamily) {
+    if (family.directValue) {
+      setWizardFamily(family.id)
+      applyRouterTypeSelection(family.directValue)
+      return
+    }
+    setWizardFamily(prev => (prev === family.id ? null : family.id))
+  }
+
+  function goBackToStep1() {
+    const fam = DEVICE_FAMILIES.find(f =>
+      f.directValue === form.routerType
+      || f.subtypes?.some(s => s.value === form.routerType),
+    )
+    setWizardFamily(fam?.id || null)
+    setStep(1)
   }
 
   const selectedType = ROUTER_TYPES.find(t => t.value === form.routerType)
@@ -651,36 +774,81 @@ export default function RouterManager({ API, onBack }: Props) {
             </div>
 
             <div className="p-6">
-              {/* PASO 1 — Tipo de router */}
+              {/* PASO 1 — Fabricante → subtipo */}
               {step === 1 && (
                 <div>
                   <p className="text-sm text-gray-500 mb-4">¿Qué tipo de dispositivo quieres agregar?</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {ROUTER_TYPES.map(rt => (
-                      <button key={rt.value} onClick={() => {
-                        const profile = DEVICE_PROFILES[rt.value]
-                        const base: any = { routerType: rt.value, connectionMethod: profile?.defaultMethod || 'direct' }
-                        if (rt.value === 'edgerouter_v4') {
-                          base.location = 'Nodo 2'
-                          base.model = 'EdgeRouter 4'
-                          base.lanSubnet = '192.168.2.0/24'
-                          base.lanInterface = 'ether2'
-                          base.dhcpSharedNetwork = 'LAN'
-                          base.routerIp = '172.16.11.254'
-                          base.connectionMethod = 'cloudflare_tunnel'
-                        }
-                        setForm({ ...form, ...base })
-                        setStep(2)
-                      }}
-                        className="text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Server className="h-4 w-4 text-blue-600" />
-                          <p className="font-semibold text-sm">{rt.label}</p>
+                  {wizardFamily && (
+                    <button
+                      type="button"
+                      onClick={() => setWizardFamily(null)}
+                      className="mb-3 text-xs font-medium text-blue-600 hover:underline inline-flex items-center gap-1"
+                    >
+                      ← Cambiar fabricante
+                    </button>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {DEVICE_FAMILIES.map(family => {
+                      const selected = wizardFamily === family.id
+                      const dimmed = wizardFamily != null && !selected
+                      const FamilyIcon = family.icon
+                      return (
+                        <div key={family.id} className={`transition-all duration-300 ${dimmed ? 'opacity-40 scale-[0.98]' : 'opacity-100'}`}>
+                          <button
+                            type="button"
+                            onClick={() => selectDeviceFamily(family)}
+                            className={`w-full text-left p-4 border-2 rounded-xl transition ${
+                              selected
+                                ? family.borderActive
+                                : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${family.iconBg}`}>
+                                <FamilyIcon className={`h-5 w-5 ${family.iconColor}`} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm text-gray-900">{family.label}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{family.description}</p>
+                              </div>
+                            </div>
+                          </button>
+
+                          {selected && family.subtypes && family.subtypes.length > 0 && (
+                            <div
+                              className="mt-2 space-y-2 overflow-hidden"
+                              style={{ animation: 'wizardSubtypeIn 0.28s ease-out' }}
+                            >
+                              {family.subtypes.map(st => (
+                                <button
+                                  key={st.value}
+                                  type="button"
+                                  onClick={() => applyRouterTypeSelection(st.value)}
+                                  className="w-full text-left p-3 rounded-xl border-2 border-dashed border-gray-200 hover:border-blue-500 hover:bg-white bg-gray-50/80 transition"
+                                >
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-medium text-sm text-gray-900">{st.label}</p>
+                                    {st.recommended && (
+                                      <span className="text-[10px] font-semibold uppercase tracking-wide bg-emerald-500 text-white px-2 py-0.5 rounded-full">
+                                        Recomendado
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">{st.description}</p>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs text-gray-500">{rt.description}</p>
-                      </button>
-                    ))}
+                      )
+                    })}
                   </div>
+                  <style>{`
+                    @keyframes wizardSubtypeIn {
+                      from { opacity: 0; transform: translateY(-6px); }
+                      to { opacity: 1; transform: translateY(0); }
+                    }
+                  `}</style>
                 </div>
               )}
 
@@ -690,7 +858,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   <div className="bg-blue-50 rounded-lg px-4 py-2 flex items-center gap-3 mb-4">
                     <Server className="h-4 w-4 text-blue-600" />
                     <p className="text-sm font-medium text-blue-900">{selectedType?.label}</p>
-                    <button onClick={() => setStep(1)} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
+                    <button onClick={goBackToStep1} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
                   </div>
                   <p className="text-sm text-gray-500 mb-2">¿Cómo se conectará FibraNexus a tu equipo?</p>
                   {DEVICE_PROFILES[form.routerType]?.hint && (
@@ -730,7 +898,7 @@ export default function RouterManager({ API, onBack }: Props) {
                     <div className="bg-blue-50 rounded-lg px-3 py-2 flex items-center gap-2 flex-1">
                       <Server className="h-4 w-4 text-blue-600" />
                       <p className="text-sm font-medium text-blue-900">{selectedType?.label}</p>
-                      <button onClick={() => setStep(1)} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
+                      <button onClick={goBackToStep1} className="ml-auto text-xs text-blue-600 hover:underline">Cambiar</button>
                     </div>
                     {selectedMethod && (
                       <div className="bg-purple-50 rounded-lg px-3 py-2 flex items-center gap-2 flex-1">
@@ -1125,7 +1293,7 @@ export default function RouterManager({ API, onBack }: Props) {
         </div>
         <div className="flex gap-2">
           <button onClick={loadRouters} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Actualizar</button>
-          <button onClick={() => { setShowForm(true); setStep(1) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar Router</button>
+          <button onClick={() => { setShowForm(true); setWizardFamily(null); setStep(1) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar Router</button>
         </div>
       </header>
 
@@ -1145,7 +1313,7 @@ export default function RouterManager({ API, onBack }: Props) {
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><Server className="h-8 w-8 text-blue-400" /></div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Sin routers registrados</h3>
             <p className="text-gray-500 mb-6 max-w-md mx-auto">Agrega tu primer router para gestionar tu red desde FibraNexus.</p>
-            <button onClick={() => { setShowForm(true); setStep(1) }} className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar primer router</button>
+            <button onClick={() => { setShowForm(true); setWizardFamily(null); setStep(1) }} className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Agregar primer router</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
