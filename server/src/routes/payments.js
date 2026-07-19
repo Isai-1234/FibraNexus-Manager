@@ -81,6 +81,7 @@ paymentsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
     });
 
     let reactivation = null;
+    let dte = null;
     if (result.fullyPaid) {
       try {
         const { tryAutoReactivateAfterPayment } = await import('../lib/subscriberSuspend.js');
@@ -91,6 +92,17 @@ paymentsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
       } catch (reactErr) {
         reactivation = { error: reactErr.message };
       }
+      try {
+        const { maybeEmitDteForPaidInvoice } = await import('../lib/dteEmitService.js');
+        dte = await maybeEmitDteForPaidInvoice({
+          orgId,
+          invoiceId: data.invoiceId,
+          paymentMethod: data.method,
+          emitirOverride: data.emitirDte,
+        });
+      } catch (dteErr) {
+        dte = { ok: false, error: dteErr.message };
+      }
     }
 
     res.status(result.idempotent ? 200 : 201).json({
@@ -99,6 +111,7 @@ paymentsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
       balance: result.balance,
       paidSum: result.paidSum,
       reactivation,
+      dte,
       idempotent: result.idempotent,
     });
   } catch (error) {

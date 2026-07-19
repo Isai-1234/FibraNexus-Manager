@@ -1,13 +1,13 @@
 /**
  * Rutas DTE / facturación electrónica por organización.
  * POST /api/orgs/:orgId/dte/test-connection
- * POST /api/orgs/:orgId/dte/emitir
+ * POST /api/orgs/:orgId/dte/emitir  (aplica decideDteEmission)
  */
 import { Router } from 'express';
 import { requireRole } from '../middleware/auth.js';
 import { requireOrganizationId } from '../lib/tenant.js';
 import { createOrgDteProvider } from '../lib/orgDte.js';
-import { emitirDTE } from '../lib/dteProvider.js';
+import { maybeEmitDteForPaidInvoice } from '../lib/dteEmitService.js';
 import { parseBody, dteEmitirSchema, dteTestConnectionSchema } from '../lib/validators.js';
 import { rateLimit } from '../lib/rateLimit.js';
 
@@ -59,10 +59,26 @@ dteRouter.post(
       const parsed = parseBody(dteEmitirSchema, req.body || {});
       if (parsed.error) return res.status(400).json({ error: parsed.error });
 
-      const provider = await createOrgDteProvider(orgId);
-      const result = await emitirDTE(provider, parsed.data);
+      const data = parsed.data;
+      const result = await maybeEmitDteForPaidInvoice({
+        orgId,
+        invoiceId: data.invoiceId,
+        paymentMethod: data.paymentMethod || null,
+        emitirOverride: data.emitirOverride,
+        extras: {
+          tipoDte: data.tipoDte,
+          folio: data.folio,
+          certificadoPfxBase64: data.certificadoPfxBase64,
+          certificadoPassword: data.certificadoPassword,
+          cafXml: data.cafXml,
+          cafXmlBase64: data.cafXmlBase64,
+          receptorRut: data.receptor?.rut,
+          receptorNombre: data.receptor?.razonSocial || data.receptor?.nombre,
+        },
+      });
 
-      res.status(result.ok ? 200 : 400).json(result);
+      const httpOk = result.ok !== false;
+      res.status(httpOk ? 200 : 400).json(result);
     } catch (error) {
       console.error('[dte] emitir:', error);
       res.status(500).json({ error: error.message || 'Error al emitir DTE' });

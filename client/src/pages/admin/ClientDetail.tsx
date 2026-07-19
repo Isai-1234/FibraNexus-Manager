@@ -73,6 +73,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [activeTab, setActiveTab] = useState(initialTab)
   const [showPayModal, setShowPayModal] = useState<any>(null)
   const [payMethod, setPayMethod] = useState('transfer')
+  const [payEmitirDte, setPayEmitirDte] = useState(false)
+  const [savingDteFlag, setSavingDteFlag] = useState(false)
   const [routers, setRouters] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
   const [showServiceForm, setShowServiceForm] = useState(false)
@@ -467,10 +469,34 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   async function payInvoice() {
     if (!showPayModal) return
     try {
-      await api().post('/payments', { invoiceId: showPayModal.id, method: payMethod, amount: showPayModal.total })
+      await api().post('/payments', {
+        invoiceId: showPayModal.id,
+        method: payMethod,
+        amount: showPayModal.total,
+        emitirDte: payEmitirDte,
+      })
       setShowPayModal(null)
       loadAll()
     } catch (e: any) { toast('Error al registrar pago: ' + (e.response?.data?.error || e.message), 'error') }
+  }
+
+  async function toggleClientDte(next: boolean) {
+    if (!client) return
+    setSavingDteFlag(true)
+    try {
+      const res = await api().put(`/clients/${clientId}`, { dteHabilitado: next })
+      setClient((c: any) => ({ ...c, dteHabilitado: res.data.dteHabilitado ?? next }))
+      toast(next ? 'Facturación electrónica habilitada para este cliente' : 'Facturación electrónica deshabilitada', 'success')
+    } catch (e: any) {
+      toast('Error: ' + (e.response?.data?.error || e.message), 'error')
+    }
+    setSavingDteFlag(false)
+  }
+
+  function openPayModal(inv: any) {
+    setPayMethod('transfer')
+    setPayEmitirDte(Boolean(client?.dteHabilitado))
+    setShowPayModal(inv)
   }
 
   async function suggestFreeIp(target: 'create' | 'edit' | 'service', siteId?: number) {
@@ -736,6 +762,21 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   <option value="other">Otro</option>
                 </select>
               </div>
+              <label className="flex items-start gap-3 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded"
+                  checked={payEmitirDte}
+                  onChange={(e) => setPayEmitirDte(e.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-ink">¿Generar factura electrónica?</span>
+                  <span className="block text-xs text-ink-muted mt-0.5">
+                    Override de este pago (no cambia el default del cliente). Default: {client?.dteHabilitado ? 'Sí' : 'No'}.
+                    Pagos Flow con delegación SII activa no emiten DTE aquí.
+                  </span>
+                </span>
+              </label>
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t">
               <button onClick={() => setShowPayModal(null)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Cancelar</button>
@@ -1284,6 +1325,27 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                     </div>
                   </div>
                 ))}
+                <div className="flex items-start gap-3 py-3 border-t border-white/[0.08] mt-1">
+                  <CreditCard className="h-4 w-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-600 mb-2">Factura electrónica (SII)</p>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-1 rounded"
+                        checked={Boolean(client.dteHabilitado)}
+                        disabled={savingDteFlag}
+                        onChange={(e) => toggleClientDte(e.target.checked)}
+                      />
+                      <span>
+                        <span className="block text-sm text-ink">¿Generar factura electrónica?</span>
+                        <span className="block text-xs text-slate-500 mt-0.5">
+                          Pilotaje: actívalo solo en 2–3 clientes reales. El resto sigue sin DTE.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1378,7 +1440,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         {statusLabel[inv.status] || inv.status}
                       </span>
                       {(inv.status === 'pending' || inv.status === 'overdue') && (
-                        <button onClick={() => setShowPayModal(inv)} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-500">Pagar</button>
+                        <button onClick={() => openPayModal(inv)} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-500">Pagar</button>
                       )}
                     </div>
                   </div>
@@ -1720,7 +1782,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       </td>
                       <td className="p-4">
                         {(inv.status === 'pending' || inv.status === 'overdue') && (
-                          <button onClick={() => setShowPayModal(inv)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+                          <button onClick={() => openPayModal(inv)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
                             Registrar pago
                           </button>
                         )}

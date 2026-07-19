@@ -1,7 +1,13 @@
 /**
  * Factory DTE por organización — selecciona adapter según settings.dteProvider.
- * Interfaz común de cada adapter: emitirDTE(datos), consultarEstado(dteId), anularDTE(dteId).
- * No mezcla lógica de Flow/paymentGateway.
+ * Interfaz común: emitirDTE(datos), consultarEstado(dteId), anularDTE(dteId).
+ *
+ * Decisión de emisión (orden estricto, antes de cualquier adapter):
+ *  a) dteHabilitado === false → no emitir
+ *  b) dteHabilitado === true:
+ *     - pago Flow + flowDelegacionBoletaActiva → no emitir (Flow ya hizo boleta);
+ *       marcar dteEmitidoPor = 'flow'
+ *     - resto → emitir vía adapter
  */
 import { createStubDteProvider } from './dteProviders/stub.js';
 import { createSimpleFacturaDteProvider } from './dteProviders/simpleFactura.js';
@@ -25,12 +31,63 @@ export function getDteProviderStatusFromSettings(settings = {}) {
     dteAmbiente: settings.dteAmbiente === 'produccion' ? 'produccion' : 'certificacion',
     dteRutEmisor: settings.dteRutEmisor || '',
     dteRazonSocial: settings.dteRazonSocial || '',
+    flowDelegacionBoletaActiva: settings.flowDelegacionBoletaActiva !== false,
+  };
+}
+
+/**
+ * @param {object} ctx
+ * @param {boolean} ctx.dteHabilitado
+ * @param {boolean} [ctx.paidViaFlow]
+ * @param {boolean} [ctx.flowDelegacionBoletaActiva]
+ * @param {string|null} [ctx.dteEmitidoPor]
+ */
+export function decideDteEmission(ctx = {}) {
+  if (ctx.dteEmitidoPor) {
+    return {
+      emit: false,
+      skip: true,
+      reason: 'already_emitted',
+      markAs: null,
+      message: `DTE ya registrado como emitido por ${ctx.dteEmitidoPor}`,
+    };
+  }
+
+  if (!ctx.dteHabilitado) {
+    return {
+      emit: false,
+      skip: true,
+      reason: 'client_disabled',
+      markAs: null,
+      message: 'Cliente sin facturación electrónica habilitada (dteHabilitado=false)',
+    };
+  }
+
+  const paidViaFlow = Boolean(ctx.paidViaFlow);
+  const flowDelegacion = ctx.flowDelegacionBoletaActiva !== false;
+
+  if (paidViaFlow && flowDelegacion) {
+    return {
+      emit: false,
+      skip: true,
+      reason: 'flow_delegation',
+      markAs: 'flow',
+      message:
+        'Pago Flow con delegación de boleta activa en SII — no se emite DTE desde FibraNexus (evita duplicar boleta).',
+    };
+  }
+
+  return {
+    emit: true,
+    skip: false,
+    reason: 'emit_adapter',
+    markAs: null,
+    message: 'Emitir vía proveedor DTE configurado',
   };
 }
 
 /**
  * @param {object|string} settingsOrName — settings de org (con dteApiKey descifrada) o nombre
- * @returns {{ name, emitirDTE, consultarEstado, anularDTE, testConnection? }}
  */
 export function createDteProvider(settingsOrName = 'stub') {
   if (settingsOrName && typeof settingsOrName === 'object') {
@@ -44,7 +101,19 @@ export function createDteProvider(settingsOrName = 'stub') {
 }
 
 /** Atajos de interfaz común (mismo contrato que los adapters). */
-export async function emitirDTE(settingsOrProvider, datos) {
+export async function emitirDTE(settingsOrProvider, datos, decisionContext = null) {
+  if (decisionContext) {
+    const decision = decideDteEmission(decisionContext);
+    if (!decision.emit) {
+      return {
+        ok: true,
+        skipped: true,
+        ...decision,
+        provider: decision.markAs || 'none',
+      };
+    }
+  }
+
   const p = typeof settingsOrProvider?.emitirDTE === 'function'
     ? settingsOrProvider
     : createDteProvider(settingsOrProvider);

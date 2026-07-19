@@ -65,6 +65,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       'brandLogoUrl', 'brandPrimaryColor', 'brandAccentColor', 'brandPortalTitle',
       'paymentProvider', 'flowApiUrl', 'webpayEnv',
       'dteProvider', 'dteApiUrl', 'dteRutEmisor', 'dteRazonSocial', 'dteAmbiente',
+      'flowDelegacionBoletaActiva',
     ];
     const patch = {};
     for (const key of allowed) {

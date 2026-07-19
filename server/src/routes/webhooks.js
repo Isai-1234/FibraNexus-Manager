@@ -95,6 +95,16 @@ async function processPaidWebhook({ provider, event, intent, inv, orgId, invoice
       const { tryAutoReactivateAfterPayment } = await import('../lib/subscriberSuspend.js');
       await tryAutoReactivateAfterPayment(inv, orgId);
     } catch { /* non-fatal */ }
+    try {
+      const { maybeEmitDteForPaidInvoice } = await import('../lib/dteEmitService.js');
+      await maybeEmitDteForPaidInvoice({
+        orgId,
+        invoiceId,
+        paymentMethod: method,
+      });
+    } catch (dteErr) {
+      console.error('[dte] post-flow webhook:', dteErr.message);
+    }
   }
 
   return res.json({

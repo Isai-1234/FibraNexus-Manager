@@ -30,6 +30,12 @@ export const DEFAULT_ORG_SETTINGS = {
   dteRutEmisor: '',
   dteRazonSocial: '',
   dteAmbiente: 'certificacion',
+  /**
+   * Flow tiene delegación SII de boleta (voucher = boleta legal).
+   * Mientras sea true, pagos Flow NUNCA emiten DTE desde FibraNexus.
+   * Pasar a false solo el día que se retire la delegación en el portal SII (manual).
+   */
+  flowDelegacionBoletaActiva: true,
 };
 
 export function mergeOrgSettings(raw) {
@@ -64,6 +70,7 @@ export function mergeOrgSettings(raw) {
     dteRutEmisor: String(s.dteRutEmisor || '').trim().slice(0, 20),
     dteRazonSocial: String(s.dteRazonSocial || '').trim().slice(0, 120),
     dteAmbiente: s.dteAmbiente === 'produccion' ? 'produccion' : 'certificacion',
+    flowDelegacionBoletaActiva: s.flowDelegacionBoletaActiva === false ? false : true,
   };
 }
 

@@ -27,6 +27,7 @@ type BillingSettingsData = {
   dteRazonSocial?: string
   dteAmbiente?: string
   hasDteApiKey?: boolean
+  flowDelegacionBoletaActiva?: boolean
 }
 
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
@@ -399,6 +400,27 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                   </div>
                 </div>
               )}
+
+              <div className="pt-3 border-t border-line space-y-2">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 rounded"
+                    checked={settings.flowDelegacionBoletaActiva !== false}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      flowDelegacionBoletaActiva: e.target.checked,
+                    })}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">Delegación de boleta Flow activa (SII)</span>
+                    <span className="block text-xs text-ink-muted mt-0.5">
+                      Si Flow ya emite boleta legal en el SII, déjalo activado: los pagos Flow no generan DTE desde FibraNexus
+                      (evita duplicar boleta). Desactívalo solo el día que retires esa delegación en el portal del SII — nunca se cambia solo.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </section>
 
             <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">

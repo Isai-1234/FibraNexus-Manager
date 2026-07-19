@@ -127,6 +127,8 @@ export const clients = pgTable('clients', {
   longitude: decimal('longitude', { precision: 11, scale: 8 }),
   notes: text('notes'),
   tags: jsonb('tags'),
+  /** Pilotaje DTE: habilitar SimpleFactura cliente a cliente (default off). */
+  dteHabilitado: boolean('dte_habilitado').default(false).notNull(),
   lifecycleStatus: clientLifecycleEnum('lifecycle_status').notNull().default('prospect'),
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -230,6 +232,8 @@ export const invoices = pgTable('invoices', {
   paymentMethod: paymentMethodEnum('payment_method'),
   billingPeriod: varchar('billing_period', { length: 50 }),
   notes: text('notes'),
+  /** Quién emitió boleta/DTE: 'flow' | 'simplefactura' | null */
+  dteEmitidoPor: varchar('dte_emitido_por', { length: 32 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

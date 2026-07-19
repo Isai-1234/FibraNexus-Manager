@@ -207,6 +207,7 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
         latitude: latitude != null ? String(latitude) : null,
         longitude: longitude != null ? String(longitude) : null,
         lifecycleStatus: life,
+        dteHabilitado: req.body.dteHabilitado === true,
       }).returning();
     } catch (inner) {
       if (user?.id) {
@@ -248,7 +249,7 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     const clientId = parseInt(req.params.id);
     const {
       fullName, email, phone, clientType, rut, address, city, region, password,
-      latitude, longitude, lifecycleStatus,
+      latitude, longitude, lifecycleStatus, dteHabilitado,
     } = req.body;
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
@@ -274,6 +275,7 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     if (rut !== undefined) patch.rut = assertOptionalRut(rut);
     if (latitude !== undefined) patch.latitude = latitude != null && latitude !== '' ? String(latitude) : null;
     if (longitude !== undefined) patch.longitude = longitude != null && longitude !== '' ? String(longitude) : null;
+    if (typeof dteHabilitado === 'boolean') patch.dteHabilitado = dteHabilitado;
     if (lifecycleStatus) {
       const allowed = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
       if (!allowed.includes(lifecycleStatus)) {
@@ -291,7 +293,7 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
       action: 'client.update',
       entity: 'client',
       entityId: clientId,
-      details: { lifecycleStatus: updated.lifecycleStatus },
+      details: { lifecycleStatus: updated.lifecycleStatus, dteHabilitado: updated.dteHabilitado },
       ipAddress: clientIp(req),
     });
 
