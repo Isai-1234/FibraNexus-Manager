@@ -11,8 +11,16 @@ import {
   sanitizeSettingsForApi,
   publicPaymentGatewayStatus,
 } from '../lib/orgPayment.js';
+import {
+  sanitizeDteSecretsFromSettings,
+  publicDteProviderStatus,
+} from '../lib/orgDte.js';
 
 export const settingsRouter = Router();
+
+function sanitizeBillingSettingsForApi(merged) {
+  return sanitizeDteSecretsFromSettings(sanitizeSettingsForApi(merged));
+}
 
 settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
   try {
@@ -23,16 +31,19 @@ settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
     if (!org) return res.status(404).json({ error: 'Organización no encontrada' });
     const merged = mergeOrgSettings(org.settings);
     res.json({
+      organizationId: org.id,
       organization: org.name,
-      settings: sanitizeSettingsForApi(merged),
+      settings: sanitizeBillingSettingsForApi(merged),
       defaults: {
         ...DEFAULT_ORG_SETTINGS,
         flowApiKey: undefined,
         flowSecretKey: undefined,
         webpayCommerceCode: undefined,
         webpayApiKey: undefined,
+        dteApiKey: undefined,
       },
       paymentGateway: publicPaymentGatewayStatus(merged),
+      dteProvider: publicDteProviderStatus(merged),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -53,6 +64,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       'autoReactivateOnPayment', 'debtNoticesEnabled', 'suspendPortalUrl',
       'brandLogoUrl', 'brandPrimaryColor', 'brandAccentColor', 'brandPortalTitle',
       'paymentProvider', 'flowApiUrl', 'webpayEnv',
+      'dteProvider', 'dteApiUrl', 'dteRutEmisor', 'dteRazonSocial', 'dteAmbiente',
     ];
     const patch = {};
     for (const key of allowed) {
@@ -84,6 +96,13 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
         patch.webpayApiKey = encryptSecret(req.body.webpayApiKey.trim());
       }
     }
+    // clearDteCredentials: true borra API key DTE.
+    if (req.body.clearDteCredentials === true) {
+      patch.dteApiKey = '';
+      if (patch.dteProvider === undefined) patch.dteProvider = 'stub';
+    } else if (typeof req.body.dteApiKey === 'string' && req.body.dteApiKey.trim()) {
+      patch.dteApiKey = encryptSecret(req.body.dteApiKey.trim());
+    }
 
     const settings = mergeOrgSettings({ ...current, ...patch });
 
@@ -94,8 +113,9 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
 
     const merged = mergeOrgSettings(updated.settings);
     res.json({
-      settings: sanitizeSettingsForApi(merged),
+      settings: sanitizeBillingSettingsForApi(merged),
       paymentGateway: publicPaymentGatewayStatus(merged),
+      dteProvider: publicDteProviderStatus(merged),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

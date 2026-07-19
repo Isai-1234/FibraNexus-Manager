@@ -23,6 +23,13 @@ export const DEFAULT_ORG_SETTINGS = {
   webpayCommerceCode: '',
   webpayApiKey: '',
   webpayEnv: 'integration',
+  // Facturación electrónica DTE / SII (SimpleFactura · SimpleAPI)
+  dteProvider: 'stub',
+  dteApiKey: '',
+  dteApiUrl: '',
+  dteRutEmisor: '',
+  dteRazonSocial: '',
+  dteAmbiente: 'certificacion',
 };
 
 export function mergeOrgSettings(raw) {
@@ -31,6 +38,9 @@ export function mergeOrgSettings(raw) {
   const accent = sanitizeHexColor(s.brandAccentColor, DEFAULT_ORG_SETTINGS.brandAccentColor);
   const paymentProvider = ['stub', 'flow', 'webpay'].includes(String(s.paymentProvider || '').toLowerCase())
     ? String(s.paymentProvider).toLowerCase()
+    : 'stub';
+  const dteProvider = ['stub', 'simplefactura'].includes(String(s.dteProvider || '').toLowerCase())
+    ? String(s.dteProvider).toLowerCase()
     : 'stub';
   return {
     ...DEFAULT_ORG_SETTINGS,
@@ -48,6 +58,12 @@ export function mergeOrgSettings(raw) {
     webpayCommerceCode: s.webpayCommerceCode != null ? String(s.webpayCommerceCode) : '',
     webpayApiKey: s.webpayApiKey != null ? String(s.webpayApiKey) : '',
     webpayEnv: s.webpayEnv === 'production' ? 'production' : 'integration',
+    dteProvider,
+    dteApiKey: s.dteApiKey != null ? String(s.dteApiKey) : '',
+    dteApiUrl: String(s.dteApiUrl || '').trim().slice(0, 200),
+    dteRutEmisor: String(s.dteRutEmisor || '').trim().slice(0, 20),
+    dteRazonSocial: String(s.dteRazonSocial || '').trim().slice(0, 120),
+    dteAmbiente: s.dteAmbiente === 'produccion' ? 'produccion' : 'certificacion',
   };
 }
 

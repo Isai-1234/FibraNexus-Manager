@@ -37,6 +37,48 @@ export const passwordResetConfirmSchema = z.object({
   password: passwordSchema,
 });
 
+/** Body vacío u opcional — test de conexión DTE usa settings guardados de la org. */
+export const dteTestConnectionSchema = z.object({}).passthrough();
+
+const dteItemSchema = z.object({
+  nombre: z.string().min(1).max(80).optional(),
+  name: z.string().min(1).max(80).optional(),
+  cantidad: z.coerce.number().positive().optional(),
+  qty: z.coerce.number().positive().optional(),
+  precio: z.coerce.number().nonnegative().optional(),
+  price: z.coerce.number().nonnegative().optional(),
+  monto: z.coerce.number().nonnegative().optional(),
+  total: z.coerce.number().nonnegative().optional(),
+  descripcion: z.string().max(1000).optional(),
+}).passthrough();
+
+export const dteEmitirSchema = z.object({
+  tipoDte: z.coerce.number().int().positive().default(33),
+  folio: z.coerce.number().int().positive().optional().nullable(),
+  fechaEmision: z.string().max(20).optional(),
+  emisorRut: z.string().max(20).optional(),
+  emisorRazonSocial: z.string().max(120).optional(),
+  emisorGiro: z.string().max(80).optional(),
+  emisorDireccion: z.string().max(70).optional(),
+  emisorComuna: z.string().max(20).optional(),
+  receptor: z.object({
+    rut: z.string().min(3).max(20),
+    razonSocial: z.string().max(100).optional(),
+    nombre: z.string().max(100).optional(),
+    direccion: z.string().max(70).optional(),
+    comuna: z.string().max(20).optional(),
+  }).passthrough(),
+  items: z.array(dteItemSchema).min(1).max(200),
+  neto: z.coerce.number().nonnegative().optional(),
+  iva: z.coerce.number().nonnegative().optional(),
+  total: z.coerce.number().nonnegative().optional(),
+  certificadoPfxBase64: z.string().min(20).optional(),
+  certificadoPassword: z.string().max(200).optional(),
+  cafXml: z.string().min(20).optional(),
+  cafXmlBase64: z.string().min(20).optional(),
+  referencias: z.array(z.record(z.any())).optional(),
+}).passthrough();
+
 export function parseBody(schema, body) {
   const result = schema.safeParse(body);
   if (!result.success) {

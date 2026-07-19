@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Save, Play, Settings } from 'lucide-react'
+import { ArrowLeft, Save, Play, Settings, Plug } from 'lucide-react'
 import axios from 'axios'
 import ThemeToggle from '../../components/ThemeToggle'
 
@@ -21,18 +21,28 @@ type BillingSettingsData = {
   flowApiUrl?: string
   hasFlowApiKey?: boolean
   hasFlowSecretKey?: boolean
+  dteProvider?: string
+  dteApiUrl?: string
+  dteRutEmisor?: string
+  dteRazonSocial?: string
+  dteAmbiente?: string
+  hasDteApiKey?: boolean
 }
 
 export default function BillingSettings({ API, onBack }: { API: string; onBack: () => void }) {
   const [settings, setSettings] = useState<BillingSettingsData | null>(null)
   const [orgName, setOrgName] = useState('')
+  const [organizationId, setOrganizationId] = useState<number | null>(null)
   const [paymentGateway, setPaymentGateway] = useState<{ provider?: string; mode?: string; configured?: boolean } | null>(null)
+  const [dteStatus, setDteStatus] = useState<{ provider?: string; mode?: string; configured?: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
+  const [testingDte, setTestingDte] = useState(false)
   const [message, setMessage] = useState('')
   const [flowApiKeyInput, setFlowApiKeyInput] = useState('')
   const [flowSecretInput, setFlowSecretInput] = useState('')
+  const [dteApiKeyInput, setDteApiKeyInput] = useState('')
 
   function api() {
     return axios.create({
@@ -46,7 +56,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       .then((r) => {
         setSettings(r.data.settings)
         setOrgName(r.data.organization || '')
+        setOrganizationId(r.data.organizationId ?? null)
         setPaymentGateway(r.data.paymentGateway || null)
+        setDteStatus(r.data.dteProvider || null)
       })
       .catch((err) => setMessage(err.response?.data?.error || err.message))
       .finally(() => setLoading(false))
@@ -61,13 +73,17 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       delete payload.hasFlowApiKey
       delete payload.hasFlowSecretKey
       delete payload.hasWebpayCredentials
+      delete payload.hasDteApiKey
       if (flowApiKeyInput.trim()) payload.flowApiKey = flowApiKeyInput.trim()
       if (flowSecretInput.trim()) payload.flowSecretKey = flowSecretInput.trim()
+      if (dteApiKeyInput.trim()) payload.dteApiKey = dteApiKeyInput.trim()
       const res = await api().patch('/settings/billing', payload)
       setSettings(res.data.settings)
       setPaymentGateway(res.data.paymentGateway || null)
+      setDteStatus(res.data.dteProvider || null)
       setFlowApiKeyInput('')
       setFlowSecretInput('')
+      setDteApiKeyInput('')
       setMessage('Ajustes guardados correctamente')
     } catch (err: any) {
       setMessage('Error: ' + (err.response?.data?.error || err.message))
@@ -92,6 +108,48 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       setMessage('Error: ' + (err.response?.data?.error || err.message))
     }
     setSaving(false)
+  }
+
+  async function clearDte() {
+    if (!confirm('¿Quitar la API key de facturación electrónica y volver al modo stub?')) return
+    setSaving(true)
+    try {
+      const res = await api().patch('/settings/billing', {
+        clearDteCredentials: true,
+        dteProvider: 'stub',
+      })
+      setSettings(res.data.settings)
+      setDteStatus(res.data.dteProvider || null)
+      setDteApiKeyInput('')
+      setMessage('Credenciales DTE eliminadas — modo stub')
+    } catch (err: any) {
+      setMessage('Error: ' + (err.response?.data?.error || err.message))
+    }
+    setSaving(false)
+  }
+
+  async function testDteConnection() {
+    if (!organizationId) {
+      setMessage('Error: no se pudo resolver el ID de organización')
+      return
+    }
+    setTestingDte(true)
+    setMessage('')
+    try {
+      const res = await api().post(`/orgs/${organizationId}/dte/test-connection`, {})
+      setMessage(res.data.message || 'Conexión DTE OK')
+      if (res.data.provider) {
+        setDteStatus({
+          provider: res.data.provider,
+          mode: res.data.mode,
+          configured: res.data.mode === 'live',
+        })
+      }
+    } catch (err: any) {
+      const data = err.response?.data
+      setMessage('Error: ' + (data?.message || data?.error || err.message))
+    }
+    setTestingDte(false)
   }
 
   async function handleRunJobs() {
@@ -230,6 +288,115 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                       Quitar credenciales Flow
                     </button>
                   )}
+                </div>
+              )}
+            </section>
+
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Facturación electrónica (SII)</h2>
+              <p className="text-sm text-ink-muted">
+                Emite DTE vía SimpleFactura (SimpleAPI). La API key se guarda cifrada y no se vuelve a mostrar.
+                La emisión real al SII requiere además certificado digital y CAF en el request de emitir.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                  dteStatus?.mode === 'live'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {dteStatus?.mode === 'live' ? 'LIVE' : 'STUB'}
+                </span>
+                <span className="text-sm text-ink-soft">
+                  Proveedor activo: <strong>{dteStatus?.provider || settings.dteProvider || 'stub'}</strong>
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Proveedor DTE</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={settings.dteProvider || 'stub'}
+                  onChange={(e) => setSettings({ ...settings, dteProvider: e.target.value })}
+                >
+                  <option value="stub">Stub (simulado, sin SII)</option>
+                  <option value="simplefactura">SimpleFactura / SimpleAPI</option>
+                </select>
+              </div>
+
+              {(settings.dteProvider === 'simplefactura' || settings.hasDteApiKey) && (
+                <div className="space-y-3 pt-1 border-t border-line">
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">RUT emisor</label>
+                    <input
+                      type="text"
+                      value={settings.dteRutEmisor || ''}
+                      onChange={(e) => setSettings({ ...settings, dteRutEmisor: e.target.value })}
+                      placeholder="76.XXX.XXX-X"
+                      className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Razón social</label>
+                    <input
+                      type="text"
+                      value={settings.dteRazonSocial || ''}
+                      onChange={(e) => setSettings({ ...settings, dteRazonSocial: e.target.value })}
+                      placeholder="Tu ISP SpA"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">API Key SimpleAPI</label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={dteApiKeyInput}
+                      onChange={(e) => setDteApiKeyInput(e.target.value)}
+                      placeholder={settings.hasDteApiKey ? '•••••• ya configurada — escribe para cambiar' : 'Pega tu API Key de SimpleAPI'}
+                      className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Ambiente</label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={settings.dteAmbiente || 'certificacion'}
+                      onChange={(e) => setSettings({ ...settings, dteAmbiente: e.target.value })}
+                    >
+                      <option value="certificacion">Certificación (SII prueba)</option>
+                      <option value="produccion">Producción</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">URL API (opcional)</label>
+                    <input
+                      type="url"
+                      value={settings.dteApiUrl || ''}
+                      onChange={(e) => setSettings({ ...settings, dteApiUrl: e.target.value })}
+                      placeholder="https://api.simpleapi.cl/api/v1"
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Vacío = https://api.simpleapi.cl/api/v1
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={testDteConnection}
+                      disabled={testingDte || saving}
+                      className="px-3 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium flex items-center gap-2 disabled:opacity-50 text-ink"
+                    >
+                      <Plug className="h-4 w-4" />
+                      {testingDte ? 'Probando…' : 'Probar conexión'}
+                    </button>
+                    {settings.hasDteApiKey && (
+                      <button type="button" onClick={clearDte} disabled={saving}
+                        className="text-sm text-red-600 hover:underline disabled:opacity-50">
+                        Quitar credenciales DTE
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </section>
