@@ -24,6 +24,7 @@ import { staffRouter } from './routes/staff.js';
 import { workOrdersRouter } from './routes/workOrders.js';
 import { webhooksRouter } from './routes/webhooks.js';
 import { alertsRouter } from './routes/alerts.js';
+import { financeRouter } from './routes/finance.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireActiveOrg } from './lib/tenant.js';
@@ -130,6 +131,7 @@ app.use('/api/settings', authenticateToken, requireActiveOrg, settingsRouter);
 app.use('/api/staff', authenticateToken, requireActiveOrg, staffRouter);
 app.use('/api/work-orders', authenticateToken, requireActiveOrg, workOrdersRouter);
 app.use('/api/alerts', authenticateToken, requireActiveOrg, alertsRouter);
+app.use('/api/finance', authenticateToken, requireActiveOrg, financeRouter);
 app.use('/api/network', authenticateToken, requireActiveOrg, networkRouter);
 app.use('/api/devices', authenticateToken, requireActiveOrg, devicesRouter);
 

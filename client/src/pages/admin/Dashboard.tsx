@@ -5,6 +5,7 @@ import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
 import NetworkManager from './NetworkManager'
 import BillingSettings from './BillingSettings'
+import FinanceDashboard from './FinanceDashboard'
 import DetectedDevices from './DetectedDevices'
 import StaffManager from './StaffManager'
 import WorkOrdersManager from './WorkOrdersManager'
@@ -72,6 +73,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }, [])
 
   async function loadData() {
+    if (activeTab === 'finance' || activeTab === 'staff' || activeTab === 'work-orders' || activeTab === 'detected-devices') {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     try {
@@ -331,6 +336,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         { id: 'services', label: 'Auditoría técnica', icon: Wifi, roles: ['admin', 'technician'] },
         { id: 'work-orders', label: 'Órdenes de trabajo', icon: Ticket },
         { id: 'invoices', label: 'Facturación', icon: DollarSign },
+        { id: 'finance', label: 'Finanzas', icon: TrendingUp, roles: ['admin', 'office'] },
         { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings, roles: ['admin'] },
         { id: 'tickets', label: 'Soporte', icon: Ticket },
         { id: 'staff', label: 'Personal ISP', icon: Users, roles: ['admin'] },
@@ -374,6 +380,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     'detected-devices': 'Dispositivos detectados',
     ips: 'Gestión de IPs',
     invoices: 'Facturación',
+    finance: 'Finanzas',
     tickets: 'Tickets de soporte',
     staff: 'Personal del ISP',
     'work-orders': 'Órdenes de trabajo',
@@ -388,6 +395,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     'detected-devices': 'Dispositivos conectados a tus routers vía DHCP+ARP — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
+    finance: 'Ingresos, egresos y tendencias del ISP',
     tickets: 'Incidencias reportadas por abonados',
     staff: 'Administradores, administrativos y técnicos de tu organización',
     'work-orders': 'Instalaciones, visitas y cierres con checklist',
@@ -522,6 +530,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           initialTab={clientInitialTab}
           onBack={() => { setSelectedClientId(null); setClientInitialTab('overview'); setActiveTab('clients') }}
         />
+      </div>
+    )
+  }
+
+  // Vista Finanzas
+  if (activeTab === 'finance') {
+    return (
+      <div className="min-h-screen bg-slate-950 flex">
+        <Sidebar menuSections={menuSections} activeTab="finance" user={user} logout={logout}
+          onTabClick={navigateMenu} />
+        <FinanceDashboard API={API} />
       </div>
     )
   }

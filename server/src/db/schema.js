@@ -21,6 +21,9 @@ export const invoiceAdjustmentTypeEnum = pgEnum('invoice_adjustment_type', [
 ]);
 export const alertSeverityEnum = pgEnum('alert_severity', ['info', 'warning', 'critical']);
 export const alertStatusEnum = pgEnum('alert_status', ['open', 'acked', 'resolved']);
+export const expenseCategoryEnum = pgEnum('expense_category', [
+  'equipment', 'services', 'rent', 'salary', 'taxes', 'other',
+]);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['pending', 'partial', 'paid', 'overdue', 'cancelled']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'transfer', 'card', 'flow', 'other']);
 export const ticketStatusEnum = pgEnum('ticket_status', ['open', 'in_progress', 'waiting_client', 'resolved', 'closed']);
@@ -419,6 +422,23 @@ export const invoiceAdjustments = pgTable('invoice_adjustments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
   idxAdjInvoice: index('idx_invoice_adjustments_invoice').on(table.invoiceId),
+}));
+
+/** Egresos del ISP (módulo Finanzas) */
+export const expenses = pgTable('expenses', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  date: date('date').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  category: expenseCategoryEnum('category').notNull().default('other'),
+  description: text('description'),
+  provider: varchar('provider', { length: 255 }),
+  invoiceNumber: varchar('invoice_number', { length: 100 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  idxExpensesOrgDate: index('idx_expenses_org_date').on(table.organizationId, table.date),
+  idxExpensesOrgCategory: index('idx_expenses_org_category').on(table.organizationId, table.category),
 }));
 
 /** Alertas operativas ISP (Fase 4) — sin canal push externo */
