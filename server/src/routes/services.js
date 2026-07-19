@@ -270,6 +270,24 @@ servicesRouter.get('/:id/billing-preview', requireRole('admin', 'office', 'techn
   }
 });
 
+/** Preview en vivo con overrides del formulario (sin guardar). */
+servicesRouter.post('/:id/billing-preview', requireRole('admin', 'office', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const serviceId = parseInt(req.params.id, 10);
+    if (!await getServiceInOrg(serviceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+    const cantidad = parseInt(String(req.body?.cantidad || req.query.cantidad || '3'), 10);
+    const { cantidad: _c, ...overrides } = req.body || {};
+    const preview = await calcularProximasFacturas(orgId, serviceId, cantidad, overrides);
+    res.json(preview);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Error al calcular preview' });
+  }
+});
+
 servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);

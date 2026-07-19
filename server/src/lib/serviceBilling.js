@@ -191,13 +191,34 @@ async function loadServiceBundle(serviceId, orgId) {
 
 /**
  * Vista previa UISP: N próximas facturas (periodo, creación, vencimiento, monto).
+ * @param overrides — campos del formulario (sin guardar) para preview en vivo
  */
-export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3) {
+export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3, overrides = null) {
   const row = await loadServiceBundle(serviceId, orgId);
   if (!row) throw new Error('Servicio no encontrado');
 
   const n = Math.min(12, Math.max(1, Number(cantidad) || 3));
-  const service = row.service;
+  const service = { ...row.service };
+
+  if (overrides && typeof overrides === 'object') {
+    const o = { ...overrides };
+    if (o.facturarDesde !== undefined) {
+      if (o.facturarDesde === null || o.facturarDesde === '') {
+        o.facturarDesde = null;
+      } else {
+        const raw = String(o.facturarDesde).trim();
+        o.facturarDesde = /^\d{4}-\d{2}$/.test(raw) ? `${raw}-01` : raw.slice(0, 10);
+      }
+    }
+    if (o.diaComienzoPeriodo != null) {
+      o.billingDay = Number(o.diaComienzoPeriodo);
+    }
+    if (o.customPrice !== undefined) {
+      o.customPrice = o.customPrice === null || o.customPrice === '' ? null : String(o.customPrice);
+    }
+    Object.assign(service, o);
+  }
+
   const plan = row.plan;
   const price = billingPrice(service, plan);
   const asOf = new Date();
@@ -217,7 +238,6 @@ export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3) {
     if (i === 0 && !hasPrior && service.costoInstalacion != null && service.costoInstalacion !== '') {
       installFee = Math.round(Number(service.costoInstalacion) || 0);
     }
-    // priced.neto y costo instalación son montos con IVA incluido
     const amounts = buildInvoiceAmounts((priced.neto || 0) + installFee, service);
 
     items.push({
@@ -241,6 +261,7 @@ export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3) {
     serviceId: service.id,
     planName: plan.name,
     precioBase: price,
+    facturarDesde: service.facturarDesde || null,
     items,
   };
 }

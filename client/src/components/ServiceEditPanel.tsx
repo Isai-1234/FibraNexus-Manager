@@ -92,23 +92,45 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  async function loadPreview(overrides?: Record<string, any>) {
+  async function loadPreview() {
     setLoadingPreview(true)
+    setError('')
     try {
-      const res = await api().get(`/services/${service.id}/billing-preview`, {
-        params: { cantidad: 3 },
+      const res = await api().post(`/services/${service.id}/billing-preview`, {
+        cantidad: 3,
+        ...buildPayload(),
       })
       setPreview(res.data)
     } catch (e: any) {
       setPreview(null)
-      if (!overrides) setError(e.response?.data?.error || e.message)
+      setError(e.response?.data?.error || e.message)
     }
     setLoadingPreview(false)
   }
 
   useEffect(() => {
     loadPreview()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service.id])
+
+  // Refrescar preview al cambiar mes / tipo / día (debounce corto)
+  useEffect(() => {
+    const t = window.setTimeout(() => { loadPreview() }, 350)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    form.facturarDesde,
+    form.tipoFacturacion,
+    form.diaComienzoPeriodo,
+    form.customPrice,
+    form.prorratearPrimeraFactura,
+    form.costoInstalacion,
+    form.tipoDescuento,
+    form.valorDescuento,
+    form.impuestoOverride,
+    form.billingDueDay,
+    form.crearFacturaDiasAntes,
+  ])
 
   function buildPayload() {
     const attrs: Record<string, string> = {}
@@ -359,7 +381,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
 
           <Section title="Vista previa de próximas facturas" open={open.preview} onToggle={() => toggle('preview')}>
             <p className="text-xs text-ink-muted mb-2">
-              Basada en la config guardada. Guarda cambios y se actualiza.
+              Se actualiza con los valores del formulario (aunque no hayas guardado).
             </p>
             {loadingPreview ? (
               <div className="text-sm text-ink-muted py-4">Calculando...</div>
