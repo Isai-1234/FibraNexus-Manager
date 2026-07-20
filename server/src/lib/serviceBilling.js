@@ -114,7 +114,11 @@ export function getPeriodWindow(service, periodIndex = 0, asOf = new Date()) {
     periodStart = dateWithDay(cyclePoint.getFullYear(), cyclePoint.getMonth() - 1, day);
   }
 
-  if (periodStart < install) periodStart = install;
+  // Sin "Facturar desde": el primer periodo no empieza antes de la instalación.
+  // Con "Facturar desde": respetar el mes elegido (ej. 1 jul), no cortar al día de alta.
+  if (!facturarDesde && periodStart < install) {
+    periodStart = install;
+  }
 
   const ym = `${periodEnd.getFullYear()}-${String(periodEnd.getMonth() + 1).padStart(2, '0')}`;
   return {
@@ -129,9 +133,13 @@ export function getPeriodWindow(service, periodIndex = 0, asOf = new Date()) {
 
 /**
  * Primera factura puede prorratearse si prorratearPrimeraFactura y aún no hay facturas.
+ * Si hay facturarDesde explícito, el periodo elegido es completo (sin prorrateo por instalación).
  */
 export function maybeProrateFirst(service, window, hasPriorInvoices, fullPrice) {
   if (!service.prorratearPrimeraFactura || hasPriorInvoices) {
+    return { ...window, isProrated: false, neto: Math.round(fullPrice) };
+  }
+  if (service.facturarDesde) {
     return { ...window, isProrated: false, neto: Math.round(fullPrice) };
   }
   const start = parseDateInput(window.periodStart);

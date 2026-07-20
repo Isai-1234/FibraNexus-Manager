@@ -279,7 +279,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   )}
                 </div>
                 <p className="text-xs text-ink-muted mt-1">
-                  Ej: julio 2026 para incluir ese mes. Vacío = desde el próximo ciclo (hoy).
+                  Ej: julio 2026 cobra el mes completo desde el día de comienzo (1). Vacío = desde el alta del servicio.
                 </p>
               </div>
               <div>
