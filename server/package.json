@@ -16,6 +16,7 @@
     "test": "node --test src/lib/__tests__/*.test.js",
     "migrate": "node ../scripts/run-migrations.mjs",
     "migrate:encrypt-secrets": "node ../scripts/migrate-encrypt-secrets.mjs",
+    "repair:utf8": "node scripts/repair-utf8-mojibake.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "dependencies": {

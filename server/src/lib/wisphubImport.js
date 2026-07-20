@@ -18,6 +18,7 @@ import { db } from '../db/index.js';
 import { clients, users, plans, clientServices } from '../db/schema.js';
 import { loadOrgWisphubSettings } from './orgWisphub.js';
 import { computeNextBillingDate } from './billing.js';
+import { decodeUtf8Buffer, repairUtf8Deep, repairUtf8Mojibake } from './utf8Text.js';
 
 const PAGE_LIMIT = 200; // ≤ 300 según docs WispHub
 const FETCH_TIMEOUT_MS = 60_000;
@@ -26,8 +27,8 @@ const BLOCKING_SERVICE_STATUSES = ['active', 'suspended', 'pending'];
 function planName(row) {
   const p = row.plan_internet;
   if (!p) return '';
-  if (typeof p === 'string') return p;
-  return String(p.nombre || p.name || '').trim();
+  if (typeof p === 'string') return repairUtf8Mojibake(p);
+  return repairUtf8Mojibake(String(p.nombre || p.name || '').trim());
 }
 
 /**
@@ -219,10 +220,15 @@ async function fetchClientesPage({ baseUrl, apiKey, limit, offset }) {
       headers: {
         Authorization: `Api-Key ${apiKey}`,
         Accept: 'application/json',
+        // Pedir UTF-8 explícito; igual decodificamos el body como UTF-8 abajo.
+        'Accept-Charset': 'utf-8',
       },
       signal: controller.signal,
     });
-    const text = await res.text();
+    // No usar res.text(): en Node/undici el charset del Content-Type
+    // (p.ej. iso-8859-1 erróneo) puede reinterpretar bytes UTF-8 → mojibake.
+    const buf = Buffer.from(await res.arrayBuffer());
+    const text = decodeUtf8Buffer(buf);
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { /* ignore */ }
     if (!res.ok) {
@@ -232,6 +238,8 @@ async function fetchClientesPage({ baseUrl, apiKey, limit, offset }) {
     if (!json || !Array.isArray(json.results)) {
       throw new Error('Respuesta WispHub inválida: se esperaba { count, results[] }');
     }
+    // Por si algún campo ya viene doble-codificado desde WispHub/proxy.
+    json.results = json.results.map((row) => repairUtf8Deep(row));
     return json;
   } finally {
     clearTimeout(timer);
@@ -244,18 +252,20 @@ async function upsertOneClient(orgId, row) {
     throw new Error('Fila sin id_servicio');
   }
 
-  const fullName = String(row.nombre || row.usuario || `Cliente WispHub ${wisphubId}`).trim().slice(0, 255) || `Cliente ${wisphubId}`;
+  const fullName = repairUtf8Mojibake(
+    String(row.nombre || row.usuario || `Cliente WispHub ${wisphubId}`).trim().slice(0, 255) || `Cliente ${wisphubId}`,
+  );
   const email = resolveEmail(row, orgId);
   const phone = String(row.telefono || '').trim().slice(0, 20) || null;
-  const address = String(row.direccion || '').trim() || null;
-  const city = String(row.ciudad || row.localidad || '').trim().slice(0, 100) || null;
+  const address = repairUtf8Mojibake(String(row.direccion || '').trim() || null);
+  const city = repairUtf8Mojibake(String(row.ciudad || row.localidad || '').trim().slice(0, 100) || null);
   const rut = resolveDocId(row);
   const clientType = mapClientType(row.tipo_persona);
   const lifecycleStatus = mapLifecycle(row.estado);
   const { latitude, longitude } = parseCoords(row.coordenadas);
   const notesParts = [];
-  if (row.comentarios) notesParts.push(String(row.comentarios).trim());
-  if (row.informacion_adicional) notesParts.push(String(row.informacion_adicional).trim());
+  if (row.comentarios) notesParts.push(repairUtf8Mojibake(String(row.comentarios).trim()));
+  if (row.informacion_adicional) notesParts.push(repairUtf8Mojibake(String(row.informacion_adicional).trim()));
   if (row.saldo != null && row.saldo !== '') notesParts.push(`Saldo WispHub: ${row.saldo}`);
   if (row.fecha_corte) notesParts.push(`Fecha corte WispHub: ${row.fecha_corte}`);
   const planNombre = planName(row) || null;
