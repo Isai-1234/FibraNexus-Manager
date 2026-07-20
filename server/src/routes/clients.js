@@ -261,9 +261,9 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     if (!existing.length) return res.status(404).json({ error: 'Cliente no encontrado' });
     const row = existing[0];
     const userUpdate = {};
-    if (fullName) userUpdate.fullName = fullName;
-    if (email) userUpdate.email = email;
-    if (phone) userUpdate.phone = phone;
+    if (fullName !== undefined && fullName !== null && String(fullName).trim()) userUpdate.fullName = String(fullName).trim();
+    if (email !== undefined && email !== null && String(email).trim()) userUpdate.email = String(email).trim().toLowerCase();
+    if (phone !== undefined) userUpdate.phone = phone == null || phone === '' ? null : String(phone).trim().slice(0, 20);
     if (password) userUpdate.password = await bcrypt.hash(password, 12);
     userUpdate.updatedAt = new Date();
     if (Object.keys(userUpdate).length > 1) {
@@ -272,9 +272,9 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
 
     const patch = {
       clientType: clientType || row.clientType,
-      address: address ?? row.address,
-      city: city ?? row.city,
-      region: region ?? row.region,
+      address: address !== undefined ? (address || null) : row.address,
+      city: city !== undefined ? (city || null) : row.city,
+      region: region !== undefined ? (region || null) : row.region,
       updatedAt: new Date(),
     };
     if (rut !== undefined) patch.rut = assertOptionalRut(rut);

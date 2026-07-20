@@ -89,6 +89,9 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [plans, setPlans] = useState<any[]>([])
   const [showServiceForm, setShowServiceForm] = useState(false)
   const [editingBillingService, setEditingBillingService] = useState<any>(null)
+  const [showEditPersonal, setShowEditPersonal] = useState(false)
+  const [savingPersonal, setSavingPersonal] = useState(false)
+  const [personalForm, setPersonalForm] = useState<any>({})
   const [serviceForm, setServiceForm] = useState<any>(defaultServiceForm())
   const [provisionRouterId, setProvisionRouterId] = useState<number | null>(null)
   const [provisionMode, setProvisionMode] = useState('both')
@@ -504,6 +507,47 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     setSavingDteFlag(false)
   }
 
+  function openEditPersonal() {
+    if (!client) return
+    setPersonalForm({
+      fullName: client.user?.fullName || '',
+      email: client.user?.email || '',
+      phone: client.user?.phone || '',
+      rut: client.rut || '',
+      address: client.address || '',
+      city: client.city || '',
+      region: client.region || '',
+      clientType: client.clientType || 'individual',
+    })
+    setShowEditPersonal(true)
+  }
+
+  async function savePersonal() {
+    if (!personalForm.fullName?.trim() || !personalForm.email?.trim()) {
+      toast('Nombre y email son obligatorios', 'warning')
+      return
+    }
+    setSavingPersonal(true)
+    try {
+      await api().put(`/clients/${clientId}`, {
+        fullName: personalForm.fullName.trim(),
+        email: personalForm.email.trim(),
+        phone: personalForm.phone?.trim() || null,
+        rut: personalForm.rut?.trim() || null,
+        address: personalForm.address?.trim() || null,
+        city: personalForm.city?.trim() || null,
+        region: personalForm.region?.trim() || null,
+        clientType: personalForm.clientType || 'individual',
+      })
+      toast('Datos personales actualizados', 'success')
+      setShowEditPersonal(false)
+      await loadAll()
+    } catch (e: any) {
+      toast('Error: ' + (e.response?.data?.error || e.message), 'error')
+    }
+    setSavingPersonal(false)
+  }
+
   function openPayModal(inv: any) {
     setPayMethod('transfer')
     setPayEmitirDte(Boolean(client?.dteHabilitado))
@@ -798,6 +842,72 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       )}
 
       {/* Modal nuevo servicio */}
+      {showEditPersonal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowEditPersonal(false)}>
+          <div className="bg-surface-card rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b border-line pb-3">
+              <h3 className="font-bold text-lg text-ink">Editar datos personales</h3>
+              <button type="button" onClick={() => setShowEditPersonal(false)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              {[
+                { key: 'fullName', label: 'Nombre completo', type: 'text', required: true },
+                { key: 'email', label: 'Email', type: 'email', required: true },
+                { key: 'phone', label: 'Teléfono', type: 'text' },
+                { key: 'rut', label: 'RUT', type: 'text' },
+                { key: 'address', label: 'Dirección', type: 'text' },
+                { key: 'city', label: 'Ciudad', type: 'text' },
+              ].map((f) => (
+                <div key={f.key}>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">
+                    {f.label}{f.required ? ' *' : ''}
+                  </label>
+                  <input
+                    type={f.type}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-surface-card"
+                    value={personalForm[f.key] || ''}
+                    onChange={(e) => setPersonalForm({ ...personalForm, [f.key]: e.target.value })}
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Región</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-surface-card"
+                  value={personalForm.region || ''}
+                  onChange={(e) => setPersonalForm({ ...personalForm, region: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {['Arica y Parinacota','Tarapacá','Antofagasta','Atacama','Coquimbo','Valparaíso','Metropolitana',"O'Higgins",'Maule','Ñuble','Biobío','La Araucanía','Los Ríos','Los Lagos','Aysén','Magallanes'].map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Tipo</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-surface-card"
+                  value={personalForm.clientType || 'individual'}
+                  onChange={(e) => setPersonalForm({ ...personalForm, clientType: e.target.value })}
+                >
+                  <option value="individual">Individual</option>
+                  <option value="business">Empresa</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-line">
+              <button type="button" onClick={() => setShowEditPersonal(false)}
+                className="px-4 py-2 border rounded-lg text-sm">Cancelar</button>
+              <button type="button" onClick={savePersonal} disabled={savingPersonal}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {savingPersonal ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingBillingService && (
         <ServiceEditPanel
           API={API}
@@ -1330,7 +1440,13 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               </p>
             </div>
             <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
-              <h2 className="font-semibold text-white flex items-center gap-2 mb-4"><User className="h-4 w-4 text-cyan-400" /> Datos personales</h2>
+              <div className="flex items-center justify-between mb-4 gap-2">
+                <h2 className="font-semibold text-white flex items-center gap-2"><User className="h-4 w-4 text-cyan-400" /> Datos personales</h2>
+                <button type="button" onClick={openEditPersonal}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
+                  <Pencil className="h-3.5 w-3.5" /> Editar
+                </button>
+              </div>
               <div className="space-y-3">
                 {[
                   { label: 'Nombre', value: client.user?.fullName, icon: User },

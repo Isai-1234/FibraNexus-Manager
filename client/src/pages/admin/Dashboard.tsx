@@ -1230,10 +1230,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         ))}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => openEdit({ ...item, user: { fullName: item.fullName, email: item.email, phone: item.phone } })}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Editar datos">
-                          <Edit2 className="h-4 w-4" />
-                        </button>
                         <button onClick={() => openClientProfile(item.id)}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">
                           Abrir perfil
@@ -1371,7 +1367,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                               {activeTab === 'invoices' && item.status === 'pending' && (
                                 <button onClick={() => handleAction('pay', item.id)} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 font-medium">💰 Pagar</button>
                               )}
-                              {canEdit.includes(activeTab) && activeTab !== 'services' && (
+                              {canEdit.includes(activeTab) && activeTab !== 'services' && activeTab !== 'clients' && (
                                 <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>
                               )}
                               {activeTab === 'clients' && (
