@@ -94,6 +94,11 @@ export const serviceBillingUpdateSchema = z.object({
   cargoCancelacionAnticipada: optionalMoney,
   duracionMinimaMeses: z.union([z.null(), z.coerce.number().int().min(0).max(120)]).optional(),
   diaComienzoPeriodo: z.coerce.number().int().min(1).max(31).optional(),
+  installationDate: z.union([
+    z.null(),
+    z.literal(''),
+    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)'),
+  ]).optional(),
   facturarDesde: z.union([
     z.null(),
     z.literal(''),

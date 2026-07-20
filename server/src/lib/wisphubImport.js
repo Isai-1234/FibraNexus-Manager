@@ -17,7 +17,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { clients, users, plans, clientServices } from '../db/schema.js';
 import { loadOrgWisphubSettings } from './orgWisphub.js';
-import { billingDayFromInstall, computeNextBillingDate } from './billing.js';
+import { computeNextBillingDate } from './billing.js';
 
 const PAGE_LIMIT = 200; // ≤ 300 según docs WispHub
 const FETCH_TIMEOUT_MS = 60_000;
@@ -126,9 +126,11 @@ export async function ensureServiceFromSnapshot(orgId, clientId, {
     type: 'wisp',
   });
 
+  // Sin fecha de alta en WispHub: usar hoy, pero ciclo calendario día 1 y vencimiento día 5
+  // (no anclar todo al día del import, p.ej. el 19).
   const installDate = new Date().toISOString().split('T')[0];
   const cycle = 'anniversary';
-  const billingDay = billingDayFromInstall(installDate);
+  const billingDay = 1;
   const nextBilling = computeNextBillingDate(installDate, cycle, billingDay);
   const customPriceVal = precioEfectivo != null ? String(precioEfectivo) : null;
 
@@ -140,7 +142,8 @@ export async function ensureServiceFromSnapshot(orgId, clientId, {
     nextBillingDate: nextBilling,
     billingCycleType: cycle,
     billingDay,
-    billingDueDay: billingDay,
+    billingDueDay: 5,
+    diaComienzoPeriodo: 1,
     customPrice: customPriceVal,
   }).returning();
 

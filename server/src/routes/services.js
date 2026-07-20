@@ -320,6 +320,13 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
       patch.diaComienzoPeriodo = body.diaComienzoPeriodo;
       patch.billingDay = body.diaComienzoPeriodo; // mantener sync con ciclo aniversario legacy
     }
+    if (body.installationDate !== undefined) {
+      if (body.installationDate === null || body.installationDate === '') {
+        patch.installationDate = null;
+      } else {
+        patch.installationDate = String(body.installationDate).slice(0, 10);
+      }
+    }
     if (body.facturarDesde !== undefined) {
       if (body.facturarDesde === null || body.facturarDesde === '') {
         patch.facturarDesde = null;
@@ -350,6 +357,21 @@ servicesRouter.put('/:id', requireRole('admin'), async (req, res) => {
     }
     if (body.billingDueDay !== undefined) patch.billingDueDay = body.billingDueDay;
     if (body.notes !== undefined) patch.notes = body.notes;
+
+    // Recalcular próximo cobro si cambia instalación o día de ciclo
+    if (body.installationDate !== undefined || body.diaComienzoPeriodo !== undefined) {
+      const [current] = await db.select().from(clientServices).where(eq(clientServices.id, serviceId)).limit(1);
+      const install = patch.installationDate !== undefined
+        ? patch.installationDate
+        : current?.installationDate;
+      const cycle = current?.billingCycleType || 'anniversary';
+      const day = patch.billingDay != null
+        ? patch.billingDay
+        : (current?.billingDay || current?.diaComienzoPeriodo || 1);
+      if (install) {
+        patch.nextBillingDate = computeNextBillingDate(install, cycle, day);
+      }
+    }
 
     const [updated] = await db.update(clientServices)
       .set(patch)

@@ -229,6 +229,13 @@ export async function calcularProximasFacturas(orgId, serviceId, cantidad = 3, o
     if (o.diaComienzoPeriodo != null) {
       o.billingDay = Number(o.diaComienzoPeriodo);
     }
+    if (o.installationDate !== undefined) {
+      if (o.installationDate === null || o.installationDate === '') {
+        o.installationDate = null;
+      } else {
+        o.installationDate = String(o.installationDate).slice(0, 10);
+      }
+    }
     if (o.customPrice !== undefined) {
       o.customPrice = o.customPrice === null || o.customPrice === '' ? null : String(o.customPrice);
     }

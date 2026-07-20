@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { X, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { X, ChevronDown, ChevronRight, Plus, Trash2, Calendar } from 'lucide-react'
 import axios from 'axios'
 import { formatDateCL } from '../lib/formatDate'
 
@@ -34,6 +34,70 @@ function moneyStr(v: any) {
   return String(v)
 }
 
+function toDateInput(v: any) {
+  if (!v) return ''
+  return String(v).split('T')[0]
+}
+
+function formatMonthLabel(ym: string) {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return ''
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1, 1)
+  const label = d.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+function MonthPickerField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function openPicker() {
+    const el = inputRef.current
+    if (!el) return
+    try {
+      // Chromium / Safari reciente
+      ;(el as HTMLInputElement & { showPicker?: () => void }).showPicker?.()
+    } catch {
+      el.focus()
+      el.click()
+    }
+  }
+
+  return (
+    <div className="flex gap-2 items-center">
+      <button
+        type="button"
+        onClick={openPicker}
+        className="relative flex-1 flex items-center gap-2 border rounded-lg px-3 py-2 text-sm text-left bg-surface-card hover:border-cyan-500/50 transition min-h-[40px]"
+      >
+        <Calendar className="h-4 w-4 text-ink-muted shrink-0" />
+        <span className={value ? 'text-ink' : 'text-ink-muted'}>
+          {value ? formatMonthLabel(value) : 'Elegir mes…'}
+        </span>
+        <input
+          ref={inputRef}
+          type="month"
+          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label="Facturar desde (mes)"
+        />
+      </button>
+      {value && (
+        <button type="button" className="text-xs text-ink-muted hover:text-ink underline shrink-0"
+          onClick={() => onChange('')}>
+          Limpiar
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function ServiceEditPanel({ API, service, clientId, onClose, onSaved }: Props) {
   const [open, setOpen] = useState<Record<string, boolean>>({
     plan: true,
@@ -57,6 +121,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
     costoInstalacion: moneyStr(service.costoInstalacion),
     cargoCancelacionAnticipada: moneyStr(service.cargoCancelacionAnticipada),
     duracionMinimaMeses: service.duracionMinimaMeses != null ? String(service.duracionMinimaMeses) : '',
+    installationDate: toDateInput(service.installationDate),
     diaComienzoPeriodo: String(service.diaComienzoPeriodo || service.billingDay || 1),
     facturarDesde: service.facturarDesde
       ? String(service.facturarDesde).slice(0, 7)
@@ -122,6 +187,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
     form.facturarDesde,
     form.tipoFacturacion,
     form.diaComienzoPeriodo,
+    form.installationDate,
     form.customPrice,
     form.prorratearPrimeraFactura,
     form.costoInstalacion,
@@ -146,6 +212,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
       costoInstalacion: form.costoInstalacion === '' ? null : Number(form.costoInstalacion),
       cargoCancelacionAnticipada: form.cargoCancelacionAnticipada === '' ? null : Number(form.cargoCancelacionAnticipada),
       duracionMinimaMeses: form.duracionMinimaMeses === '' ? null : Number(form.duracionMinimaMeses),
+      installationDate: form.installationDate.trim() || null,
       diaComienzoPeriodo: Number(form.diaComienzoPeriodo) || 1,
       facturarDesde: form.facturarDesde.trim() || null,
       tipoFacturacion: form.tipoFacturacion,
@@ -245,11 +312,26 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
           </Section>
 
           <Section title="Recargos / instalación" open={open.facturas} onToggle={() => toggle('facturas')}>
-            <div>
-              <label className="block text-xs font-medium text-ink-soft mb-1">Costo de instalación</label>
-              <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.costoInstalacion} onChange={(e) => setField('costoInstalacion', e.target.value)} />
-              <p className="text-xs text-ink-muted mt-1">Se suma a la primera factura si aún no hay facturas.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Fecha de instalación</label>
+                <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={form.installationDate}
+                  onChange={(e) => setField('installationDate', e.target.value)}
+                  onClick={(e) => {
+                    try {
+                      ;(e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.()
+                    } catch { /* ignore */ }
+                  }}
+                />
+                <p className="text-xs text-ink-muted mt-1">Si vino del import con el día de hoy, corrígela aquí.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Costo de instalación</label>
+                <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={form.costoInstalacion} onChange={(e) => setField('costoInstalacion', e.target.value)} />
+                <p className="text-xs text-ink-muted mt-1">Se suma a la primera factura si aún no hay facturas.</p>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -267,17 +349,10 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-ink-soft mb-1">Facturar desde (mes)</label>
-                <div className="flex gap-2 items-center">
-                  <input type="month" className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                    value={form.facturarDesde}
-                    onChange={(e) => setField('facturarDesde', e.target.value)} />
-                  {form.facturarDesde && (
-                    <button type="button" className="text-xs text-ink-muted hover:text-ink underline shrink-0"
-                      onClick={() => setField('facturarDesde', '')}>
-                      Limpiar
-                    </button>
-                  )}
-                </div>
+                <MonthPickerField
+                  value={form.facturarDesde}
+                  onChange={(v) => setField('facturarDesde', v)}
+                />
                 <p className="text-xs text-ink-muted mt-1">
                   Elige el mes del primer periodo. Si &quot;Prorratear primera factura&quot; está activo y el alta fue a mitad de ese mes, cobra solo desde el día de instalación.
                 </p>
