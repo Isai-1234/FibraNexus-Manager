@@ -279,7 +279,7 @@ export default function ServiceEditPanel({ API, service, clientId, onClose, onSa
                   )}
                 </div>
                 <p className="text-xs text-ink-muted mt-1">
-                  Ej: julio 2026 cobra el mes completo desde el día de comienzo (1). Vacío = desde el alta del servicio.
+                  Elige el mes del primer periodo. Si &quot;Prorratear primera factura&quot; está activo y el alta fue a mitad de ese mes, cobra solo desde el día de instalación.
                 </p>
               </div>
               <div>

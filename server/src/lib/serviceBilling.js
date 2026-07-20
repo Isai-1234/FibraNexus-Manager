@@ -133,29 +133,37 @@ export function getPeriodWindow(service, periodIndex = 0, asOf = new Date()) {
 
 /**
  * Primera factura puede prorratearse si prorratearPrimeraFactura y aún no hay facturas.
- * Si hay facturarDesde explícito, el periodo elegido es completo (sin prorrateo por instalación).
+ *
+ * - Instalación antes del periodo → mes completo.
+ * - Instalación dentro del periodo (ej. 15 jul con periodo 1–31) → prorrateo desde el alta.
+ * - Instalación después del periodo → no aplica (se deja monto completo; no debería generarse).
  */
 export function maybeProrateFirst(service, window, hasPriorInvoices, fullPrice) {
   if (!service.prorratearPrimeraFactura || hasPriorInvoices) {
     return { ...window, isProrated: false, neto: Math.round(fullPrice) };
   }
-  if (service.facturarDesde) {
-    return { ...window, isProrated: false, neto: Math.round(fullPrice) };
-  }
   const start = parseDateInput(window.periodStart);
   const end = parseDateInput(window.periodEnd);
   if (!start || !end) return { ...window, isProrated: false, neto: Math.round(fullPrice) };
-  const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+
+  const install = parseDateInput(service.installationDate);
+  let effectiveStart = start;
+  if (install && install > start && install <= end) {
+    effectiveStart = install;
+  }
+
+  const days = Math.max(1, Math.round((end - effectiveStart) / 86400000) + 1);
   const totalDays = daysInMonth(start.getFullYear(), start.getMonth());
-  if (days >= totalDays) {
+  if (days >= totalDays || effectiveStart.getTime() === start.getTime()) {
     return { ...window, isProrated: false, neto: Math.round(fullPrice), days, totalDays };
   }
   const neto = Math.round(fullPrice * days / totalDays);
   return {
     ...window,
+    periodStart: formatDateISO(effectiveStart),
     isProrated: true,
     billingPeriod: `${window.billingPeriod}-pro`,
-    label: `Proporcional ${window.periodStart} → ${window.periodEnd}`,
+    label: `Proporcional ${formatDateISO(effectiveStart)} → ${window.periodEnd}`,
     neto,
     days,
     totalDays,
