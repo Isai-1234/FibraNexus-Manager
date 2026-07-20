@@ -1,0 +1,13 @@
+---
+description: Al revisar como dueño de ISP, reparar bugs encontrados
+alwaysApply: true
+---
+
+# QA como dueño de ISP → reparar
+
+Cuando el usuario pida **revisar / probar / usar la plataforma como dueño de ISP** (o equivalente: “revisa tú”, “prueba en directo”, “como si fueras el ISP”):
+
+1. **Probar** el flujo real (login, abonados, servicios, facturación, UI reciente).
+2. **Reparar** en el mismo ciclo cualquier bug o error que encuentres (UI, API, encoding, datos rotos por el flujo, etc.) — no solo reportar.
+3. Tras el fix: commit + push + deploy a producción si el entorno lo requiere, salvo que el usuario diga lo contrario.
+4. En la respuesta final: qué se probó, qué se rompió, qué se arregló.

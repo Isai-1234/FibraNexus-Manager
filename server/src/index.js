@@ -74,6 +74,23 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
+// Siempre declarar UTF-8 en JSON (evita mojibake en clientes / proxies)
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (!res.getHeader('Content-Type')) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    } else {
+      const ct = String(res.getHeader('Content-Type'));
+      if (ct.includes('application/json') && !ct.includes('charset')) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
 // Webhooks de pago (públicos, firmados) — antes de auth
 app.use('/api/webhooks', webhooksRouter);
 
