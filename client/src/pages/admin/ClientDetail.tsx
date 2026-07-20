@@ -1505,9 +1505,20 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
             <div className="space-y-4">
               <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center mb-4 gap-2">
                   <h2 className="font-semibold text-white flex items-center gap-2"><Wifi className="h-4 w-4 text-emerald-400" /> Servicio actual</h2>
-                  <button onClick={() => setActiveTab('services')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Ver todos →</button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {services.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingBillingService(services.find((s: any) => s.status === 'active') || services[0])}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/[0.05]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Editar
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setActiveTab('services')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Ver todos →</button>
+                  </div>
                 </div>
                 {hasDuplicateServices && (
                   <div className="mb-4 p-3 bg-amber-500/10 border border-amber-400/20 rounded-xl text-sm text-amber-200">
@@ -1550,13 +1561,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <div><span className="text-slate-600">Instalación:</span> {formatDateCL(s.installationDate)}</div>
                       <div><span className="text-slate-600">Próx. cobro:</span> {formatDateCL(s.nextBillingDate)}</div>
                       <div><span className="text-slate-600">Ciclo:</span> {billingCycleLabel(s.billingCycleType, s.billingDay)}</div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-slate-600">Precio:</span>
-                        <span>${serviceBillingPrice(s).toLocaleString('es-CL')}</span>
-                            <button type="button" onClick={() => setEditingBillingService(s)}
-                              className="text-cyan-400 hover:text-cyan-300 p-0.5" title="Editar facturación del servicio">
-                              <Pencil className="h-3 w-3" />
-                            </button>
+                      <div>
+                        <span className="text-slate-600">Precio:</span> ${serviceBillingPrice(s).toLocaleString('es-CL')}
                       </div>
                     </div>
                     <div className="flex gap-2 mt-3">
@@ -1776,17 +1782,19 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                             {s.customPrice != null && s.customPrice !== '' && (
                               <span className="text-xs text-emerald-600">(efectivo)</span>
                             )}
-                            <button type="button" onClick={() => setEditingBillingService(s)}
-                              className="text-cyan-600 hover:text-cyan-500 p-0.5" title="Editar facturación del servicio">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
                           </p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-surface-raised'}`}>
-                        {statusLabel[s.status] || s.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setEditingBillingService(s)}
+                          className="px-3 py-1.5 text-xs font-medium bg-cyan-50 text-cyan-700 rounded-lg hover:bg-cyan-100 flex items-center gap-1">
+                          <Pencil className="h-3.5 w-3.5" /> Editar
+                        </button>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-surface-raised'}`}>
+                          {statusLabel[s.status] || s.status}
+                        </span>
+                      </div>
                       {(s.status === 'suspended' || s.status === 'cut' || s.networkMeta?.suspendState) && (
                         <NetworkSuspendStatus
                           serviceStatus={s.status}
