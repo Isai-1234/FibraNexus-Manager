@@ -41,8 +41,32 @@ export const DEFAULT_ORG_SETTINGS = {
   wisphubBaseUrl: '',
 };
 
+/**
+ * Desenvuelve settings guardados por error como JSON string dentro de jsonb
+ * (doble serialización). Sin esto, mergeOrgSettings veía un string y perdía
+ * wisphubApiKey / flow / DTE al leer o al PATCH.
+ */
+export function normalizeOrgSettingsRaw(raw) {
+  let v = raw;
+  for (let i = 0; i < 3; i++) {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (!t) return {};
+      try {
+        v = JSON.parse(t);
+      } catch {
+        return {};
+      }
+      continue;
+    }
+    break;
+  }
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v;
+  return {};
+}
+
 export function mergeOrgSettings(raw) {
-  const s = raw && typeof raw === 'object' ? raw : {};
+  const s = normalizeOrgSettingsRaw(raw);
   const primary = sanitizeHexColor(s.brandPrimaryColor, DEFAULT_ORG_SETTINGS.brandPrimaryColor);
   const accent = sanitizeHexColor(s.brandAccentColor, DEFAULT_ORG_SETTINGS.brandAccentColor);
   const paymentProvider = ['stub', 'flow', 'webpay'].includes(String(s.paymentProvider || '').toLowerCase())

@@ -17,6 +17,7 @@
     "migrate": "node ../scripts/run-migrations.mjs",
     "migrate:encrypt-secrets": "node ../scripts/migrate-encrypt-secrets.mjs",
     "repair:utf8": "node scripts/repair-utf8-mojibake.mjs",
+    "repair:org-settings": "node scripts/repair-org-settings-json.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "dependencies": {
