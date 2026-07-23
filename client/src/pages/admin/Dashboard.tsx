@@ -44,6 +44,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [confirmGenerateInvoices, setConfirmGenerateInvoices] = useState(false)
   const [generatingInvoices, setGeneratingInvoices] = useState(false)
   const [generateInvoicesMsg, setGenerateInvoicesMsg] = useState('')
+  const [listHydrated, setListHydrated] = useState(false)
 
   /** Agrupa alertas en la tarjeta del dashboard que corresponde. */
   const ALERT_BUCKETS: Record<string, 'desconectados' | 'morosos' | 'cobros'> = {
@@ -100,9 +101,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         setRecentTickets(dashRes.data.recentTickets || [])
         const raw = Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : []
         setOrgAlerts(raw.filter((a: any) => a.status === 'open' || a.status === 'acked'))
+        setListHydrated(true)
       } else if (activeTab === 'clients') {
         const res = await api().get('/clients/overview')
         setData(Array.isArray(res.data) ? res.data : [])
+        setListHydrated(true)
       } else {
         const endpoints: Record<string, string> = {
           clients: '/clients', plans: '/plans', services: '/services',
@@ -113,10 +116,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         if (endpoints[activeTab]) {
           const res = await api().get(endpoints[activeTab])
           setData(Array.isArray(res.data) ? res.data : [])
+          setListHydrated(true)
         }
       }
     } catch (err: any) {
       setError('Error al cargar datos: ' + (err.response?.data?.error || err.message))
+      setListHydrated(true)
     }
     setLoading(false)
   }
@@ -127,8 +132,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     try {
       const res = await api().get('/clients/overview')
       setData(Array.isArray(res.data) ? res.data : [])
+      setListHydrated(true)
     } catch (err: any) {
       setError('Error al cargar datos: ' + (err.response?.data?.error || err.message))
+      setListHydrated(true)
     }
     setLoading(false)
   }
@@ -385,8 +392,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setError('')
     if (!sameTab && tabNeedsFetch(id)) {
       setLoading(true)
-      if (id === 'clients' && clientOverview.length > 0) setData(clientOverview)
-      else setData([])
+      setListHydrated(false)
+      if (id === 'clients' && clientOverview.length > 0) {
+        setData(clientOverview)
+        setListHydrated(true)
+      } else {
+        setData([])
+      }
     }
     setActiveTab(id)
     // Misma pestaña (p.ej. Abonados desde el perfil): useEffect no corre → recargar.
@@ -1360,7 +1372,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   </div>
                 </div>
               )}
-              {loading ? (
+              {loading || !listHydrated ? (
                 <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div></div>
               ) : data.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400 px-6 text-center">
