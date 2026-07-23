@@ -98,15 +98,20 @@ invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const today = new Date().toISOString().split('T')[0];
+    const force = Boolean(req.body?.force);
+
+    const dueFilter = force
+      ? and(eq(clientServices.status, 'active'), orgFilter(clients, orgId))
+      : and(
+        eq(clientServices.status, 'active'),
+        orgFilter(clients, orgId),
+        or(isNull(clientServices.nextBillingDate), lte(clientServices.nextBillingDate, today)),
+      );
 
     const activeServices = await db.select({ id: clientServices.id })
       .from(clientServices)
       .leftJoin(clients, eq(clientServices.clientId, clients.id))
-      .where(and(
-        eq(clientServices.status, 'active'),
-        orgFilter(clients, orgId),
-        or(isNull(clientServices.nextBillingDate), lte(clientServices.nextBillingDate, today)),
-      ));
+      .where(dueFilter);
 
     const generated = [];
     const skipped = [];
@@ -119,11 +124,15 @@ invoicesRouter.post('/generate', requireRole('admin'), async (req, res) => {
         skipped.push({ serviceId: svc.id, reason: err.message });
       }
     }
+    const hint = !force && generated.length === 0 && activeServices.length === 0
+      ? ' Ningún servicio activo tiene cobro vencido hoy. Usa «Forzar» o genera desde el perfil del abonado.'
+      : '';
     res.json({
-      message: `${generated.length} facturas generadas${skipped.length ? `, ${skipped.length} omitidas` : ''}`,
+      message: `${generated.length} facturas generadas${skipped.length ? `, ${skipped.length} omitidas` : ''}${hint}`,
       count: generated.length,
       invoices: generated,
       skipped,
+      force,
     });
   } catch (error) {
     res.status(500).json({ error: 'Error: ' + error.message });

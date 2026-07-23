@@ -285,14 +285,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     setConfirmGenerateInvoices(true)
   }
 
-  async function runGenerateInvoices() {
+  async function runGenerateInvoices(force = false) {
     setGeneratingInvoices(true)
     setError('')
     setGenerateInvoicesMsg('')
     try {
-      const res = await api().post('/invoices/generate', {})
+      const res = await api().post('/invoices/generate', { force: !!force })
       setConfirmGenerateInvoices(false)
-      setGenerateInvoicesMsg(res.data.message || 'Facturas generadas correctamente')
+      const skipped = Array.isArray(res.data.skipped) ? res.data.skipped : []
+      const base = res.data.message || 'Facturas generadas correctamente'
+      const detail = skipped.length
+        ? ` · ${skipped.slice(0, 3).map((s: any) => s.reason).join('; ')}${skipped.length > 3 ? '…' : ''}`
+        : ''
+      setGenerateInvoicesMsg(base + detail)
       loadData()
     } catch (err: any) {
       setError('Error al generar facturas: ' + (err.response?.data?.error || err.message))
@@ -798,16 +803,20 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
           {confirmGenerateInvoices && activeTab === 'invoices' && (
             <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-950 px-4 py-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm">
+              <div className="text-sm max-w-xl">
                 <p className="font-semibold">¿Generar facturas del ciclo actual?</p>
-                <p className="text-emerald-900/80 mt-0.5">Se respeta el ciclo de cada abonado (aniversario o proporcional). No duplica si ya hay factura del período.</p>
+                <p className="text-emerald-900/80 mt-0.5">Solo servicios con cobro vencido hoy. «Forzar» incluye todos los activos (útil al arrancar el ISP).</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => setConfirmGenerateInvoices(false)}
                   className="px-3 py-1.5 text-sm rounded-lg border border-emerald-200 bg-white hover:bg-emerald-50">Cancelar</button>
-                <button type="button" onClick={runGenerateInvoices} disabled={generatingInvoices}
+                <button type="button" onClick={() => runGenerateInvoices(true)} disabled={generatingInvoices}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-50 disabled:opacity-60">
+                  Forzar todos
+                </button>
+                <button type="button" onClick={() => runGenerateInvoices(false)} disabled={generatingInvoices}
                   className="px-3 py-1.5 text-sm rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-60">
-                  {generatingInvoices ? 'Generando…' : 'Sí, generar'}
+                  {generatingInvoices ? 'Generando…' : 'Sí, generar vencidos'}
                 </button>
               </div>
             </div>

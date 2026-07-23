@@ -160,7 +160,7 @@ export default function WorkOrdersManager({ API }: { API: string }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-ink-muted">{rows.length} orden{rows.length !== 1 ? 'es' : ''}</p>
+        <p className="text-sm text-ink-muted">{rows.length === 1 ? '1 orden' : `${rows.length} órdenes`}</p>
         <button
           onClick={() => setShowForm(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
@@ -173,6 +173,18 @@ export default function WorkOrdersManager({ API }: { API: string }) {
 
       {loading ? (
         <div className="flex justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : rows.length === 0 ? (
+        <div className="bg-surface-card rounded-xl shadow-sm border border-line py-16 px-6 text-center">
+          <p className="text-lg font-medium text-ink-muted">Sin órdenes de trabajo</p>
+          <p className="text-sm text-ink-muted mt-1 max-w-md mx-auto">Crea una OT de instalación o visita técnica y asígnala a tu personal de campo.</p>
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium inline-flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" /> Nueva OT
+          </button>
+        </div>
       ) : (
         <div className="bg-surface-card rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full">
@@ -206,9 +218,6 @@ export default function WorkOrdersManager({ API }: { API: string }) {
                   </td>
                 </tr>
               ))}
-              {!rows.length && (
-                <tr><td colSpan={6} className="p-8 text-center text-gray-400">Sin órdenes de trabajo</td></tr>
-              )}
             </tbody>
           </table>
         </div>
