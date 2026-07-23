@@ -11,7 +11,7 @@ import StaffManager from './StaffManager'
 import WorkOrdersManager from './WorkOrdersManager'
 import FieldWorkOrders from '../technician/FieldWorkOrders'
 import ThemeToggle from '../../components/ThemeToggle'
-import { formatDateCL } from '../../lib/formatDate'
+import { formatDateCL, formatBillingPeriod } from '../../lib/formatDate'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
@@ -1578,9 +1578,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'available' ? 'bg-green-100 text-green-700' : item.status === 'assigned' ? 'bg-blue-100 text-blue-700' : 'bg-surface-raised text-gray-600'}`}>{item.status === 'available' ? 'Disponible' : item.status === 'assigned' ? 'Asignada' : 'Reservada'}</span></td>
                           </>}
                           {activeTab === 'invoices' && <>
-                            <td className="p-4 font-mono text-sm text-indigo-600">{item.invoiceNumber}</td>
+                            <td className="p-4 font-mono text-sm text-indigo-600" title={item.invoiceNumber}>{item.invoiceNumber}</td>
                             <td className="p-4 text-sm">{item.client?.fullName || 'N/A'}</td>
-                            <td className="p-4 text-sm">{item.billingPeriod || '—'}</td>
+                            <td className="p-4 text-sm capitalize" title={item.billingPeriod || ''}>{formatBillingPeriod(item.billingPeriod)}</td>
                             <td className="p-4 text-sm">${Number(item.amount).toLocaleString('es-CL')}</td>
                             <td className="p-4 text-sm">${Number(item.tax).toLocaleString('es-CL')}</td>
                             <td className="p-4 font-bold">${Number(item.total).toLocaleString('es-CL')}</td>
