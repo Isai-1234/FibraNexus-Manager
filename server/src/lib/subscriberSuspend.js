@@ -1,6 +1,6 @@
 import dns from 'dns/promises';
 import { db } from '../db/index.js';
-import { clientServices, equipment } from '../db/schema.js';
+import { clientServices, equipment, clients } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { config } from './config.js';
@@ -220,12 +220,23 @@ export async function tryAutoReactivateAfterPayment(invoice, orgId) {
   const ctx = await loadServiceContext(serviceId, orgId);
   if (!ctx) return { skipped: true, reason: 'Servicio no encontrado' };
   if (ctx.service.status !== 'suspended') {
-    return { skipped: true, reason: 'Servicio no está suspendido' };
+    await db.update(clients)
+      .set({ lifecycleStatus: 'active', updatedAt: new Date() })
+      .where(eq(clients.id, ctx.service.clientId));
+    return {
+      reactivated: false,
+      lifecycleStatus: 'active',
+      reason: 'Servicio ya activo; estado CRM reactivado',
+    };
   }
 
   await db.update(clientServices)
     .set({ status: 'active', updatedAt: new Date() })
     .where(eq(clientServices.id, serviceId));
+
+  await db.update(clients)
+    .set({ lifecycleStatus: 'active', updatedAt: new Date() })
+    .where(eq(clients.id, ctx.service.clientId));
 
   let networkResult = null;
   try {
@@ -234,5 +245,5 @@ export async function tryAutoReactivateAfterPayment(invoice, orgId) {
     networkResult = { error: err.message };
   }
 
-  return { reactivated: true, serviceId, network: networkResult };
+  return { reactivated: true, serviceId, network: networkResult, lifecycleStatus: 'active' };
 }

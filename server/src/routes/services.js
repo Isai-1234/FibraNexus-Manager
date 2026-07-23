@@ -396,6 +396,12 @@ servicesRouter.put('/:id/suspend', requireRole('admin', 'technician'), async (re
       .where(eq(clientServices.id, serviceId))
       .returning();
 
+    if (updated?.clientId) {
+      await db.update(clients)
+        .set({ lifecycleStatus: 'suspended', updatedAt: new Date() })
+        .where(and(eq(clients.id, updated.clientId), orgFilter(clients, orgId)));
+    }
+
     let networkResult = null;
     try {
       networkResult = await dispatch(JobNames.SUSPEND_SERVICE, { serviceId, orgId });
@@ -421,6 +427,12 @@ servicesRouter.put('/:id/reactivate', requireRole('admin'), async (req, res) => 
       .set({ status: 'active', updatedAt: new Date() })
       .where(eq(clientServices.id, serviceId))
       .returning();
+
+    if (updated?.clientId) {
+      await db.update(clients)
+        .set({ lifecycleStatus: 'active', updatedAt: new Date() })
+        .where(and(eq(clients.id, updated.clientId), orgFilter(clients, orgId)));
+    }
 
     let networkResult = null;
     try {

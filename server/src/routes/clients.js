@@ -310,17 +310,58 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     const [updated] = await db.update(clients).set(patch)
       .where(eq(clients.id, clientId)).returning();
 
+    // Alinear servicios con el CRM cuando el ISP cambia el estado a mano
+    let serviceSync = null;
+    if (lifecycleStatus && lifecycleStatus !== row.lifecycleStatus) {
+      if (lifecycleStatus === 'suspended' || lifecycleStatus === 'cut') {
+        const targetStatus = lifecycleStatus === 'cut' ? 'cut' : 'suspended';
+        const activeSvcs = await db.select({ id: clientServices.id })
+          .from(clientServices)
+          .where(and(
+            eq(clientServices.clientId, clientId),
+            eq(clientServices.status, 'active'),
+          ));
+        for (const svc of activeSvcs) {
+          await db.update(clientServices)
+            .set({ status: targetStatus, updatedAt: new Date() })
+            .where(eq(clientServices.id, svc.id));
+          try {
+            const { dispatch, JobNames } = await import('../lib/jobs/queue.js');
+            await dispatch(JobNames.SUSPEND_SERVICE, { serviceId: svc.id, orgId });
+          } catch { /* red opcional */ }
+        }
+        serviceSync = { action: targetStatus, count: activeSvcs.length };
+      } else if (lifecycleStatus === 'active') {
+        const blocked = await db.select({ id: clientServices.id })
+          .from(clientServices)
+          .where(and(
+            eq(clientServices.clientId, clientId),
+            inArray(clientServices.status, ['suspended', 'cut']),
+          ));
+        for (const svc of blocked) {
+          await db.update(clientServices)
+            .set({ status: 'active', updatedAt: new Date() })
+            .where(eq(clientServices.id, svc.id));
+          try {
+            const { dispatch, JobNames } = await import('../lib/jobs/queue.js');
+            await dispatch(JobNames.REACTIVATE_SERVICE, { serviceId: svc.id, orgId });
+          } catch { /* red opcional */ }
+        }
+        serviceSync = { action: 'active', count: blocked.length };
+      }
+    }
+
     await writeAuditLog({
       organizationId: orgId,
       userId: req.user.id,
       action: 'client.update',
       entity: 'client',
       entityId: clientId,
-      details: { lifecycleStatus: updated.lifecycleStatus, dteHabilitado: updated.dteHabilitado },
+      details: { lifecycleStatus: updated.lifecycleStatus, dteHabilitado: updated.dteHabilitado, serviceSync },
       ipAddress: clientIp(req),
     });
 
-    res.json({ ...updated, user: { fullName, email, phone } });
+    res.json({ ...updated, user: { fullName, email, phone }, serviceSync });
   } catch (error) {
     const status = error.status || 500;
     res.status(status).json({ error: error.message || 'Error al actualizar cliente' });

@@ -83,6 +83,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [activeTab, setActiveTab] = useState(initialTab)
   const [showPayModal, setShowPayModal] = useState<any>(null)
   const [payMethod, setPayMethod] = useState('transfer')
+  const [payNotes, setPayNotes] = useState('')
+  const [payingInvoice, setPayingInvoice] = useState(false)
   const [payEmitirDte, setPayEmitirDte] = useState(false)
   const [savingDteFlag, setSavingDteFlag] = useState(false)
   const [routers, setRouters] = useState<any[]>([])
@@ -428,6 +430,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
   async function toggleService(serviceId: number, currentStatus: string) {
     try {
+      const crmBlocked = ['suspended', 'cut'].includes(client?.lifecycleStatus)
+      // CRM suspendido pero servicio aún "active" (p.ej. import WispHub) → Activar = reactivar CRM (+ servicio si hace falta)
+      if (currentStatus === 'active' && crmBlocked) {
+        await api().put(`/clients/${clientId}`, { lifecycleStatus: 'active' })
+        toast('Abonado activado', 'success')
+        loadAll()
+        return
+      }
       const action = currentStatus === 'active' ? 'suspend' : 'reactivate'
       const res = await api().put(`/services/${serviceId}/${action}`)
       const net = res.data.network
@@ -480,18 +490,55 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     } catch (e: any) { toast('Error: ' + (e.response?.data?.error || e.message), 'error') }
   }
 
+  function serviceNeedsActivate(s: any) {
+    if (!s) return false
+    if (s.status === 'suspended' || s.status === 'cut') return true
+    if (s.status === 'active' && ['suspended', 'cut'].includes(client?.lifecycleStatus)) return true
+    return false
+  }
+
   async function payInvoice() {
     if (!showPayModal) return
+    setPayingInvoice(true)
     try {
-      await api().post('/payments', {
+      const res = await api().post('/payments', {
         invoiceId: showPayModal.id,
         method: payMethod,
         amount: showPayModal.total,
         emitirDte: payEmitirDte,
+        notes: payNotes.trim() || undefined,
+        reference: payMethod === 'cash' ? 'efectivo' : payMethod === 'transfer' ? 'transferencia' : undefined,
       })
       setShowPayModal(null)
+      setPayNotes('')
+      const reactivation = res.data?.reactivation
+      if (reactivation?.reactivated) {
+        toast('Pago registrado · servicio reactivado', 'success')
+      } else if (reactivation?.lifecycleStatus === 'active') {
+        toast('Pago registrado · abonado activado', 'success')
+      } else {
+        toast('Pago registrado', 'success')
+      }
       loadAll()
     } catch (e: any) { toast('Error al registrar pago: ' + (e.response?.data?.error || e.message), 'error') }
+    setPayingInvoice(false)
+  }
+
+  function openPayModal(inv: any) {
+    setPayMethod('cash')
+    setPayNotes('')
+    setPayEmitirDte(Boolean(client?.dteHabilitado))
+    setShowPayModal(inv)
+  }
+
+  function openQuickPay() {
+    const pending = invoices.filter((i) => i.status === 'pending' || i.status === 'overdue')
+    if (pending.length === 0) {
+      toast('No hay facturas pendientes. Genera una factura o activa el servicio con Activar.', 'warning')
+      setActiveTab('invoices')
+      return
+    }
+    openPayModal(pending[0])
   }
 
   async function toggleClientDte(next: boolean) {
@@ -550,12 +597,6 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       toast('Error: ' + (e.response?.data?.error || e.message), 'error')
     }
     setSavingPersonal(false)
-  }
-
-  function openPayModal(inv: any) {
-    setPayMethod('transfer')
-    setPayEmitirDte(Boolean(client?.dteHabilitado))
-    setShowPayModal(inv)
   }
 
   async function suggestFreeIp(target: 'create' | 'edit' | 'service', siteId?: number) {
@@ -815,12 +856,21 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">Método de pago</label>
                 <select className="w-full border rounded-lg px-3 py-2" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-                  <option value="transfer">Transferencia bancaria</option>
                   <option value="cash">Efectivo</option>
+                  <option value="transfer">Transferencia bancaria</option>
                   <option value="card">Tarjeta</option>
                   <option value="flow">Flow</option>
-                  <option value="other">Otro</option>
+                  <option value="other">Otro (WhatsApp / aviso)</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Nota (opcional)</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Ej: pagó por WhatsApp, efectivo en oficina…"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                />
               </div>
               <label className="flex items-start gap-3 cursor-pointer pt-1">
                 <input
@@ -833,14 +883,21 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   <span className="block text-sm font-medium text-ink">¿Generar factura electrónica?</span>
                   <span className="block text-xs text-ink-muted mt-0.5">
                     Override de este pago (no cambia el default del cliente). Default: {client?.dteHabilitado ? 'Sí' : 'No'}.
-                    Pagos Flow con delegación SII activa no emiten DTE aquí.
                   </span>
                 </span>
               </label>
-            </div>
-            <div className="flex gap-3 mt-6 pt-4 border-t">
-              <button onClick={() => setShowPayModal(null)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Cancelar</button>
-              <button onClick={payInvoice} className="flex-1 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Confirmar pago</button>
+              <p className="text-xs text-ink-muted">Al registrar el pago completo, el servicio se reactiva automáticamente si estaba suspendido.</p>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowPayModal(null)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Cancelar</button>
+                <button
+                  type="button"
+                  disabled={payingInvoice}
+                  onClick={payInvoice}
+                  className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {payingInvoice ? 'Registrando…' : 'Confirmar pago'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1380,16 +1437,21 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               </button>
             )}
           {totalDeuda > 0 && (
-              <div className="px-3 py-1.5 rounded-full bg-red-500/10 border border-red-400/20">
-                <span className="text-xs text-red-300 font-bold">${totalDeuda.toLocaleString('es-CL')}</span>
-            </div>
+              <button type="button" onClick={openQuickPay}
+                className="px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold hover:bg-emerald-500/25 inline-flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5" />
+                Registrar pago · ${totalDeuda.toLocaleString('es-CL')}
+              </button>
           )}
-            <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${activeService ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20' : 'bg-surface-card/[0.04] text-ink-muted border-white/[0.08]'}`}>
-              {activeService ? 'Servicio activo' : 'Sin servicio'}
-          </span>
-            <span className="px-3 py-1.5 rounded-full text-xs font-medium border bg-cyan-500/10 text-cyan-200 border-cyan-400/20">
-              {statusLabel[client.lifecycleStatus] || client.lifecycleStatus || 'Prospecto'}
-            </span>
+            {(['suspended', 'cut'].includes(client.lifecycleStatus) || services.some((s) => s.status === 'suspended' || s.status === 'cut')) ? (
+              <span className="px-3 py-1.5 rounded-full text-xs font-medium border bg-amber-500/15 text-amber-200 border-amber-400/30">
+                {statusLabel[client.lifecycleStatus] || 'Suspendido'}
+              </span>
+            ) : (
+              <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${activeService ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20' : 'bg-surface-card/[0.04] text-ink-muted border-white/[0.08]'}`}>
+                {activeService ? 'Servicio activo' : (statusLabel[client.lifecycleStatus] || 'Sin servicio')}
+              </span>
+            )}
             <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
               !primaryAntenna ? 'bg-amber-500/10 text-amber-300 border-amber-400/20'
                 : antennaOnline ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20'
@@ -1589,8 +1651,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         <p className="font-semibold text-white">{s.plan?.name || 'Plan desconocido'}</p>
                         <p className="text-sm text-ink-muted">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · #{s.id}</p>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[s.status] || 'bg-surface-raised'}`}>
-                        {statusLabel[s.status] || s.status}
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        serviceNeedsActivate(s)
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : (statusColor[s.status] || 'bg-surface-raised')
+                      }`}>
+                        {serviceNeedsActivate(s)
+                          ? (statusLabel[client.lifecycleStatus] || statusLabel[s.status] || 'Suspendido')
+                          : (statusLabel[s.status] || s.status)}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-ink-muted mt-3">
@@ -1601,13 +1669,19 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         <span className="text-slate-600">Precio:</span> ${serviceBillingPrice(s).toLocaleString('es-CL')}
                       </div>
                     </div>
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex flex-wrap gap-2 mt-3">
                     <button onClick={() => toggleService(s.id, s.status)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border ${
-                          s.status === 'active' ? 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10' : 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
+                        className={`flex-1 min-w-[7rem] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border ${
+                          serviceNeedsActivate(s) ? 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10' : 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10'
                         }`}>
-                        {s.status === 'active' ? <><PowerOff className="h-3.5 w-3.5" /> Suspender</> : <><Power className="h-3.5 w-3.5" /> Reactivar</>}
+                        {serviceNeedsActivate(s) ? <><Power className="h-3.5 w-3.5" /> Activar</> : <><PowerOff className="h-3.5 w-3.5" /> Suspender</>}
                       </button>
+                      {totalDeuda > 0 && (
+                        <button type="button" onClick={openQuickPay}
+                          className="flex-1 min-w-[7rem] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20">
+                          <DollarSign className="h-3.5 w-3.5" /> Pago manual
+                        </button>
+                      )}
                       <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                         className="px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 text-red-300 hover:bg-red-500/10 flex items-center gap-1">
                         <Trash2 className="h-3.5 w-3.5" /> Eliminar
@@ -1957,14 +2031,20 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         </div>
                       )}
                     <div className="flex gap-2 mt-4 flex-wrap">
-                      <button onClick={() => generateInvoice(s.id)} disabled={generatingInvoice === s.id || s.status !== 'active'}
+                      <button onClick={() => generateInvoice(s.id)} disabled={generatingInvoice === s.id || (s.status !== 'active' && !serviceNeedsActivate(s))}
                         className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50">
                         <DollarSign className="h-4 w-4" /> {generatingInvoice === s.id ? 'Generando...' : 'Generar factura'}
                       </button>
                       <button onClick={() => toggleService(s.id, s.status)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${s.status === 'active' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
-                        {s.status === 'active' ? <><PowerOff className="h-4 w-4" /> Suspender</> : <><Power className="h-4 w-4" /> Reactivar</>}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${serviceNeedsActivate(s) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}`}>
+                        {serviceNeedsActivate(s) ? <><Power className="h-4 w-4" /> Activar</> : <><PowerOff className="h-4 w-4" /> Suspender</>}
                       </button>
+                      {totalDeuda > 0 && (
+                        <button type="button" onClick={openQuickPay}
+                          className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                          <DollarSign className="h-4 w-4" /> Pago manual
+                        </button>
+                      )}
                         <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                           className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-red-50 text-red-700 hover:bg-red-100">
                           <Trash2 className="h-4 w-4" /> Eliminar

@@ -1490,8 +1490,18 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         {item.planName ? (
                           <span className="text-sm text-ink-soft bg-surface border px-2.5 py-1 rounded-lg">
                             {item.planName}
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${statusColor[item.serviceStatus] || 'bg-surface-raised'}`}>
-                              {statusLabel[item.serviceStatus] || item.serviceStatus}
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${
+                              (item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : (item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')
+                                  ? 'bg-red-100 text-red-700'
+                                  : (statusColor[item.serviceStatus] || 'bg-surface-raised')
+                            }`}>
+                              {(item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')
+                                ? 'Suspendido'
+                                : (item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')
+                                  ? 'Cortado'
+                                  : (statusLabel[item.serviceStatus] || item.serviceStatus)}
                             </span>
                           </span>
                         ) : (
