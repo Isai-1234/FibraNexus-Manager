@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar, Search } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
@@ -37,6 +37,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [plans, setPlans] = useState<any[]>([])
   const [orgAlerts, setOrgAlerts] = useState<any[]>([])
   const [alertPanel, setAlertPanel] = useState<null | 'desconectados' | 'morosos' | 'cobros'>(null)
+  const [clientSearch, setClientSearch] = useState('')
+  const [clientLifecycleFilter, setClientLifecycleFilter] = useState('all')
+  const [clientConnFilter, setClientConnFilter] = useState('all')
+  const [clientDebtFilter, setClientDebtFilter] = useState(false)
 
   /** Agrupa alertas en la tarjeta del dashboard que corresponde. */
   const ALERT_BUCKETS: Record<string, 'desconectados' | 'morosos' | 'cobros'> = {
@@ -505,6 +509,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     critical: 'bg-red-100 text-red-700', high: 'bg-orange-100 text-orange-700',
     medium: 'bg-blue-100 text-blue-700', low: 'bg-surface-raised text-gray-600',
     individual: 'bg-blue-100 text-blue-700', business: 'bg-purple-100 text-purple-700',
+    prospect: 'bg-slate-100 text-slate-700', pending_install: 'bg-sky-100 text-sky-800',
   }
 
   const statusLabel: Record<string, string> = {
@@ -548,6 +553,34 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         return acc
       }, {})
     : {}
+
+  const filteredClients = activeTab === 'clients'
+    ? data.filter((item: any) => {
+        const q = clientSearch.trim().toLowerCase()
+        if (q) {
+          const hay = `${item.fullName || ''} ${item.email || ''} ${item.city || ''} ${item.phone || ''} ${item.planName || ''} ${item.ipAddress || ''}`.toLowerCase()
+          if (!hay.includes(q)) return false
+        }
+        if (clientLifecycleFilter !== 'all' && (item.lifecycleStatus || 'prospect') !== clientLifecycleFilter) return false
+        if (clientConnFilter !== 'all' && item.connectionStatus !== clientConnFilter) return false
+        if (clientDebtFilter && !(item.pendingAmount > 0)) return false
+        return true
+      })
+    : data
+
+  function tabCountLabel(tab: string, n: number) {
+    const singular: Record<string, string> = {
+      clients: 'abonado', plans: 'plan', invoices: 'factura', tickets: 'ticket',
+      ips: 'IP', services: 'servicio',
+    }
+    const plural: Record<string, string> = {
+      clients: 'abonados', plans: 'planes', invoices: 'facturas', tickets: 'tickets',
+      ips: 'IPs', services: 'servicios',
+    }
+    const one = singular[tab] || 'registro'
+    const many = plural[tab] || 'registros'
+    return n === 1 ? `1 ${one}` : `${n} ${many}`
+  }
 
   // Red ISP nunca usa la vista genérica de pestañas (legacy activeTab 'network')
   const redIspOpen = showRedIsp || activeTab === 'red-isp' || activeTab === 'network'
@@ -688,7 +721,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               <p className="text-sm text-ink-muted mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
             )}
             {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && activeTab !== 'finance' && (
-              <p className="text-xs text-ink-muted mt-1">{data.length} registro{data.length !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-ink-muted mt-1">
+                {activeTab === 'clients'
+                  ? `${tabCountLabel('clients', filteredClients.length)}${filteredClients.length !== data.length ? ` (de ${data.length})` : ''}`
+                  : tabCountLabel(activeTab, data.length)}
+              </p>
             )}
           </div>
           <div className="flex gap-2 items-center">
@@ -1152,24 +1189,120 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               )}
             <div className="bg-surface-card rounded-xl shadow-sm border border-line">
+              {activeTab === 'clients' && data.length > 0 && (
+                <div className="p-4 border-b border-line space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
+                    <input
+                      type="search"
+                      value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                      placeholder="Buscar por nombre, email, ciudad, plan o IP…"
+                      className="w-full pl-10 pr-3 py-2.5 text-sm border border-line rounded-xl bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-[11px] uppercase tracking-wide text-ink-muted font-medium">Estado CRM</span>
+                    {[
+                      { id: 'all', label: 'Todos' },
+                      { id: 'active', label: 'Activos' },
+                      { id: 'pending_install', label: 'Instalación' },
+                      { id: 'prospect', label: 'Prospectos' },
+                      { id: 'suspended', label: 'Suspendidos' },
+                      { id: 'cut', label: 'Cortados' },
+                      { id: 'cancelled', label: 'Baja' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setClientLifecycleFilter(f.id)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                          clientLifecycleFilter === f.id
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                    <span className="text-ink-muted mx-1">|</span>
+                    {[
+                      { id: 'all', label: 'Red: todas' },
+                      { id: 'online', label: 'Online' },
+                      { id: 'offline', label: 'Offline' },
+                      { id: 'unknown', label: 'Sin monitoreo' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setClientConnFilter(f.id)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                          clientConnFilter === f.id
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setClientDebtFilter((v) => !v)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                        clientDebtFilter
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
+                      }`}
+                    >
+                      Con deuda
+                    </button>
+                  </div>
+                </div>
+              )}
               {loading ? (
                 <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div></div>
               ) : data.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                  <div className="text-6xl mb-4">📭</div>
-                  <p className="text-lg font-medium text-ink-muted">No hay {activeTab === 'ips' ? 'IPs' : activeTab} registrados</p>
-                  <p className="text-sm mt-1">Usa el botón "+ Nuevo" para agregar</p>
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400 px-6 text-center">
+                  <Users className="h-12 w-12 mb-3 opacity-30 text-blue-500" />
+                  <p className="text-lg font-medium text-ink-muted">
+                    {activeTab === 'clients' ? 'Aún no hay abonados' : `No hay ${activeTab === 'ips' ? 'IPs' : activeTab === 'plans' ? 'planes' : activeTab} registrados`}
+                  </p>
+                  <p className="text-sm mt-1 max-w-sm">
+                    {activeTab === 'clients'
+                      ? 'Crea tu primer abonado para empezar a facturar y asignar servicios.'
+                      : 'Usa el botón "+ Nuevo" para agregar'}
+                  </p>
+                  {activeTab === 'clients' && (
+                    <button type="button" onClick={openNewForm}
+                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                      <Plus className="h-4 w-4" /> Crear abonado
+                    </button>
+                  )}
+                </div>
+              ) : activeTab === 'clients' && filteredClients.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-ink-muted px-6 text-center">
+                  <Search className="h-10 w-10 mb-3 opacity-40" />
+                  <p className="font-medium">Ningún abonado coincide con el filtro</p>
+                  <button type="button" className="mt-3 text-sm text-blue-600 hover:underline"
+                    onClick={() => { setClientSearch(''); setClientLifecycleFilter('all'); setClientConnFilter('all'); setClientDebtFilter(false) }}>
+                    Limpiar filtros
+                  </button>
                 </div>
               ) : activeTab === 'clients' ? (
                 <div className="divide-y">
-                  {data.map((item: any) => (
+                  {filteredClients.map((item: any) => (
                     <div key={item.id} className="p-5 hover:bg-slate-50/80 transition flex flex-col lg:flex-row lg:items-center gap-4">
                       <div className="flex items-center gap-4 flex-1 min-w-0">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
                           {(item.fullName || '?').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-semibold text-ink truncate">{item.fullName || 'Sin nombre'}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-ink truncate">{item.fullName || 'Sin nombre'}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${statusColor[item.lifecycleStatus] || 'bg-surface-raised text-ink-muted'}`}>
+                              {statusLabel[item.lifecycleStatus] || item.lifecycleStatus || 'Prospecto'}
+                            </span>
+                          </div>
                           <p className="text-sm text-ink-muted truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
                           <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             {item.siteName && (
@@ -1220,7 +1353,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           </span>
                         )}
                         {!item.alerts?.length ? (
-                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg font-medium">Al dia</span>
+                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg font-medium">Al día</span>
                         ) : item.alerts.map((a: any) => (
                           <span key={a.type + a.label} className={`text-xs px-2 py-1 rounded-lg font-medium ${
                             a.severity === 'high' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'

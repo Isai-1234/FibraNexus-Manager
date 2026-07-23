@@ -255,6 +255,7 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
     const {
       fullName, email, phone, clientType, rut, address, city, region, password,
       latitude, longitude, lifecycleStatus, dteHabilitado, precioEfectivo, planNombre,
+      notes,
     } = req.body;
     const existing = await db.select().from(clients)
       .where(and(eq(clients.id, clientId), orgFilter(clients, orgId))).limit(1);
@@ -278,6 +279,9 @@ clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {
       updatedAt: new Date(),
     };
     if (rut !== undefined) patch.rut = assertOptionalRut(rut);
+    if (notes !== undefined) {
+      patch.notes = notes == null || notes === '' ? null : String(notes).slice(0, 4000);
+    }
     if (latitude !== undefined) patch.latitude = latitude != null && latitude !== '' ? String(latitude) : null;
     if (longitude !== undefined) patch.longitude = longitude != null && longitude !== '' ? String(longitude) : null;
     if (typeof dteHabilitado === 'boolean') patch.dteHabilitado = dteHabilitado;

@@ -20,7 +20,10 @@ export async function buildClientOverview(orgId) {
     email: users.email,
     phone: users.phone,
     city: clients.city,
+    region: clients.region,
     clientType: clients.clientType,
+    lifecycleStatus: clients.lifecycleStatus,
+    notes: clients.notes,
     createdAt: clients.createdAt,
     isActive: users.isActive,
     lastLogin: users.lastLogin,
@@ -168,7 +171,7 @@ export async function buildClientOverview(orgId) {
 
     const statusSummary = alerts.length
       ? alerts.map((a) => a.label).slice(0, 3).join(' · ')
-      : 'Al dia';
+      : 'Al día';
 
     let serviceStatus = 'none';
     if (activeSvc) serviceStatus = 'active';
@@ -180,7 +183,10 @@ export async function buildClientOverview(orgId) {
       email: c.email,
       phone: c.phone,
       city: c.city,
+      region: c.region,
       clientType: c.clientType,
+      lifecycleStatus: c.lifecycleStatus || 'prospect',
+      notes: c.notes || null,
       createdAt: c.createdAt,
       daysAsClient: daysSince(c.createdAt),
       isActive: c.isActive,

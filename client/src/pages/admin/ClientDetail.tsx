@@ -518,6 +518,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       city: client.city || '',
       region: client.region || '',
       clientType: client.clientType || 'individual',
+      lifecycleStatus: client.lifecycleStatus || 'prospect',
+      notes: client.notes || '',
     })
     setShowEditPersonal(true)
   }
@@ -538,6 +540,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
         city: personalForm.city?.trim() || null,
         region: personalForm.region?.trim() || null,
         clientType: personalForm.clientType || 'individual',
+        lifecycleStatus: personalForm.lifecycleStatus || 'active',
+        notes: personalForm.notes?.trim() || null,
       })
       toast('Datos personales actualizados', 'success')
       setShowEditPersonal(false)
@@ -734,6 +738,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     in_progress: 'En proceso', closed: 'Cerrado', cut: 'Cortado',
     critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
+    prospect: 'Prospecto', pending_install: 'Instalación pendiente',
   }
 
   const pendingInvoices = invoices.filter(i => i.status === 'pending' || i.status === 'overdue')
@@ -894,6 +899,30 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   <option value="individual">Individual</option>
                   <option value="business">Empresa</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Estado CRM</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-surface-card"
+                  value={personalForm.lifecycleStatus || 'active'}
+                  onChange={(e) => setPersonalForm({ ...personalForm, lifecycleStatus: e.target.value })}
+                >
+                  <option value="prospect">Prospecto</option>
+                  <option value="pending_install">Instalación pendiente</option>
+                  <option value="active">Activo</option>
+                  <option value="suspended">Suspendido</option>
+                  <option value="cut">Cortado</option>
+                  <option value="cancelled">Baja / cancelado</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Notas internas</label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-surface-card min-h-[88px]"
+                  value={personalForm.notes || ''}
+                  onChange={(e) => setPersonalForm({ ...personalForm, notes: e.target.value })}
+                  placeholder="Referencias, cómo llegar, historial comercial…"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-line">
@@ -1358,6 +1387,9 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${activeService ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20' : 'bg-surface-card/[0.04] text-ink-muted border-white/[0.08]'}`}>
               {activeService ? 'Servicio activo' : 'Sin servicio'}
           </span>
+            <span className="px-3 py-1.5 rounded-full text-xs font-medium border bg-cyan-500/10 text-cyan-200 border-cyan-400/20">
+              {statusLabel[client.lifecycleStatus] || client.lifecycleStatus || 'Prospecto'}
+            </span>
             <span className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
               !primaryAntenna ? 'bg-amber-500/10 text-amber-300 border-amber-400/20'
                 : antennaOnline ? 'bg-emerald-500/10 text-emerald-300 border-emerald-400/20'
@@ -1457,6 +1489,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   { label: 'Ciudad', value: client.city || '—', icon: MapPin },
                   { label: 'Región', value: client.region || '—', icon: MapPin },
                   { label: 'Tipo', value: statusLabel[client.clientType] || client.clientType, icon: User },
+                  { label: 'Estado CRM', value: statusLabel[client.lifecycleStatus] || client.lifecycleStatus || '—', icon: User },
                   // Snapshot WispHub solo si aún no hay servicio FN (evita precio viejo vs servicio actual).
                   ...(services.length === 0 && (client.planNombre || client.precioEfectivo != null)
                     ? [
@@ -1470,12 +1503,15 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         },
                       ]
                     : []),
+                  ...(client.notes
+                    ? [{ label: 'Notas', value: client.notes, icon: MessageSquare }]
+                    : []),
                 ].map(f => (
                   <div key={f.label} className="flex items-start gap-3 py-2 border-b border-white/[0.05] last:border-0">
                     <f.icon className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[10px] uppercase tracking-wider text-slate-400">{f.label}</p>
-                      <p className="text-sm text-white truncate">{f.value || '—'}</p>
+                      <p className={`text-sm text-white ${f.label === 'Notas' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>{f.value || '—'}</p>
                     </div>
                   </div>
                 ))}
