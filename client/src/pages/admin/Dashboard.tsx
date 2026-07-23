@@ -41,6 +41,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [clientLifecycleFilter, setClientLifecycleFilter] = useState('all')
   const [clientConnFilter, setClientConnFilter] = useState('all')
   const [clientDebtFilter, setClientDebtFilter] = useState(false)
+  const [confirmGenerateInvoices, setConfirmGenerateInvoices] = useState(false)
+  const [generatingInvoices, setGeneratingInvoices] = useState(false)
+  const [generateInvoicesMsg, setGenerateInvoicesMsg] = useState('')
 
   /** Agrupa alertas en la tarjeta del dashboard que corresponde. */
   const ALERT_BUCKETS: Record<string, 'desconectados' | 'morosos' | 'cobros'> = {
@@ -279,12 +282,22 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   async function handleGenerateInvoices() {
-    if (!confirm('¿Generar facturas para servicios con cobro pendiente? Se respeta el ciclo de cada abonado (aniversario o proporcional).')) return
+    setConfirmGenerateInvoices(true)
+  }
+
+  async function runGenerateInvoices() {
+    setGeneratingInvoices(true)
+    setError('')
+    setGenerateInvoicesMsg('')
     try {
       const res = await api().post('/invoices/generate', {})
-      alert(res.data.message || 'Facturas generadas')
+      setConfirmGenerateInvoices(false)
+      setGenerateInvoicesMsg(res.data.message || 'Facturas generadas correctamente')
       loadData()
-    } catch (err: any) { alert('Error: ' + (err.response?.data?.error || err.message)) }
+    } catch (err: any) {
+      setError('Error al generar facturas: ' + (err.response?.data?.error || err.message))
+    }
+    setGeneratingInvoices(false)
   }
 
   function openClientProfile(clientId: number, tab = 'overview') {
@@ -329,7 +342,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return activeTab
   }
 
-  function navigateMenu(id: string) {
+  function tabNeedsFetch(id: string) {
+    return !['finance', 'staff', 'work-orders', 'detected-devices', 'billing-settings'].includes(id)
+  }
+
+  /** Cambia de pestaña sin flash de vacío: loading inmediato + seed desde overview del dashboard. */
+  function goToTab(id: string, opts?: { lifecycleFilter?: string; connFilter?: string; keepFilters?: boolean }) {
+    if (opts?.lifecycleFilter) setClientLifecycleFilter(opts.lifecycleFilter)
+    else if (id === 'clients' && !opts?.keepFilters) setClientLifecycleFilter('all')
+    if (opts?.connFilter) setClientConnFilter(opts.connFilter)
+    else if (id === 'clients' && !opts?.keepFilters) setClientConnFilter('all')
+    if (id === 'clients' && !opts?.keepFilters) setClientDebtFilter(false)
     if (isRedIspMenu(id)) {
       openRedIsp()
       return
@@ -354,17 +377,24 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     const sameTab = activeTab === id
     setSelectedClientId(null)
     setShowBillingSettings(false)
-    setActiveTab(id)
     setError('')
+    if (!sameTab && tabNeedsFetch(id)) {
+      setLoading(true)
+      if (id === 'clients' && clientOverview.length > 0) setData(clientOverview)
+      else setData([])
+    }
+    setActiveTab(id)
     // Misma pestaña (p.ej. Abonados desde el perfil): useEffect no corre → recargar.
-    // No vaciar data antes: evita "0 registros" hasta pulsar Actualizar.
     if (sameTab) {
       if (id === 'clients') void loadClientsOverview()
       else void loadData()
     } else if (leavingClient && id === 'clients') {
       void loadClientsOverview()
     }
-    // Si cambió de pestaña, el useEffect([activeTab]) dispara loadData.
+  }
+
+  function navigateMenu(id: string) {
+    goToTab(id)
   }
 
   const role = user?.role || 'admin'
@@ -586,6 +616,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     return n === 1 ? `1 ${one}` : `${n} ${many}`
   }
 
+  const emptyTabNoun: Record<string, string> = {
+    clients: 'abonados', plans: 'planes', invoices: 'facturas', tickets: 'tickets',
+    ips: 'IPs', services: 'servicios',
+  }
+
   // Red ISP nunca usa la vista genérica de pestañas (legacy activeTab 'network')
   const redIspOpen = showRedIsp || activeTab === 'red-isp' || activeTab === 'network'
 
@@ -724,7 +759,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             {tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab] && (
               <p className="text-sm text-ink-muted mt-0.5">{tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab]}</p>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && activeTab !== 'finance' && (
+            {activeTab !== 'dashboard' && !loading && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && activeTab !== 'finance' && (
               <p className="text-xs text-ink-muted mt-1">
                 {activeTab === 'clients'
                   ? `${tabCountLabel('clients', filteredClients.length)}${filteredClients.length !== data.length ? ` (de ${data.length})` : ''}`
@@ -738,7 +773,10 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               <button onClick={loadData} className="px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium text-ink">🔄 Actualizar</button>
             )}
             {activeTab === 'invoices' && (
-              <button onClick={handleGenerateInvoices} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2">📄 Generar Facturas</button>
+              <button onClick={handleGenerateInvoices} disabled={generatingInvoices}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2 disabled:opacity-60">
+                📄 {generatingInvoices ? 'Generando…' : 'Generar Facturas'}
+              </button>
             )}
             {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
@@ -751,13 +789,57 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <main className="p-8">
           {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2"><AlertTriangle className="h-5 w-5 flex-shrink-0" /> {error}</div>}
 
+          {generateInvoicesMsg && activeTab === 'invoices' && (
+            <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-sm">
+              <span>{generateInvoicesMsg}</span>
+              <button type="button" onClick={() => setGenerateInvoicesMsg('')} className="text-blue-700 hover:underline text-xs">Cerrar</button>
+            </div>
+          )}
+
+          {confirmGenerateInvoices && activeTab === 'invoices' && (
+            <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-950 px-4 py-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm">
+                <p className="font-semibold">¿Generar facturas del ciclo actual?</p>
+                <p className="text-emerald-900/80 mt-0.5">Se respeta el ciclo de cada abonado (aniversario o proporcional). No duplica si ya hay factura del período.</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setConfirmGenerateInvoices(false)}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-emerald-200 bg-white hover:bg-emerald-50">Cancelar</button>
+                <button type="button" onClick={runGenerateInvoices} disabled={generatingInvoices}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-60">
+                  {generatingInvoices ? 'Generando…' : 'Sí, generar'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {[
                   { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' as const },
-                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' as const },
+                  {
+                    label: 'Instalación',
+                    value: stats?.pendingInstallClients || 0,
+                    icon: MapPin,
+                    color: 'text-violet-600',
+                    bg: 'bg-violet-50',
+                    tab: 'clients' as const,
+                    lifecycleFilter: 'pending_install',
+                    hint: 'Abonados con instalación pendiente',
+                  },
+                  {
+                    label: 'Prospectos',
+                    value: stats?.prospectClients || 0,
+                    icon: Users,
+                    color: 'text-slate-600',
+                    bg: 'bg-slate-100',
+                    tab: 'clients' as const,
+                    lifecycleFilter: 'prospect',
+                    hint: 'Leads / aún no instalados',
+                  },
+                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' as const, connFilter: 'online' },
                   {
                     label: 'Desconectados',
                     value: Math.max(stats?.offlineClients || 0, alertsForBucket('desconectados').length),
@@ -806,9 +888,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                       onClick={() => {
                         if (s.alertBucket && hasAlerts) openAlertBucket(s.alertBucket)
                         else if (s.action) s.action()
-                        else if (s.tab) setActiveTab(s.tab)
+                        else if (s.tab) {
+                          goToTab(s.tab, {
+                            lifecycleFilter: (s as any).lifecycleFilter,
+                            connFilter: (s as any).connFilter,
+                            keepFilters: !!(s as any).lifecycleFilter || !!(s as any).connFilter,
+                          })
+                        }
                       }}
-                      title={hasAlerts ? s.hint : undefined}
+                      title={hasAlerts ? s.hint : s.hint}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
@@ -918,7 +1006,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                       <h2 className="font-semibold text-red-900 flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Abonados que requieren atención</h2>
                       <p className="text-sm text-red-700/80">Deuda, servicio suspendido o tickets abiertos</p>
                     </div>
-                    <button onClick={() => setActiveTab('clients')} className="text-sm text-red-700 hover:underline">Ver todos →</button>
+                    <button onClick={() => goToTab('clients')} className="text-sm text-red-700 hover:underline">Ver todos →</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -970,7 +1058,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                       <h2 className="font-semibold text-amber-900 flex items-center gap-2"><DollarSign className="h-5 w-5" /> Facturas vencidas</h2>
                       <p className="text-sm text-amber-700/80">${(stats?.overdueAmount || 0).toLocaleString('es-CL')} en mora</p>
                     </div>
-                    <button onClick={() => setActiveTab('invoices')} className="text-sm text-amber-800 hover:underline">Ver facturas →</button>
+                    <button onClick={() => goToTab('invoices')} className="text-sm text-amber-800 hover:underline">Ver facturas →</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1003,14 +1091,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-surface-card rounded-xl border shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b flex justify-between items-center">
-                    <h2 className="font-semibold">Abonados (estilo UISP)</h2>
-                    <button onClick={() => setActiveTab('clients')} className="text-sm text-blue-600 hover:underline">Ver listado completo →</button>
+                    <h2 className="font-semibold">Acceso rápido a abonados</h2>
+                    <button onClick={() => goToTab('clients')} className="text-sm text-blue-600 hover:underline">Ver listado completo →</button>
                   </div>
                   {clientOverview.length === 0 ? (
                     <div className="p-10 text-center text-gray-400">
                       <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">Aún no hay abonados registrados.</p>
-                      <button onClick={() => { setActiveTab('clients'); setShowForm(true) }} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer abonado</button>
+                      <button onClick={() => { goToTab('clients'); setShowForm(true) }} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer abonado</button>
                     </div>
                   ) : (
                     <div className="divide-y max-h-96 overflow-y-auto">
@@ -1182,7 +1270,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 text-sm text-blue-900 space-y-2">
                   <p><strong>Auditoría técnica</strong> — Lista global para detectar IPs duplicadas o servicios suspendidos.</p>
                   <p>Para crear servicios, asignar antenas, configurar DHCP/estática y ver facturas, entra al <strong>perfil del abonado</strong>:</p>
-                  <button onClick={() => setActiveTab('clients')} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                  <button onClick={() => goToTab('clients')} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
                     Ir a Abonados → Gestionar
                   </button>
                   {Object.values(duplicateServiceIps).some((n) => n > 1) && (
@@ -1269,17 +1357,40 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400 px-6 text-center">
                   <Users className="h-12 w-12 mb-3 opacity-30 text-blue-500" />
                   <p className="text-lg font-medium text-ink-muted">
-                    {activeTab === 'clients' ? 'Aún no hay abonados' : `No hay ${activeTab === 'ips' ? 'IPs' : activeTab === 'plans' ? 'planes' : activeTab} registrados`}
+                    {activeTab === 'clients' ? 'Aún no hay abonados'
+                      : activeTab === 'invoices' ? 'Aún no hay facturas'
+                      : activeTab === 'tickets' ? 'Aún no hay tickets'
+                      : activeTab === 'plans' ? 'Aún no hay planes'
+                      : activeTab === 'services' ? 'Sin servicios en auditoría'
+                      : `No hay ${emptyTabNoun[activeTab] || 'registros'} registrados`}
                   </p>
                   <p className="text-sm mt-1 max-w-sm">
                     {activeTab === 'clients'
                       ? 'Crea tu primer abonado para empezar a facturar y asignar servicios.'
-                      : 'Usa el botón "+ Nuevo" para agregar'}
+                      : activeTab === 'invoices'
+                        ? 'Usa «Generar Facturas» para crear el ciclo actual, o genera una desde el perfil del abonado.'
+                        : activeTab === 'tickets'
+                          ? 'Los tickets de soporte aparecerán aquí cuando un abonado o el personal abran uno.'
+                          : activeTab === 'plans'
+                            ? 'Crea un plan comercial (velocidad y precio) para asignarlo a abonados.'
+                            : 'Usa el botón «+ Nuevo» para agregar'}
                   </p>
                   {activeTab === 'clients' && (
                     <button type="button" onClick={openNewForm}
                       className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
                       <Plus className="h-4 w-4" /> Crear abonado
+                    </button>
+                  )}
+                  {activeTab === 'invoices' && (
+                    <button type="button" onClick={handleGenerateInvoices}
+                      className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 inline-flex items-center gap-2">
+                      📄 Generar Facturas
+                    </button>
+                  )}
+                  {activeTab === 'plans' && (
+                    <button type="button" onClick={openNewForm}
+                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                      <Plus className="h-4 w-4" /> Crear plan
                     </button>
                   )}
                 </div>

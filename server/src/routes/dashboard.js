@@ -38,6 +38,8 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
     const delinquentClients = clientOverview.filter((c) => c.isDelinquent);
     const offlineClients = clientOverview.filter((c) => c.connectionStatus === 'offline');
     const onlineClients = clientOverview.filter((c) => c.connectionStatus === 'online');
+    const pendingInstallClients = clientOverview.filter((c) => c.lifecycleStatus === 'pending_install');
+    const prospectClients = clientOverview.filter((c) => (c.lifecycleStatus || 'prospect') === 'prospect');
 
     const overdueInvoicesRaw = await db.select({
       id: invoices.id,
@@ -95,6 +97,8 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
         offlineClients: offlineClients.length,
         onlineClients: onlineClients.length,
         clientsWithProblems: clientsWithProblems.length,
+        pendingInstallClients: pendingInstallClients.length,
+        prospectClients: prospectClients.length,
       },
       orgSettings,
       clientOverview,
