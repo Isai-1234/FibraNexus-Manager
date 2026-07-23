@@ -40,6 +40,11 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
     const onlineClients = clientOverview.filter((c) => c.connectionStatus === 'online');
     const pendingInstallClients = clientOverview.filter((c) => c.lifecycleStatus === 'pending_install');
     const prospectClients = clientOverview.filter((c) => (c.lifecycleStatus || 'prospect') === 'prospect');
+    // Misma noción que el filtro CRM de Abonados: lifecycle o servicio suspendido/cortado
+    const suspendedClients = clientOverview.filter((c) =>
+      c.lifecycleStatus === 'suspended' || c.serviceStatus === 'suspended');
+    const cutClients = clientOverview.filter((c) =>
+      c.lifecycleStatus === 'cut' || c.serviceStatus === 'cut');
 
     const overdueInvoicesRaw = await db.select({
       id: invoices.id,
@@ -99,6 +104,8 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
         clientsWithProblems: clientsWithProblems.length,
         pendingInstallClients: pendingInstallClients.length,
         prospectClients: prospectClients.length,
+        suspendedClients: suspendedClients.length,
+        cutClients: cutClients.length,
       },
       orgSettings,
       clientOverview,

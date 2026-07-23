@@ -612,7 +612,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           const hay = `${item.fullName || ''} ${item.email || ''} ${item.city || ''} ${item.phone || ''} ${item.planName || ''} ${item.ipAddress || ''}`.toLowerCase()
           if (!hay.includes(q)) return false
         }
-        if (clientLifecycleFilter !== 'all' && (item.lifecycleStatus || 'prospect') !== clientLifecycleFilter) return false
+        if (clientLifecycleFilter === 'suspended') {
+          if (!(item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')) return false
+        } else if (clientLifecycleFilter === 'cut') {
+          if (!(item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')) return false
+        } else if (clientLifecycleFilter !== 'all' && (item.lifecycleStatus || 'prospect') !== clientLifecycleFilter) {
+          return false
+        }
         if (clientConnFilter !== 'all' && item.connectionStatus !== clientConnFilter) return false
         if (clientDebtFilter && !(item.pendingAmount > 0)) return false
         return true
@@ -882,7 +888,26 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     hint: 'Facturas vencidas / mora',
                   },
                   { label: 'Servicios activos', value: stats?.activeServices || 0, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', tab: 'services' as const },
-                  { label: 'Suspendidos', value: stats?.suspendedServices || 0, icon: WifiOff, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'services' as const },
+                  {
+                    label: 'Suspendidos',
+                    value: Math.max(stats?.suspendedClients || 0, stats?.suspendedServices || 0),
+                    icon: WifiOff,
+                    color: 'text-yellow-600',
+                    bg: 'bg-yellow-50',
+                    tab: 'clients' as const,
+                    lifecycleFilter: 'suspended',
+                    hint: 'Abonados o servicios en suspensión (mismo filtro que en Abonados)',
+                  },
+                  {
+                    label: 'Cortados',
+                    value: stats?.cutClients || 0,
+                    icon: WifiOff,
+                    color: 'text-red-600',
+                    bg: 'bg-red-50',
+                    tab: 'clients' as const,
+                    lifecycleFilter: 'cut',
+                    hint: 'Abonados cortados (CRM o servicio)',
+                  },
                   {
                     label: 'Por cobrar',
                     value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'),
