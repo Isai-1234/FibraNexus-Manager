@@ -186,7 +186,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   async function openNewForm() {
     setEditingItem(null)
-    const defaults: any = activeTab === 'services' ? { status: 'active' } : {}
+    const defaults: any = activeTab === 'services'
+      ? { status: 'active' }
+      : activeTab === 'clients'
+        ? { lifecycleStatus: 'active', clientType: 'individual' }
+        : {}
     try {
       if (activeTab === 'services' || activeTab === 'invoices' || activeTab === 'tickets') {
         const [cRes, pRes] = await Promise.all([

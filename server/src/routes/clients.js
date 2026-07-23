@@ -187,7 +187,7 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
     }
     const normalizedRut = assertOptionalRut(rut);
     const allowedLifecycle = ['prospect', 'pending_install', 'active', 'suspended', 'cut', 'cancelled'];
-    const life = allowedLifecycle.includes(lifecycleStatus) ? lifecycleStatus : 'prospect';
+    const life = allowedLifecycle.includes(lifecycleStatus) ? lifecycleStatus : 'active';
 
     const plainPass = password && String(password).length >= 10
       ? password
