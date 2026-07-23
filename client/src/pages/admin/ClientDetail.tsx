@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, User, Wifi, DollarSign, Ticket, X, CheckCircle, Clock, Phone, Mail, MapPin, CreditCard, Plus, Power, PowerOff, Router, Zap, Trash2, Antenna, Pencil, Search, Send, MessageSquare } from 'lucide-react'
 import axios from 'axios'
-import { formatDateCL, todayISO } from '../../lib/formatDate'
+import { formatDateCL, todayISO, formatBillingPeriod } from '../../lib/formatDate'
 import { formatQueueSpeedLabel } from '../../lib/bandwidth'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import NetworkSuspendStatus, { suspendToastMessage } from '../../components/NetworkSuspendStatus'
@@ -1999,7 +1999,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   {invoices.map(inv => (
                     <tr key={inv.id} className="hover:bg-surface-raised">
                       <td className="p-4 font-mono text-sm text-blue-600 font-medium">{inv.invoiceNumber}</td>
-                      <td className="p-4 text-sm">{inv.billingPeriod || '—'}</td>
+                      <td className="p-4 text-sm capitalize" title={inv.billingPeriod || ''}>{formatBillingPeriod(inv.billingPeriod)}</td>
                       <td className="p-4 text-sm">${Number(inv.amount).toLocaleString('es-CL')}</td>
                       <td className="p-4 text-sm">${Number(inv.tax).toLocaleString('es-CL')}</td>
                       <td className="p-4 font-bold">${Number(inv.total).toLocaleString('es-CL')}</td>
