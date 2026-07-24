@@ -11,6 +11,7 @@ import {
   clients,
   plans,
 } from '../db/schema.js';
+import { sumPaymentsByInvoiceIds } from '../lib/paymentService.js';
 
 export const financeRouter = Router();
 
@@ -93,17 +94,25 @@ async function summarizeInvoicesAndPayments(orgId, rangeStart, rangeEnd) {
     sql`${invoices.status} <> 'cancelled'`,
   ));
 
+  const paidByInv = await sumPaymentsByInvoiceIds(
+    invRows
+      .filter((inv) => ['pending', 'overdue', 'partial'].includes(inv.status))
+      .map((inv) => inv.id),
+  );
+
   for (const inv of invRows) {
     const total = toNum(inv.total);
+    const paidSum = paidByInv.get(Number(inv.id)) || 0;
+    const balance = Math.max(0, total - paidSum);
     if (inv.status === 'paid') {
       bucket.paidInvoices.count += 1;
       bucket.paidInvoices.total += total;
     } else if (inv.status === 'overdue') {
       bucket.overdueInvoices.count += 1;
-      bucket.overdueInvoices.total += total;
+      bucket.overdueInvoices.total += balance;
     } else if (inv.status === 'pending' || inv.status === 'partial') {
       bucket.unpaidInvoices.count += 1;
-      bucket.unpaidInvoices.total += total;
+      bucket.unpaidInvoices.total += balance;
     }
   }
 

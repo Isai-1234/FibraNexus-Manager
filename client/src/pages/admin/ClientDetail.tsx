@@ -226,12 +226,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       const [cRes, sRes, iRes, tRes] = await Promise.all([
         api().get(`/clients/${clientId}`),
         api().get(`/services?clientId=${clientId}`),
-        api().get('/invoices'),
+        api().get(`/invoices?clientId=${clientId}`),
         api().get('/tickets'),
       ])
       setClient(cRes.data)
       setServices(filterByClientId(Array.isArray(sRes.data) ? sRes.data : [], clientId))
-      setInvoices(filterByClientId(Array.isArray(iRes.data) ? iRes.data : [], clientId))
+      setInvoices(Array.isArray(iRes.data) ? iRes.data : [])
       setTickets(filterByClientId(Array.isArray(tRes.data) ? tRes.data : [], clientId))
       await loadClientEquipment({ quick: true })
       void startBackgroundSnmpRefresh()
@@ -548,10 +548,13 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
     if (!showPayModal) return
     setPayingInvoice(true)
     try {
+      const payBalance = showPayModal.balance != null
+        ? Number(showPayModal.balance)
+        : Math.max(0, Number(showPayModal.total || 0) - Number(showPayModal.paidSum || 0))
       const res = await api().post('/payments', {
         invoiceId: showPayModal.id,
         method: payMethod,
-        amount: showPayModal.total,
+        amount: payBalance > 0 ? payBalance : showPayModal.total,
         emitirDte: payEmitirDte,
         notes: payNotes.trim() || undefined,
         reference: payMethod === 'cash' ? 'efectivo' : payMethod === 'transfer' ? 'transferencia' : undefined,
@@ -579,7 +582,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   }
 
   function openQuickPay() {
-    const pending = invoices.filter((i) => i.status === 'pending' || i.status === 'overdue')
+    const pending = invoices.filter((i) =>
+      ['pending', 'overdue', 'partial'].includes(i.status) && Number(i.balance ?? i.total) > 0)
     if (pending.length === 0) {
       toast('No hay facturas pendientes. Genera una boleta o activa el servicio con Activar.', 'warning')
       setActiveTab('invoices')
@@ -874,15 +878,18 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   }
   const statusLabel: Record<string, string> = {
     active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Pendiente',
-    paid: 'Pagada', overdue: 'Vencida',     open: 'Abierto', resolved: 'Resuelto', waiting_client: 'Esperando cliente',
+    paid: 'Pagada', overdue: 'Vencida', partial: 'Pago parcial', open: 'Abierto', resolved: 'Resuelto', waiting_client: 'Esperando cliente',
     in_progress: 'En proceso', closed: 'Cerrado', cut: 'Cortado',
     critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
     prospect: 'Prospecto', pending_install: 'Instalación pendiente',
   }
 
-  const pendingInvoices = invoices.filter(i => i.status === 'pending' || i.status === 'overdue')
-  const totalDeuda = pendingInvoices.reduce((sum, i) => sum + Number(i.total || 0), 0)
+  const pendingInvoices = invoices.filter(i => ['pending', 'overdue', 'partial'].includes(i.status))
+  const totalDeuda = pendingInvoices.reduce((sum, i) => {
+    const bal = i.balance != null ? Number(i.balance) : Math.max(0, Number(i.total || 0) - Number(i.paidSum || 0))
+    return sum + bal
+  }, 0)
   const primaryAntenna = clientEquipment.find((e) => e.type === 'cpe') || clientEquipment[0]
   const antennaOnline = primaryAntenna?.status === 'online'
   const activeService = services.find((s) => s.status === 'active')
@@ -950,7 +957,15 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               <div className="bg-surface rounded-lg p-4">
                 <p className="text-sm text-ink-muted">Factura</p>
                 <p className="font-bold text-lg">{showPayModal.invoiceNumber}</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">${Number(showPayModal.total).toLocaleString('es-CL')}</p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">
+                  ${(showPayModal.balance != null
+                    ? Number(showPayModal.balance)
+                    : Math.max(0, Number(showPayModal.total || 0) - Number(showPayModal.paidSum || 0))
+                  ).toLocaleString('es-CL')}
+                </p>
+                {showPayModal.balance != null && Number(showPayModal.balance) < Number(showPayModal.total) && (
+                  <p className="text-xs text-ink-muted mt-1">Total boleta ${Number(showPayModal.total).toLocaleString('es-CL')} · saldo pendiente</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">Método de pago</label>
@@ -1991,11 +2006,16 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <p className="text-xs text-ink-muted">{formatDateCL(inv.dueDate) || inv.billingPeriod || '—'}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-white">${Number(inv.total).toLocaleString('es-CL')}</p>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-white">${Number(inv.total).toLocaleString('es-CL')}</p>
+                        {['pending', 'overdue', 'partial'].includes(inv.status) && inv.balance != null && Number(inv.balance) < Number(inv.total) && (
+                          <p className="text-[10px] text-amber-300">Saldo ${Number(inv.balance).toLocaleString('es-CL')}</p>
+                        )}
+                      </div>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-surface-raised'}`}>
                         {statusLabel[inv.status] || inv.status}
                       </span>
-                      {(inv.status === 'pending' || inv.status === 'overdue') && (
+                      {['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
                         <button onClick={() => openPayModal(inv)} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-500">Pagar</button>
                       )}
                     </div>
@@ -2366,7 +2386,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <td className="p-4 text-sm capitalize" title={inv.billingPeriod || ''}>{formatBillingPeriod(inv.billingPeriod)}</td>
                       <td className="p-4 text-sm">${Number(inv.amount).toLocaleString('es-CL')}</td>
                       <td className="p-4 text-sm">${Number(inv.tax).toLocaleString('es-CL')}</td>
-                      <td className="p-4 font-bold">${Number(inv.total).toLocaleString('es-CL')}</td>
+                      <td className="p-4 font-bold">
+                        ${Number(inv.total).toLocaleString('es-CL')}
+                        {['pending', 'overdue', 'partial'].includes(inv.status) && inv.balance != null && Number(inv.balance) < Number(inv.total) && (
+                          <p className="text-xs font-medium text-amber-600 mt-0.5">Saldo ${Number(inv.balance).toLocaleString('es-CL')}</p>
+                        )}
+                      </td>
                       <td className="p-4 text-sm text-ink-muted">{formatDateCL(inv.dueDate)}</td>
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-surface-raised'}`}>
@@ -2374,7 +2399,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         </span>
                       </td>
                       <td className="p-4">
-                        {(inv.status === 'pending' || inv.status === 'overdue') && (
+                        {['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
                           <button onClick={() => openPayModal(inv)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
                             Registrar pago
                           </button>

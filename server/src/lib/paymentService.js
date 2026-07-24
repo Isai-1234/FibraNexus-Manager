@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { payments, invoices } from '../db/schema.js';
 import { orgFilter } from './tenant.js';
@@ -7,12 +7,46 @@ import { computeInvoiceStatus } from './paymentStatus.js';
 export { computeInvoiceStatus };
 
 const PAID_STATUSES = new Set(['paid']);
+export const OPEN_INVOICE_STATUSES = ['pending', 'overdue', 'partial'];
 
 export async function sumPaymentsForInvoice(invoiceId) {
   const [{ total }] = await db.select({
     total: sql`coalesce(sum(${payments.amount}::decimal), 0)`,
   }).from(payments).where(eq(payments.invoiceId, invoiceId));
   return Number(total || 0);
+}
+
+/** Suma de pagos por factura (una query). */
+export async function sumPaymentsByInvoiceIds(invoiceIds) {
+  const ids = [...new Set((invoiceIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0))];
+  if (!ids.length) return new Map();
+  const rows = await db.select({
+    invoiceId: payments.invoiceId,
+    total: sql`coalesce(sum(${payments.amount}::decimal), 0)`,
+  })
+    .from(payments)
+    .where(inArray(payments.invoiceId, ids))
+    .groupBy(payments.invoiceId);
+  return new Map(rows.map((r) => [Number(r.invoiceId), Number(r.total || 0)]));
+}
+
+/** Adjunta paidSum y balance a filas de factura (misma noción en todo el panel). */
+export async function attachInvoiceBalances(invoiceRows) {
+  const rows = Array.isArray(invoiceRows) ? invoiceRows : [];
+  const paidMap = await sumPaymentsByInvoiceIds(rows.map((r) => r.id));
+  return rows.map((inv) => {
+    const paidSum = paidMap.get(Number(inv.id)) || 0;
+    const total = Number(inv.total || 0);
+    const balance = Math.max(0, Math.round((total - paidSum) * 100) / 100);
+    return { ...inv, paidSum, balance };
+  });
+}
+
+export function invoiceOpenBalance(inv) {
+  if (!inv || inv.status === 'cancelled' || inv.status === 'paid') return 0;
+  if (inv.balance != null) return Math.max(0, Number(inv.balance) || 0);
+  const paid = Number(inv.paidSum || 0);
+  return Math.max(0, Number(inv.total || 0) - paid);
 }
 
 /**

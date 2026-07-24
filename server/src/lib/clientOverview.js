@@ -6,6 +6,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { daysOverdue } from './orgSettings.js';
 import { getOnlinePppoeUsernames } from './billingScheduler.js';
+import { OPEN_INVOICE_STATUSES, sumPaymentsByInvoiceIds } from './paymentService.js';
 
 function daysSince(date) {
   if (!date) return 0;
@@ -55,6 +56,7 @@ export async function buildClientOverview(orgId) {
     .where(inArray(clientServices.clientId, clientIds));
 
   const invoiceRows = await db.select({
+    id: invoices.id,
     clientId: invoices.clientId,
     total: invoices.total,
     status: invoices.status,
@@ -62,6 +64,8 @@ export async function buildClientOverview(orgId) {
   })
     .from(invoices)
     .where(and(orgFilter(invoices, orgId), inArray(invoices.clientId, clientIds)));
+
+  const paidByInvoice = await sumPaymentsByInvoiceIds(invoiceRows.map((i) => i.id));
 
   const ticketRows = await db.select({
     clientId: tickets.clientId,
@@ -119,9 +123,13 @@ export async function buildClientOverview(orgId) {
     const activeSvc = svcs.find((s) => s.status === 'active');
     const suspendedSvc = svcs.find((s) => s.status === 'suspended' || s.status === 'cut');
     const openTickets = tks.filter((t) => ['open', 'in_progress', 'waiting_client'].includes(t.status));
-    const pendingInvs = invs.filter((i) => i.status === 'pending' || i.status === 'overdue');
-    const pendingAmount = pendingInvs.reduce((sum, i) => sum + Number(i.total || 0), 0);
-    const overdueInvs = invs.filter((i) => i.status === 'overdue');
+    const openInvs = invs.filter((i) => OPEN_INVOICE_STATUSES.includes(i.status));
+    const pendingAmount = Math.round(openInvs.reduce((sum, i) => {
+      const paid = paidByInvoice.get(Number(i.id)) || 0;
+      return sum + Math.max(0, Number(i.total || 0) - paid);
+    }, 0) * 100) / 100;
+    const overdueInvs = invs.filter((i) => i.status === 'overdue'
+      || (i.status === 'partial' && daysOverdue(i.dueDate) > 0));
     const maxOverdueDays = overdueInvs.reduce((max, i) => Math.max(max, daysOverdue(i.dueDate)), 0);
 
     let connectionStatus = 'none';

@@ -7,7 +7,7 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, getInvoiceInOrg, getServiceInOrg, getClientInOrg } from '../lib/tenant.js';
 import { createInvoiceForService, previewInvoiceForService, createManualInvoice } from '../lib/invoiceService.js';
 import { parseBody, manualInvoiceSchema } from '../lib/validators.js';
-import { registerPayment } from '../lib/paymentService.js';
+import { registerPayment, attachInvoiceBalances } from '../lib/paymentService.js';
 import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 
 export const invoicesRouter = Router();
@@ -17,6 +17,7 @@ invoicesRouter.get('/', requireRole('admin', 'office', 'technician'), async (req
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
     const { page, limit, offset, paginated } = parsePaginationQuery(req.query);
+    const clientId = req.query.clientId != null ? parseInt(String(req.query.clientId), 10) : null;
 
     const baseSelect = {
       id: invoices.id,
@@ -34,29 +35,37 @@ invoicesRouter.get('/', requireRole('admin', 'office', 'technician'), async (req
       client: { fullName: users.fullName, email: users.email },
     };
 
+    const conditions = [orgFilter(invoices, orgId)];
+    if (Number.isFinite(clientId) && clientId > 0) {
+      conditions.push(eq(invoices.clientId, clientId));
+    }
+    const whereClause = and(...conditions);
+
     if (paginated) {
       const [{ total }] = await db.select({ total: sql`count(*)::int` })
         .from(invoices)
-        .where(orgFilter(invoices, orgId));
+        .where(whereClause);
       const rows = await db.select(baseSelect)
         .from(invoices)
         .leftJoin(clients, eq(invoices.clientId, clients.id))
         .leftJoin(users, eq(clients.userId, users.id))
-        .where(orgFilter(invoices, orgId))
+        .where(whereClause)
         .orderBy(invoices.createdAt)
         .limit(limit)
         .offset(offset);
-      return res.json({ items: rows, pagination: paginationMeta(total, page, limit) });
+      const items = await attachInvoiceBalances(rows);
+      return res.json({ items, pagination: paginationMeta(total, page, limit) });
     }
 
+    // Con clientId: todas las boletas del abonado. Sin filtro: hasta 500 (antes 50 cortaba el perfil).
     const allInvoices = await db.select(baseSelect)
       .from(invoices)
       .leftJoin(clients, eq(invoices.clientId, clients.id))
       .leftJoin(users, eq(clients.userId, users.id))
-      .where(orgFilter(invoices, orgId))
-      .orderBy(invoices.createdAt)
-      .limit(50);
-    res.json(allInvoices);
+      .where(whereClause)
+      .orderBy(sql`${invoices.createdAt} DESC`)
+      .limit(Number.isFinite(clientId) && clientId > 0 ? 1000 : 500);
+    res.json(await attachInvoiceBalances(allInvoices));
   } catch (error) {
     res.status(500).json({ error: 'Error al listar facturas' });
   }

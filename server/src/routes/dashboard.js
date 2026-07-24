@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { clients, clientServices, equipment, invoices, tickets, users, plans } from '../db/schema.js';
-import { and, eq, sql, ne, inArray } from 'drizzle-orm';
+import { clients, clientServices, equipment, invoices, tickets, users, plans, payments } from '../db/schema.js';
+import { and, eq, sql, ne, inArray, gte, lt, desc } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
 import { daysOverdue } from '../lib/orgSettings.js';
 import { getOrgSettings } from '../lib/billingScheduler.js';
+import { OPEN_INVOICE_STATUSES, attachInvoiceBalances } from '../lib/paymentService.js';
 
 export const dashboardRouter = Router();
+
+function startOfMonthUTC(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+}
+
+function addMonthsUTC(date, delta) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + delta, 1));
+}
 
 dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), async (req, res) => {
   try {
@@ -26,10 +35,6 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
       .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router'))))[0].count;
     const totalRouters = (await db.select({ count: sql`count(*)` }).from(equipment)
       .where(and(orgFilter(equipment, orgId), eq(equipment.type, 'router'))))[0].count;
-    const pendingInvoices = (await db.select({ count: sql`count(*)`, total: sql`sum(total::decimal)` }).from(invoices)
-      .where(and(inArray(invoices.status, ['pending', 'overdue']), orgFilter(invoices, orgId))))[0];
-    const overdueOnly = (await db.select({ count: sql`count(*)`, total: sql`sum(total::decimal)` }).from(invoices)
-      .where(and(eq(invoices.status, 'overdue'), orgFilter(invoices, orgId))))[0];
     const openTickets = (await db.select({ count: sql`count(*)` }).from(tickets).where(and(eq(tickets.status, 'open'), orgFilter(tickets, orgId))))[0].count;
     const totalPlans = (await db.select({ count: sql`count(*)` }).from(plans).where(orgFilter(plans, orgId)))[0].count;
 
@@ -46,7 +51,11 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
     const cutClients = clientOverview.filter((c) =>
       c.lifecycleStatus === 'cut' || c.serviceStatus === 'cut');
 
-    const overdueInvoicesRaw = await db.select({
+    // Por cobrar = suma de saldos abiertos del overview (misma cifra que perfil/listado)
+    const pendingAmount = Math.round(clientOverview.reduce((s, c) => s + Number(c.pendingAmount || 0), 0) * 100) / 100;
+    const pendingCount = clientOverview.filter((c) => Number(c.pendingAmount || 0) > 0).length;
+
+    const openInvoiceRows = await db.select({
       id: invoices.id,
       invoiceNumber: invoices.invoiceNumber,
       total: invoices.total,
@@ -58,14 +67,56 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
       .from(invoices)
       .leftJoin(clients, eq(invoices.clientId, clients.id))
       .leftJoin(users, eq(clients.userId, users.id))
-      .where(and(eq(invoices.status, 'overdue'), orgFilter(invoices, orgId)))
-      .orderBy(invoices.dueDate)
-      .limit(15);
+      .where(and(inArray(invoices.status, OPEN_INVOICE_STATUSES), orgFilter(invoices, orgId)))
+      .orderBy(invoices.dueDate);
 
-    const overdueInvoices = overdueInvoicesRaw.map((inv) => ({
+    const openWithBalance = await attachInvoiceBalances(openInvoiceRows);
+    const overdueWithBalance = openWithBalance
+      .filter((inv) => inv.status === 'overdue' || (inv.status === 'partial' && daysOverdue(inv.dueDate) > 0))
+      .filter((inv) => Number(inv.balance || 0) > 0);
+    const overdueAmount = Math.round(overdueWithBalance.reduce((s, inv) => s + Number(inv.balance || 0), 0) * 100) / 100;
+    const overdueInvoices = overdueWithBalance.slice(0, 15).map((inv) => ({
       ...inv,
       overdueDays: daysOverdue(inv.dueDate),
     }));
+
+    const now = new Date();
+    const monthStart = startOfMonthUTC(now.getUTCFullYear(), now.getUTCMonth());
+    const monthEnd = addMonthsUTC(monthStart, 1);
+
+    const monthPayAgg = (await db.select({
+      count: sql`count(*)::int`,
+      total: sql`coalesce(sum(${payments.amount}::decimal), 0)`,
+    }).from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .where(and(
+        orgFilter(invoices, orgId),
+        gte(payments.paymentDate, monthStart),
+        lt(payments.paymentDate, monthEnd),
+      )))[0];
+
+    const recentPayments = await db.select({
+      id: payments.id,
+      amount: payments.amount,
+      method: payments.method,
+      paymentDate: payments.paymentDate,
+      reference: payments.reference,
+      invoiceId: payments.invoiceId,
+      invoiceNumber: invoices.invoiceNumber,
+      clientId: payments.clientId,
+      clientName: users.fullName,
+    })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .leftJoin(clients, eq(payments.clientId, clients.id))
+      .leftJoin(users, eq(clients.userId, users.id))
+      .where(and(
+        orgFilter(invoices, orgId),
+        gte(payments.paymentDate, monthStart),
+        lt(payments.paymentDate, monthEnd),
+      ))
+      .orderBy(desc(payments.paymentDate))
+      .limit(20);
 
     const recentTickets = await db.select({
       id: tickets.id,
@@ -94,10 +145,12 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
         totalRouters: Number(totalRouters),
         openTickets: Number(openTickets),
         totalPlans: Number(totalPlans),
-        pendingAmount: Number(pendingInvoices.total || 0),
-        pendingCount: Number(pendingInvoices.count || 0),
-        overdueAmount: Number(overdueOnly.total || 0),
-        overdueCount: Number(overdueOnly.count || 0),
+        pendingAmount,
+        pendingCount,
+        overdueAmount,
+        overdueCount: overdueWithBalance.length,
+        monthCollected: Math.round(Number(monthPayAgg?.total || 0) * 100) / 100,
+        monthPaymentCount: Number(monthPayAgg?.count || 0),
         delinquentClients: delinquentClients.length,
         offlineClients: offlineClients.length,
         onlineClients: onlineClients.length,
@@ -113,6 +166,10 @@ dashboardRouter.get('/admin', requireRole('admin', 'office', 'technician'), asyn
       delinquentClients,
       overdueInvoices,
       recentTickets,
+      recentPayments: recentPayments.map((p) => ({
+        ...p,
+        amount: Number(p.amount || 0),
+      })),
     });
   } catch (error) {
     res.status(500).json({ error: 'Error: ' + error.message });

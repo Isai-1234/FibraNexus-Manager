@@ -32,6 +32,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [clientsWithProblems, setClientsWithProblems] = useState<any[]>([])
   const [overdueInvoices, setOverdueInvoices] = useState<any[]>([])
   const [recentTickets, setRecentTickets] = useState<any[]>([])
+  const [recentPayments, setRecentPayments] = useState<any[]>([])
   const [error, setError] = useState('')
   const [clients, setClients] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
@@ -99,6 +100,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         setClientsWithProblems(dashRes.data.clientsWithProblems || [])
         setOverdueInvoices(dashRes.data.overdueInvoices || [])
         setRecentTickets(dashRes.data.recentTickets || [])
+        setRecentPayments(dashRes.data.recentPayments || [])
         const raw = Array.isArray(alertsRes.data?.items) ? alertsRes.data.items : []
         setOrgAlerts(raw.filter((a: any) => a.status === 'open' || a.status === 'acked'))
         setListHydrated(true)
@@ -565,7 +567,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   const statusLabel: Record<string, string> = {
     active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Pendiente', cut: 'Cortado',
-    paid: 'Pagada', overdue: 'Vencida', open: 'Abierto', in_progress: 'En proceso',
+    paid: 'Pagada', overdue: 'Vencida', partial: 'Pago parcial', pending: 'Pendiente', open: 'Abierto', in_progress: 'En progreso',
     resolved: 'Resuelto', closed: 'Cerrado', online: 'Online', offline: 'Offline',
     maintenance: 'Mantenimiento', error: 'Error', critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
@@ -909,6 +911,15 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     hint: 'Abonados cortados (CRM o servicio)',
                   },
                   {
+                    label: 'Entrada del mes',
+                    value: '$' + (stats?.monthCollected || 0).toLocaleString('es-CL'),
+                    icon: TrendingUp,
+                    color: 'text-emerald-600',
+                    bg: 'bg-emerald-50',
+                    tab: 'finance' as const,
+                    hint: `${stats?.monthPaymentCount || 0} pago(s) registrados este mes`,
+                  },
+                  {
                     label: 'Por cobrar',
                     value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'),
                     icon: DollarSign,
@@ -916,7 +927,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     bg: 'bg-amber-50',
                     alertBucket: alertsForBucket('cobros').length ? ('cobros' as const) : undefined,
                     tab: 'invoices' as const,
-                    hint: 'Fallos de cobro y saldos pendientes',
+                    hint: 'Suma de saldos abiertos (misma cifra que en perfiles)',
                   },
                   { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' as const },
                   { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' as const },
@@ -959,9 +970,60 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           {isOpen ? 'Cerrar detalle ↑' : 'Ver alertas →'}
                         </p>
                       )}
+                      {!hasAlerts && s.hint && s.label === 'Entrada del mes' && (
+                        <p className="text-[10px] text-ink-muted mt-1">{s.hint}</p>
+                      )}
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Entrada del mes — quién pagó */}
+              <div className="bg-surface-card rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center">
+                  <div>
+                    <h2 className="font-semibold text-emerald-900 flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" /> Pagos del mes
+                    </h2>
+                    <p className="text-sm text-emerald-800/80">
+                      ${(stats?.monthCollected || 0).toLocaleString('es-CL')} ingresados · {stats?.monthPaymentCount || 0} pago(s)
+                    </p>
+                  </div>
+                  <button onClick={() => goToTab('finance')} className="text-sm text-emerald-800 hover:underline">Ver finanzas →</button>
+                </div>
+                {recentPayments.length === 0 ? (
+                  <p className="p-8 text-center text-ink-muted text-sm">Aún no hay pagos registrados este mes.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-surface text-xs uppercase text-ink-muted">
+                        <tr>
+                          {['Fecha', 'Abonado', 'Boleta', 'Monto', 'Método', ''].map(h => (
+                            <th key={h} className="text-left p-4">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {recentPayments.map((p: any) => (
+                          <tr key={p.id} className="hover:bg-emerald-50/40">
+                            <td className="p-4 text-sm text-ink-muted">
+                              {p.paymentDate ? new Date(p.paymentDate).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </td>
+                            <td className="p-4 font-medium text-sm">{p.clientName || '—'}</td>
+                            <td className="p-4 font-mono text-sm text-indigo-600">{p.invoiceNumber || '—'}</td>
+                            <td className="p-4 font-bold text-emerald-700">${Number(p.amount || 0).toLocaleString('es-CL')}</td>
+                            <td className="p-4 text-sm capitalize">{p.method || '—'}</td>
+                            <td className="p-4">
+                              {p.clientId && (
+                                <button onClick={() => openClientProfile(p.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {alertPanel && (
@@ -1120,7 +1182,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           <tr key={inv.id} className="hover:bg-amber-50/30">
                             <td className="p-4 font-mono text-sm text-indigo-600">{inv.invoiceNumber}</td>
                             <td className="p-4 font-medium">{inv.clientName}</td>
-                            <td className="p-4 font-bold text-red-600">${Number(inv.total).toLocaleString('es-CL')}</td>
+                            <td className="p-4 font-bold text-red-600">
+                              ${Number(inv.balance != null ? inv.balance : inv.total).toLocaleString('es-CL')}
+                              {inv.balance != null && Number(inv.balance) < Number(inv.total) && (
+                                <p className="text-xs font-normal text-ink-muted mt-0.5">de ${Number(inv.total).toLocaleString('es-CL')}</p>
+                              )}
+                            </td>
                             <td className="p-4 text-sm">{formatDateCL(inv.dueDate)}</td>
                             <td className="p-4"><span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{inv.overdueDays} días</span></td>
                             <td className="p-4">
@@ -1618,7 +1685,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                             <td className="p-4 text-sm capitalize" title={item.billingPeriod || ''}>{formatBillingPeriod(item.billingPeriod)}</td>
                             <td className="p-4 text-sm">${Number(item.amount).toLocaleString('es-CL')}</td>
                             <td className="p-4 text-sm">${Number(item.tax).toLocaleString('es-CL')}</td>
-                            <td className="p-4 font-bold">${Number(item.total).toLocaleString('es-CL')}</td>
+                            <td className="p-4 font-bold">
+                              ${Number(item.total).toLocaleString('es-CL')}
+                              {['pending', 'overdue', 'partial'].includes(item.status) && item.balance != null && Number(item.balance) < Number(item.total) && (
+                                <p className="text-xs font-medium text-amber-600 mt-0.5">Saldo ${Number(item.balance).toLocaleString('es-CL')}</p>
+                              )}
+                            </td>
                             <td className="p-4">
                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[item.status] || 'bg-surface-raised'}`}>{statusLabel[item.status] || item.status}</span>
                               {item.status === 'overdue' && item.dueDate && (
