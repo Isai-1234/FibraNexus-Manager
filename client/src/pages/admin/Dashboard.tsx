@@ -567,7 +567,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
   const statusLabel: Record<string, string> = {
     active: 'Activo', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Pendiente', cut: 'Cortado',
-    paid: 'Pagada', overdue: 'Vencida', partial: 'Pago parcial', pending: 'Pendiente', open: 'Abierto', in_progress: 'En progreso',
+      paid: 'Pagada', overdue: 'Vencida', partial: 'Pago parcial', open: 'Abierto', in_progress: 'En progreso',
     resolved: 'Resuelto', closed: 'Cerrado', online: 'Online', offline: 'Offline',
     maintenance: 'Mantenimiento', error: 'Error', critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja',
     individual: 'Individual', business: 'Empresa',
