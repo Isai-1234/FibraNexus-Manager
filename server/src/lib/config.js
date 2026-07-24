@@ -1,4 +1,7 @@
 import '../loadEnv.js';
+import { execSync } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 
 /**
  * Config centralizada — cambiar proveedor = cambiar env, no código.
@@ -37,6 +40,43 @@ export function cleanDatabaseUrl(raw) {
   return v.trim();
 }
 
+function resolveGitCommit() {
+  const fromEnv = (
+    process.env.RENDER_GIT_COMMIT
+    || process.env.GIT_COMMIT
+    || process.env.COMMIT_SHA
+    || process.env.SOURCE_VERSION
+    || ''
+  ).trim();
+  if (fromEnv) return fromEnv.slice(0, 7);
+
+  try {
+    const sha = execSync('git rev-parse --short HEAD', {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+    }).trim();
+    if (sha) return sha.slice(0, 7);
+  } catch { /* sin git en PATH */ }
+
+  try {
+    const gitHead = join(process.cwd(), '.git', 'HEAD');
+    if (!existsSync(gitHead)) return 'local';
+    const head = readFileSync(gitHead, 'utf8').trim();
+    if (head.startsWith('ref:')) {
+      const ref = head.slice(4).trim();
+      const refPath = join(process.cwd(), '.git', ref);
+      if (existsSync(refPath)) {
+        return readFileSync(refPath, 'utf8').trim().slice(0, 7);
+      }
+    }
+    return head.slice(0, 7);
+  } catch {
+    return 'local';
+  }
+}
+
 export const config = {
   get port() {
     return parseInt(process.env.PORT || '10000', 10);
@@ -66,7 +106,7 @@ export const config = {
     return process.env.USE_JOB_QUEUE === 'true';
   },
   get commit() {
-    return process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'local';
+    return resolveGitCommit();
   },
 };
 

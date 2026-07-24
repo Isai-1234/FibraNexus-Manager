@@ -130,6 +130,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [replyText, setReplyText] = useState('')
   const [ticketLoading, setTicketLoading] = useState(false)
   const [sendingReply, setSendingReply] = useState(false)
+  const [showTicketForm, setShowTicketForm] = useState(false)
+  const [savingTicket, setSavingTicket] = useState(false)
+  const [ticketForm, setTicketForm] = useState({
+    subject: '',
+    description: '',
+    priority: 'medium',
+    category: 'technical',
+  })
   const [linkFullscreen, setLinkFullscreen] = useState(false)
   const [snmpRefreshing, setSnmpRefreshing] = useState(false)
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'error' | 'success' | 'warning' | 'info' }[]>([])
@@ -296,6 +304,32 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       toast(err.response?.data?.error || 'Error al actualizar estado', 'error')
     }
     setTicketLoading(false)
+  }
+
+  async function createTicket() {
+    if (!ticketForm.subject.trim()) {
+      toast('Escribe un asunto', 'warning')
+      return
+    }
+    setSavingTicket(true)
+    try {
+      const res = await api().post('/tickets', {
+        clientId,
+        subject: ticketForm.subject.trim(),
+        description: ticketForm.description.trim() || undefined,
+        priority: ticketForm.priority,
+        category: ticketForm.category,
+      })
+      setShowTicketForm(false)
+      setTicketForm({ subject: '', description: '', priority: 'medium', category: 'technical' })
+      toast('Ticket creado', 'success')
+      await loadAll()
+      const created = res.data?.id
+      if (created) loadTicketDetail(created)
+    } catch (e: any) {
+      toast(e.response?.data?.error || e.message, 'error')
+    }
+    setSavingTicket(false)
   }
 
   async function provisionNetwork(serviceId: number, serviceRouterId?: number | null) {
@@ -2365,6 +2399,14 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
         {/* TICKETS */}
         {activeTab === 'tickets' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-ink-muted">Incidencias del abonado — visibles en su portal</p>
+              <button type="button" onClick={() => setShowTicketForm(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                <Plus className="h-4 w-4" /> Nuevo ticket
+              </button>
+            </div>
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-[480px]">
             <div className="lg:col-span-2 bg-surface-card rounded-xl shadow-sm border border-line overflow-hidden">
               <div className="p-4 border-b bg-surface">
@@ -2375,6 +2417,10 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               <div className="text-center py-16 text-gray-400">
                 <Ticket className="h-12 w-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium">Sin tickets registrados</p>
+                <button type="button" onClick={() => setShowTicketForm(true)}
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Crear ticket
+                </button>
               </div>
             ) : (
                 <div className="divide-y max-h-[520px] overflow-y-auto">
@@ -2497,7 +2543,69 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               ) : null}
             </div>
           </div>
+          </div>
         )}
+
+      {/* Modal nuevo ticket */}
+      {showTicketForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowTicketForm(false)}>
+          <div className="bg-surface-card rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-bold text-lg text-ink">Nuevo ticket</h3>
+              <button type="button" onClick={() => setShowTicketForm(false)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Asunto</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={ticketForm.subject}
+                  onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
+                  placeholder="Ej: Sin internet / antena caída"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Detalle</label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 text-sm min-h-[80px]"
+                  value={ticketForm.description}
+                  onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })}
+                  placeholder="Qué reportó el abonado…"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Prioridad</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm" value={ticketForm.priority}
+                    onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })}>
+                    <option value="low">Baja</option>
+                    <option value="medium">Media</option>
+                    <option value="high">Alta</option>
+                    <option value="urgent">Urgente</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Categoría</label>
+                  <select className="w-full border rounded-lg px-3 py-2 text-sm" value={ticketForm.category}
+                    onChange={(e) => setTicketForm({ ...ticketForm, category: e.target.value })}>
+                    <option value="technical">Técnico</option>
+                    <option value="billing">Facturación</option>
+                    <option value="sales">Comercial</option>
+                    <option value="other">Otro</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowTicketForm(false)} className="flex-1 py-2.5 border rounded-lg font-medium">Cancelar</button>
+                <button type="button" disabled={savingTicket} onClick={createTicket}
+                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-60">
+                  {savingTicket ? 'Creando…' : 'Crear ticket'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Vista inmersiva del enlace */}
