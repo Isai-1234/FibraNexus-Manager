@@ -123,6 +123,22 @@ export const serviceBillingUpdateSchema = z.object({
   notes: z.string().max(4000).optional().nullable(),
 }).strict();
 
+/** Boleta/factura manual desde perfil del abonado. */
+export const manualInvoiceSchema = z.object({
+  clientId: z.coerce.number().int().positive(),
+  clientServiceId: z.coerce.number().int().positive().optional().nullable(),
+  concept: z.enum(['plan', 'installation', 'tv', 'cameras', 'other']).default('other'),
+  description: z.string().min(2).max(255).optional().nullable(),
+  /** Total con IVA incluido (CLP). */
+  total: z.coerce.number().positive('El monto debe ser mayor a 0'),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+  /** Si true, registra pago completo al crear la boleta. */
+  payNow: z.boolean().optional().nullable(),
+  payMethod: z.enum(['cash', 'transfer', 'card', 'flow', 'other']).optional().nullable(),
+  payNotes: z.string().max(2000).optional().nullable(),
+}).strict();
+
 export function parseBody(schema, body) {
   const result = schema.safeParse(body);
   if (!result.success) {

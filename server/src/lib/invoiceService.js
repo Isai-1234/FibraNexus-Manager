@@ -125,3 +125,81 @@ export async function previewInvoiceForService(orgId, serviceId) {
     billingPrice: preview.precioBase,
   };
 }
+
+const MANUAL_CONCEPT_LABELS = {
+  plan: 'Mensualidad plan',
+  installation: 'Instalación',
+  tv: 'Servicio TV',
+  cameras: 'Cámaras / seguridad',
+  other: 'Cargo adicional',
+};
+
+/**
+ * Boleta/factura manual (plan, instalación, TV, cámaras u otro).
+ * totalIngresado = precio con IVA incluido (estilo Chile).
+ */
+export async function createManualInvoice(orgId, {
+  clientId,
+  clientServiceId = null,
+  concept = 'other',
+  description,
+  totalIngresado,
+  dueDate,
+  notes,
+}) {
+  const totalBruto = Math.round(Number(totalIngresado));
+  if (!Number.isFinite(totalBruto) || totalBruto <= 0) {
+    throw new Error('Monto inválido');
+  }
+
+  const conceptKey = MANUAL_CONCEPT_LABELS[concept] ? concept : 'other';
+  const label = (description && String(description).trim())
+    || MANUAL_CONCEPT_LABELS[conceptKey];
+
+  let service = null;
+  if (clientServiceId) {
+    const row = await loadServiceBundle(clientServiceId, orgId);
+    if (!row || row.service.clientId !== clientId) {
+      throw new Error('Servicio no pertenece al abonado');
+    }
+    service = row.service;
+  }
+
+  const amounts = buildInvoiceAmounts(totalBruto, service || {});
+  const today = new Date();
+  const ym = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const billingPeriod = `manual-${ym}-${conceptKey}`;
+  const due = dueDate || (() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 5);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const stamp = Date.now().toString(36).slice(-6).toUpperCase();
+  const invNumber = `M-${ym.replace('-', '')}-C${clientId}-${stamp}`;
+  const noteParts = [label, `Concepto: ${MANUAL_CONCEPT_LABELS[conceptKey]}`];
+  if (notes) noteParts.push(String(notes).trim());
+
+  const [inv] = await db.insert(invoices).values({
+    organizationId: orgId,
+    invoiceNumber: invNumber,
+    clientId,
+    clientServiceId: clientServiceId || null,
+    amount: String(amounts.amount),
+    tax: String(amounts.tax),
+    total: String(amounts.total),
+    status: 'pending',
+    dueDate: due,
+    billingPeriod,
+    notes: noteParts.join(' · '),
+  }).returning();
+
+  return {
+    invoice: inv,
+    amount: amounts.amount,
+    tax: amounts.tax,
+    total: amounts.total,
+    concept: conceptKey,
+    label,
+  };
+}

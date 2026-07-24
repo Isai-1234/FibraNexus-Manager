@@ -9,10 +9,25 @@ export function formatDateCL(value: string | null | undefined): string {
   return date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-/** Período interno (2026-07-d1-p0 / 2026-07-pro) → etiqueta legible para ISP */
+/** Período interno (2026-07-d1-p0 / 2026-07-pro / manual-2026-07-plan) → etiqueta legible para ISP */
 export function formatBillingPeriod(value: string | null | undefined): string {
   if (!value) return '—'
   const raw = String(value)
+  const manual = raw.match(/^manual-(\d{4})-(\d{2})-([a-z]+)/i)
+  if (manual) {
+    const year = Number(manual[1])
+    const month = Number(manual[2])
+    const concept = manual[3]
+    const monthName = new Date(year, month - 1, 1).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+    const labels: Record<string, string> = {
+      plan: 'Mensualidad',
+      installation: 'Instalación',
+      tv: 'TV',
+      cameras: 'Cámaras',
+      other: 'Cargo extra',
+    }
+    return `${labels[concept] || 'Manual'} · ${monthName}`
+  }
   const m = raw.match(/^(\d{4})-(\d{2})(?:-d(\d+))?(?:-p(\d+))?(-pro)?/)
   if (!m) return raw
   const year = Number(m[1])

@@ -4,8 +4,11 @@ import { invoices, clients, users, clientServices } from '../db/schema.js';
 import { eq, and, lte, or, isNull, sql } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import { requireRole } from '../middleware/auth.js';
-import { orgFilter, requireOrganizationId, getInvoiceInOrg, getServiceInOrg } from '../lib/tenant.js';
-import { createInvoiceForService, previewInvoiceForService } from '../lib/invoiceService.js';
+import { orgFilter, requireOrganizationId, getInvoiceInOrg, getServiceInOrg, getClientInOrg } from '../lib/tenant.js';
+import { createInvoiceForService, previewInvoiceForService, createManualInvoice } from '../lib/invoiceService.js';
+import { parseBody, manualInvoiceSchema } from '../lib/validators.js';
+import { registerPayment } from '../lib/paymentService.js';
+import { writeAuditLog, clientIp } from '../lib/auditLog.js';
 
 export const invoicesRouter = Router();
 
@@ -90,6 +93,91 @@ invoicesRouter.get('/preview/:serviceId', requireRole('admin', 'office', 'techni
     res.json(await previewInvoiceForService(orgId, serviceId));
   } catch (error) {
     res.status(404).json({ error: error.message });
+  }
+});
+
+/** Boleta manual: plan, instalación, TV, cámaras u otro cargo. */
+invoicesRouter.post('/manual', requireRole('admin', 'office'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const parsed = parseBody(manualInvoiceSchema, req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const data = parsed.data;
+
+    if (!await getClientInOrg(data.clientId, orgId)) {
+      return res.status(404).json({ error: 'Abonado no encontrado' });
+    }
+    if (data.clientServiceId && !await getServiceInOrg(data.clientServiceId, orgId)) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+
+    const created = await createManualInvoice(orgId, {
+      clientId: data.clientId,
+      clientServiceId: data.clientServiceId || null,
+      concept: data.concept,
+      description: data.description,
+      totalIngresado: data.total,
+      dueDate: data.dueDate,
+      notes: data.notes,
+    });
+
+    await writeAuditLog({
+      organizationId: orgId,
+      userId: req.user.id,
+      action: 'invoice.manual_create',
+      entity: 'invoice',
+      entityId: created.invoice.id,
+      details: {
+        clientId: data.clientId,
+        concept: created.concept,
+        total: created.total,
+        payNow: Boolean(data.payNow),
+      },
+      ipAddress: clientIp(req),
+    });
+
+    let payment = null;
+    let reactivation = null;
+    if (data.payNow) {
+      const payResult = await registerPayment({
+        orgId,
+        invoiceId: created.invoice.id,
+        amount: created.total,
+        method: data.payMethod || 'cash',
+        notes: data.payNotes || 'Pago al emitir boleta manual',
+        reference: data.payMethod === 'cash' ? 'efectivo' : (data.payMethod || 'manual'),
+      });
+      if (payResult.error) {
+        return res.status(201).json({
+          message: 'Boleta creada, pero el pago falló: ' + payResult.error,
+          ...created,
+          paymentError: payResult.error,
+        });
+      }
+      payment = payResult;
+      if (payResult.fullyPaid) {
+        try {
+          const { tryAutoReactivateAfterPayment } = await import('../lib/subscriberSuspend.js');
+          reactivation = await tryAutoReactivateAfterPayment(created.invoice, orgId);
+        } catch (e) {
+          reactivation = { error: e.message };
+        }
+      }
+    }
+
+    res.status(201).json({
+      message: data.payNow
+        ? (reactivation?.reactivated || reactivation?.lifecycleStatus === 'active'
+          ? 'Boleta creada, pagada y servicio activado'
+          : 'Boleta creada y pagada')
+        : 'Boleta manual creada',
+      ...created,
+      payment,
+      reactivation,
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'Error al crear boleta manual' });
   }
 });
 

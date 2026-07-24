@@ -85,6 +85,19 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [payMethod, setPayMethod] = useState('transfer')
   const [payNotes, setPayNotes] = useState('')
   const [payingInvoice, setPayingInvoice] = useState(false)
+  const [showManualInvoice, setShowManualInvoice] = useState(false)
+  const [savingManualInvoice, setSavingManualInvoice] = useState(false)
+  const [manualInvoiceForm, setManualInvoiceForm] = useState({
+    concept: 'plan',
+    description: '',
+    total: '',
+    clientServiceId: '',
+    dueDate: '',
+    notes: '',
+    payNow: false,
+    payMethod: 'cash',
+    payNotes: '',
+  })
   const [payEmitirDte, setPayEmitirDte] = useState(false)
   const [savingDteFlag, setSavingDteFlag] = useState(false)
   const [routers, setRouters] = useState<any[]>([])
@@ -534,11 +547,63 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   function openQuickPay() {
     const pending = invoices.filter((i) => i.status === 'pending' || i.status === 'overdue')
     if (pending.length === 0) {
-      toast('No hay facturas pendientes. Genera una factura o activa el servicio con Activar.', 'warning')
+      toast('No hay facturas pendientes. Genera una boleta o activa el servicio con Activar.', 'warning')
       setActiveTab('invoices')
       return
     }
     openPayModal(pending[0])
+  }
+
+  function openManualInvoice(defaults?: Partial<typeof manualInvoiceForm>) {
+    const primary = services.find((s) => s.status === 'active') || services[0]
+    const planPrice = primary ? serviceBillingPrice(primary) : ''
+    setManualInvoiceForm({
+      concept: defaults?.concept || 'plan',
+      description: defaults?.description || (primary?.plan?.name ? `Mensualidad ${primary.plan.name}` : ''),
+      total: defaults?.total != null ? String(defaults.total) : (planPrice ? String(planPrice) : ''),
+      clientServiceId: defaults?.clientServiceId != null ? String(defaults.clientServiceId) : (primary ? String(primary.id) : ''),
+      dueDate: defaults?.dueDate || '',
+      notes: defaults?.notes || '',
+      payNow: Boolean(defaults?.payNow),
+      payMethod: defaults?.payMethod || 'cash',
+      payNotes: defaults?.payNotes || '',
+    })
+    setShowManualInvoice(true)
+  }
+
+  async function submitManualInvoice() {
+    const total = Number(manualInvoiceForm.total)
+    if (!Number.isFinite(total) || total <= 0) {
+      toast('Ingresa un monto válido', 'warning')
+      return
+    }
+    setSavingManualInvoice(true)
+    try {
+      const res = await api().post('/invoices/manual', {
+        clientId,
+        clientServiceId: manualInvoiceForm.clientServiceId ? Number(manualInvoiceForm.clientServiceId) : null,
+        concept: manualInvoiceForm.concept,
+        description: manualInvoiceForm.description.trim() || undefined,
+        total,
+        dueDate: manualInvoiceForm.dueDate || undefined,
+        notes: manualInvoiceForm.notes.trim() || undefined,
+        payNow: manualInvoiceForm.payNow,
+        payMethod: manualInvoiceForm.payNow ? manualInvoiceForm.payMethod : undefined,
+        payNotes: manualInvoiceForm.payNow ? (manualInvoiceForm.payNotes.trim() || undefined) : undefined,
+      })
+      setShowManualInvoice(false)
+      toast(res.data.message || 'Boleta creada', 'success')
+      if (res.data.invoice && !manualInvoiceForm.payNow) {
+        // Dejar lista para pagar
+        await loadAll()
+        openPayModal(res.data.invoice)
+      } else {
+        await loadAll()
+      }
+    } catch (e: any) {
+      toast(e.response?.data?.error || e.message, 'error')
+    }
+    setSavingManualInvoice(false)
   }
 
   async function toggleClientDte(next: boolean) {
@@ -896,6 +961,160 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {payingInvoice ? 'Registrando…' : 'Confirmar pago'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Boleta manual */}
+      {showManualInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowManualInvoice(false)}>
+          <div className="bg-surface-card rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h3 className="font-bold text-lg text-ink">Nueva boleta</h3>
+              <button type="button" onClick={() => setShowManualInvoice(false)}><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Concepto</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={manualInvoiceForm.concept}
+                  onChange={(e) => {
+                    const concept = e.target.value
+                    const primary = services.find((s) => s.status === 'active') || services[0]
+                    let description = manualInvoiceForm.description
+                    let total = manualInvoiceForm.total
+                    if (concept === 'plan' && primary) {
+                      description = `Mensualidad ${primary.plan?.name || 'plan'}`
+                      total = String(serviceBillingPrice(primary))
+                    } else if (concept === 'installation') {
+                      description = 'Cargo de instalación'
+                      const install = primary?.costoInstalacion
+                      if (install != null && install !== '') total = String(Math.round(Number(install)))
+                    } else if (concept === 'tv') {
+                      description = 'Servicio de TV'
+                    } else if (concept === 'cameras') {
+                      description = 'Cámaras / seguridad'
+                    } else if (concept === 'other') {
+                      description = ''
+                    }
+                    setManualInvoiceForm({ ...manualInvoiceForm, concept, description, total })
+                  }}
+                >
+                  <option value="plan">Mensualidad del plan</option>
+                  <option value="installation">Instalación</option>
+                  <option value="tv">Servicio TV</option>
+                  <option value="cameras">Cámaras / seguridad</option>
+                  <option value="other">Otro cargo</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Descripción</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={manualInvoiceForm.description}
+                  onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, description: e.target.value })}
+                  placeholder="Texto en la boleta"
+                />
+              </div>
+              {services.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Vincular a servicio (opcional)</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={manualInvoiceForm.clientServiceId}
+                    onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, clientServiceId: e.target.value })}
+                  >
+                    <option value="">Sin vincular</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>#{s.id} · {s.plan?.name || 'Plan'} ({statusLabel[s.status] || s.status})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Total (con IVA) CLP</label>
+                <input
+                  type="number"
+                  min={1}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={manualInvoiceForm.total}
+                  onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, total: e.target.value })}
+                  placeholder="22990"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Vencimiento (opcional)</label>
+                <input
+                  type="date"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={manualInvoiceForm.dueDate}
+                  onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, dueDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Nota interna</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={manualInvoiceForm.notes}
+                  onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, notes: e.target.value })}
+                  placeholder="Opcional"
+                />
+              </div>
+              <label className="flex items-start gap-3 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded"
+                  checked={manualInvoiceForm.payNow}
+                  onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, payNow: e.target.checked })}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-ink">Marcar como pagada ahora</span>
+                  <span className="block text-xs text-ink-muted mt-0.5">Efectivo / WhatsApp: registra el pago y reactiva si estaba suspendido.</span>
+                </span>
+              </label>
+              {manualInvoiceForm.payNow && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Método</label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={manualInvoiceForm.payMethod}
+                      onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, payMethod: e.target.value })}
+                    >
+                      <option value="cash">Efectivo</option>
+                      <option value="transfer">Transferencia</option>
+                      <option value="other">WhatsApp / aviso</option>
+                      <option value="card">Tarjeta</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Nota del pago</label>
+                    <input
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={manualInvoiceForm.payNotes}
+                      onChange={(e) => setManualInvoiceForm({ ...manualInvoiceForm, payNotes: e.target.value })}
+                      placeholder="Ej: pagó por WhatsApp"
+                    />
+                  </div>
+                </>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowManualInvoice(false)} className="flex-1 py-2.5 border rounded-lg font-medium">Cancelar</button>
+                <button
+                  type="button"
+                  disabled={savingManualInvoice}
+                  onClick={submitManualInvoice}
+                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {savingManualInvoice
+                    ? 'Guardando…'
+                    : manualInvoiceForm.payNow
+                      ? 'Crear y pagar'
+                      : 'Crear boleta'}
                 </button>
               </div>
             </div>
@@ -1443,6 +1662,11 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 Registrar pago · ${totalDeuda.toLocaleString('es-CL')}
               </button>
           )}
+            <button type="button" onClick={() => { setActiveTab('invoices'); openManualInvoice() }}
+              className="px-3 py-1.5 rounded-full bg-blue-500/15 border border-blue-400/30 text-blue-200 text-xs font-bold hover:bg-blue-500/25 inline-flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              Nueva boleta
+            </button>
             {(['suspended', 'cut'].includes(client.lifecycleStatus) || services.some((s) => s.status === 'suspended' || s.status === 'cut')) ? (
               <span className="px-3 py-1.5 rounded-full text-xs font-medium border bg-amber-500/15 text-amber-200 border-amber-400/30">
                 {statusLabel[client.lifecycleStatus] || 'Suspendido'}
@@ -1717,9 +1941,15 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               </div>
 
               <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
-                <h2 className="font-semibold text-white flex items-center gap-2 mb-4"><DollarSign className="h-4 w-4 text-violet-400" /> Facturas recientes</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-semibold text-white flex items-center gap-2"><DollarSign className="h-4 w-4 text-violet-400" /> Facturas recientes</h2>
+                  <button type="button" onClick={() => openManualInvoice()} className="text-xs text-cyan-400/80 hover:text-cyan-300">+ Boleta</button>
+                </div>
                 {invoices.length === 0 ? (
-                  <div className="text-center py-4 text-ink-muted text-sm">Sin facturas</div>
+                  <div className="text-center py-4 text-ink-muted text-sm">
+                    <p>Sin facturas</p>
+                    <button type="button" onClick={() => openManualInvoice()} className="mt-2 text-cyan-400 hover:underline">Crear boleta</button>
+                  </div>
                 ) : invoices.slice(0, 3).map(inv => (
                   <div key={inv.id} className="flex items-center justify-between py-2 border-b border-white/[0.05] last:border-0">
                     <div>
@@ -2060,11 +2290,31 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
         {/* FACTURAS */}
         {activeTab === 'invoices' && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-ink-muted">Boletas del abonado — mensuales o cargos extras (instalación, TV, cámaras…)</p>
+              <div className="flex flex-wrap gap-2">
+                {totalDeuda > 0 && (
+                  <button type="button" onClick={openQuickPay}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 inline-flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" /> Registrar pago
+                  </button>
+                )}
+                <button type="button" onClick={() => openManualInvoice()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Nueva boleta
+                </button>
+              </div>
+            </div>
           <div className="bg-surface-card rounded-xl shadow-sm border border-line">
             {invoices.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium">Sin facturas registradas</p>
+                <button type="button" onClick={() => openManualInvoice()}
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Crear primera boleta
+                </button>
               </div>
             ) : (
               <table className="w-full">
@@ -2109,6 +2359,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 </tfoot>
               </table>
             )}
+          </div>
           </div>
         )}
 
