@@ -15,8 +15,10 @@ const SYS_NAME = '1.3.6.1.2.1.1.5.0';
 const SYS_UPTIME = '1.3.6.1.2.1.1.3.0';
 const SNMP_OIDS = [SYS_DESCR, SYS_NAME, SYS_UPTIME];
 
-/** Presupuesto por equipo: el estado básico nunca debe perderse por una MIB lenta. */
-const POLL_BUDGET_MS = 6000;
+/** Presupuestos: el estado básico nunca debe perderse por una MIB lenta. */
+const POLL_BUDGET_MS = 8000;
+const MIN_DEVICE_BUDGET_MS = 2500;
+const ROUTER_BUDGET_MS = 12000;
 const WIRELESS_MIN_MS = 800;
 
 const PRIVATE_HOST_RE = /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
@@ -360,26 +362,62 @@ export async function pollDeviceSnmp(equipment, router = null, { deadlineAt = Da
   };
 }
 
-export async function pollEquipmentList(items, routerBySiteId = new Map()) {
-  // Todos los dispositivos en paralelo, cada uno con su plazo; el techo externo
-  // va algo después para que el poll alcance a devolver el resultado parcial.
-  return Promise.all(
-    items.map(async (eq) => {
-      if (!eq.ipAddress || !eq.snmpCommunity) {
-        return { id: eq.id, name: eq.name, skipped: true, reason: 'Sin IP o community SNMP' };
+async function pollOneDevice(eq, router, budgetMs) {
+  if (!eq.ipAddress || !eq.snmpCommunity) {
+    return { id: eq.id, name: eq.name, skipped: true, reason: 'Sin IP o community SNMP' };
+  }
+  const deadlineAt = Date.now() + budgetMs;
+  try {
+    // El techo externo va algo después del plazo interno para que el poll
+    // alcance a devolver el resultado parcial (online sin wireless).
+    const snmpData = await withHardTimeout(
+      pollDeviceSnmp(eq, router, { deadlineAt }),
+      budgetMs + 500,
+      eq.name,
+    );
+    return { id: eq.id, name: eq.name, ...snmpData };
+  } catch (err) {
+    return { id: eq.id, name: eq.name, online: false, error: err.message };
+  }
+}
+
+/** Menos fallos acumulados primero: un CPE caído no debe gastarse el ciclo. */
+function healthiestFirst(a, b) {
+  return (a.credentials?.consecutiveFailures || 0) - (b.credentials?.consecutiveFailures || 0);
+}
+
+export async function pollEquipmentList(items, routerBySiteId = new Map(), { routerBudgetMs = ROUTER_BUDGET_MS } = {}) {
+  const groups = new Map();
+  const direct = [];
+  for (const eq of items) {
+    const router = eq.siteId ? routerBySiteId.get(eq.siteId) : null;
+    if (!router) {
+      direct.push(eq);
+      continue;
+    }
+    if (!groups.has(router.id)) groups.set(router.id, { router, list: [] });
+    groups.get(router.id).list.push(eq);
+  }
+
+  const settled = await Promise.all([
+    ...direct.map((eq) => pollOneDevice(eq, null, POLL_BUDGET_MS)),
+    // RouterOS atiende un comando SNMP a la vez y uno fallido deja fuera de
+    // servicio a los siguientes: los CPE de un mismo router van en serie, y lo
+    // que no alcanza en el ciclo conserva su último estado conocido.
+    ...[...groups.values()].map(async ({ router, list }) => {
+      const groupDeadline = Date.now() + routerBudgetMs;
+      const out = [];
+      for (const eq of [...list].sort(healthiestFirst)) {
+        const remaining = groupDeadline - Date.now();
+        if (out.length && remaining < MIN_DEVICE_BUDGET_MS) {
+          out.push({ id: eq.id, name: eq.name, skipped: true, reason: 'Sin presupuesto de poll en este ciclo' });
+          continue;
+        }
+        out.push(await pollOneDevice(eq, router, Math.min(POLL_BUDGET_MS, Math.max(remaining, MIN_DEVICE_BUDGET_MS))));
       }
-      const router = eq.siteId ? routerBySiteId.get(eq.siteId) : null;
-      const deadlineAt = Date.now() + POLL_BUDGET_MS;
-      try {
-        const snmpData = await withHardTimeout(
-          pollDeviceSnmp(eq, router, { deadlineAt }),
-          POLL_BUDGET_MS + 500,
-          eq.name,
-        );
-        return { id: eq.id, name: eq.name, ...snmpData };
-      } catch (err) {
-        return { id: eq.id, name: eq.name, online: false, error: err.message };
-      }
+      return out;
     }),
-  );
+  ]);
+
+  return settled.flat();
 }

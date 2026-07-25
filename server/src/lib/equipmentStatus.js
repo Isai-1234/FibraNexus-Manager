@@ -277,7 +277,8 @@ export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 }
   if (!stale.length) return items.map(attachEquipmentDisplay);
 
   const toPoll = stale.slice(0, maxPoll);
-  const results = await pollEquipmentList(toPoll, routerBySite);
+  // Va en la ruta de la petición: presupuesto corto, el resto sigue con su último estado.
+  const results = await pollEquipmentList(toPoll, routerBySite, { routerBudgetMs: 6000 });
   return applyPollResults(items, results);
 }
 
@@ -288,7 +289,7 @@ export async function forceRefreshEquipmentStatus(items, orgId, { maxPoll = 15 }
   if (!pollable.length) return items.map(attachEquipmentDisplay);
 
   const toPoll = pollable.slice(0, maxPoll);
-  const results = await pollEquipmentList(toPoll, routerBySite);
+  const results = await pollEquipmentList(toPoll, routerBySite, { routerBudgetMs: 20000 });
   return applyPollResults(items, results);
 }
 
@@ -299,7 +300,7 @@ export async function pollAllSnmpForOrg(orgId) {
   if (!pollable.length) return { polled: 0, online: 0, offline: 0 };
 
   const routerBySite = await buildRouterBySiteMap(pollable, orgId);
-  const results = await pollEquipmentList(pollable, routerBySite);
+  const results = await pollEquipmentList(pollable, routerBySite, { routerBudgetMs: 20000 });
   let online = 0;
   let offline = 0;
 

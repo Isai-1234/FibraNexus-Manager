@@ -164,8 +164,14 @@ export async function getRouterNetworkSnapshot(router) {
 }
 
 // ─── SNMP vía router (para CPE en LAN privada) ──────────────
-const SNMP_BRIDGE_TIMEOUT_MS = 3000;
+const SNMP_BRIDGE_TIMEOUT_MS = 6000;
 const SYSTEM_SUBTREE = '1.3.6.1.2.1.1';
+/** Tras un SNMP sin respuesta RouterOS queda ocupado: sin pausa el siguiente equipo falla igual. */
+const SNMP_BRIDGE_COOLDOWN_MS = 700;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * RouterOS atiende /tool/snmp-* de forma bloqueante: un CPE que no responde
@@ -184,12 +190,18 @@ function queueRouterSnmp(router, fn) {
 
 export async function mikrotikSnmpGet(router, { address, community, oid, timeoutMs = SNMP_BRIDGE_TIMEOUT_MS }) {
   return queueRouterSnmp(router, async () => {
-    const res = await mikrotikRequest(router, 'POST', '/tool/snmp-get', {
-      address,
-      community,
-      oid,
-      'as-value': '',
-    }, { timeoutMs });
+    let res;
+    try {
+      res = await mikrotikRequest(router, 'POST', '/tool/snmp-get', {
+        address,
+        community,
+        oid,
+        'as-value': '',
+      }, { timeoutMs });
+    } catch (err) {
+      await sleep(SNMP_BRIDGE_COOLDOWN_MS);
+      throw err;
+    }
     if (Array.isArray(res)) {
       const row = res[0] || {};
       return row.value ?? row['value'] ?? null;
@@ -209,8 +221,11 @@ export async function mikrotikSnmpWalk(router, { address, community, oid, timeou
         community,
         oid,
       }, { timeoutMs });
-      return asList(res);
+      const rows = asList(res);
+      if (!rows.length) await sleep(SNMP_BRIDGE_COOLDOWN_MS);
+      return rows;
     } catch {
+      await sleep(SNMP_BRIDGE_COOLDOWN_MS);
       return [];
     }
   });
