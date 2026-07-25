@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import crypto from 'crypto';
 import { refreshStaleRouters } from '../lib/routerPoller.js';
+import { decryptSecret } from '../lib/secrets.js';
 
 export const routersRouter = Router();
 export const connectedAgents = new Map();
@@ -532,7 +533,15 @@ export async function agentHeartbeatHandler(req, res) {
       );
       const pollable = cpes.filter(c => c.ipAddress?.trim() && c.snmpCommunity?.trim());
       snmpTargets = pollable
-        .map(c => `${c.ipAddress.trim().split('/')[0]},${c.snmpCommunity.trim()},${c.id}`)
+        .map((c) => {
+          try {
+            const community = decryptSecret(c.snmpCommunity)?.trim();
+            return community ? `${c.ipAddress.trim().split('/')[0]},${community},${c.id}` : null;
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
         .join(';');
       console.log(`[heartbeat-snmp-targets] router=${router.id} org=${router.organizationId} cpes_total=${cpes.length} pollable=${pollable.length}`);
     }

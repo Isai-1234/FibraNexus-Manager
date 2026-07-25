@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import { Radar, RefreshCw, Check, EyeOff, Eye, ChevronDown, X, Loader2, AlertTriangle } from 'lucide-react'
+import DeviceIpLink from '../../components/DeviceIpLink'
 
 interface DetectedDevice {
   id: number
@@ -450,7 +451,14 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                       {device.macAddress}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
-                      {device.ipAddress || <span className="text-gray-400">—</span>}
+                      {device.ipAddress ? (
+                        <DeviceIpLink
+                          ip={device.ipAddress}
+                          className="text-blue-600 hover:underline"
+                          title={`Abrir administración web de ${device.hostname || device.macAddress}`}
+                          showIcon
+                        />
+                      ) : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 max-w-[140px] truncate text-gray-600">
                       {device.hostname || <span className="text-gray-400">—</span>}

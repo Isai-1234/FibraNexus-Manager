@@ -23,3 +23,10 @@
 - Redis/BullMQ real cuando haya plan de pago o Redis externo.
 - Inventario OLT/ONU/AP consolidado más allá del equipo actual.
 - Push/email de alertas (hoy solo banner + DB).
+
+## Lab Camino A (2026-07-24) — addendum
+
+- L009 lab online vía IP pública + NAT (detalle: [lab-mikrotik-camino-a.md](lab-mikrotik-camino-a.md)).
+- Producto: con IP pública → “segura automática” (default) vs “manual”.
+- Ayuda contextual estilo UISP: [ayuda-contextual.md](ayuda-contextual.md).
+- Siguiente: script wizard endurecido + PPPoE/Simple Queue + wall garden en este lab.

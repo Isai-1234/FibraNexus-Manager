@@ -1,0 +1,35 @@
+---
+description: Prioriza onboarding simple de MikroTik y provisión PPPoE para ISP primerizos
+alwaysApply: true
+---
+
+# MikroTik para ISP primerizos
+
+## Flujo de adopción (orden fijo)
+1. El ISP llega con MikroTik **ya con salida a internet** (WAN/NAT). FibraNexus no configura la WAN.
+2. En la plataforma: “Conectar MikroTik” → elige cómo se alcanza (IP/DDNS, túnel, agente) → **un solo script** → pegar en Winbox → el router se registra y queda online.
+3. Desde ahí, **todo lo demás se configura en FibraNexus**, no en Winbox: planes, PPPoE, Simple Queue, suspensión automática, wall garden, reactivación al pagar.
+
+## Modo principal de control
+- Por defecto: **PPPoE + Simple Queue** (estáticas). DHCP/IP fija, PCQ, Queue Tree y RADIUS = avanzado / opcional.
+- La plataforma propone valores seguros (interfaz clientes, pool, gateway/DNS, service-name).
+- Simple Queue target = **IP remota del abonado**, nunca el nombre del secret PPPoE.
+- No mezclar `rate-limit` dinámico del perfil/RADIUS con Simple Queues estáticas para el mismo abonado.
+
+## Suspensión
+- Preferido ISP primerizo: **walled garden** (address-list + firewall) → solo portal de pago / DNS / HTTPS necesarios; resto drop. Portal: `/suspended` o URL de la org.
+- Al reactivar (pago): quitar listas/reglas y dejar el servicio operativo otra vez.
+- Corte duro (disable secret + kick sesión) es opción secundaria, no el default de onboarding.
+
+## Script de registro
+- Idempotente; no romper WAN/NAT existente.
+- Usuario dedicado FibraNexus, servicios de gestión restringidos.
+- Tras registrar: heartbeat/API listos; el ISP no vuelve a Winbox para abonados.
+
+## IP pública — dos modos
+- **Segura automática (default):** script con cert + www-ssl + usuario dedicado + allowlist solo IPs FibraNexus + heartbeat; si hay borde, mostrar dst-nat sugerido.
+- **Manual:** ISP ya tiene API; solo IP/puerto/usuario/clave + probar. Advertir si queda abierto a internet.
+- Sin IP pública: túnel/agente (no abrir puertos).
+
+## Ayuda al ISP
+- Patrón UISP: `?` → columna lateral. Diseño: `docs/ayuda-contextual.md`.

@@ -1,0 +1,39 @@
+---
+description: Aprendizajes de lab Internetsur — MikroTik L009, EdgeRouter, LiteBeam M5/5AC
+alwaysApply: true
+---
+
+# Lab de red — aprendizajes validados
+
+## MikroTik L009 (Torre Pangui)
+- Sin IP pública: el canal es **Cloudflare Tunnel** (`*.fibranexus.cl`).
+- El L009 **no traía container mode**. Había que activarlo:
+  `/system device-mode update container=yes` → reinicio.
+- En **ARM32** la imagen oficial de cloudflared no sirve; se usa `stroebs/cloudflared`.
+- Script de instalación: `GET /api/routers/:id/mikrotik-script` → `fullSetupScript`.
+- Tras el túnel, FibraNexus habla REST API al router (credenciales API).
+
+## Ubiquiti EdgeRouter
+- Un botón genera script SSH: `GET /api/routers/:id/edgeos-script`.
+- Instala heartbeat en `/config/scripts/fibranexus/` + arranque en `post-config.d`.
+- El agente también hace **snmpget** a CPEs (señal, ruido, CCQ airMAX) y reporta ARP/DHCP.
+- Cloudflare **no** se instala en el EdgeRouter: se publica un hostname extra desde el MikroTik de borde.
+
+## LiteBeam M5 / 5AC (airOS)
+- No es SMTP: es **SNMP**.
+- En airOS: **Services → SNMP** ON, community igual a la del equipo en FibraNexus (lab: `internetsur-lab`).
+- Poll: Render → túnel → MikroTik → IP privada del CPE (no hace falta IP pública en la antena).
+- Sin community/SNMP activo solo se ve online básico; dBm/CCQ requieren MIB Ubiquiti.
+
+## Flujo ISP primerizo (objetivo)
+1. MikroTik con WAN/NAT e internet.
+2. Plataforma: “¿cómo te conectas?” → script único.
+3. Verificar online.
+4. Configurar PPPoE + Simple Queue desde FibraNexus (no Winbox manual).
+
+## Camino A — IP pública (validado 2026-07-24)
+- Lab: L009 `192.168.3.253` detrás de borde `190.217.242.4`, NAT `44300→443`.
+- Org QA: router id 1 online (RouterOS 7.23.1, board L009UiGS).
+- Obligatorio: cert en `www-ssl` + usuario API + **allowlist solo IP del VPS** (`134.209.43.175/32`).
+- Detalle: `docs/lab-mikrotik-camino-a.md`.
+- Con IP pública el default de producto es **segura automática** (script); **manual** es opción secundaria.

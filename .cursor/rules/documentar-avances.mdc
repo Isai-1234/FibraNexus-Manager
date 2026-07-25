@@ -1,0 +1,12 @@
+---
+description: Documentar avances de lab y producto en docs/ de forma continua
+alwaysApply: true
+---
+
+# Documentación continua
+
+- Cada hito de lab o decisión de producto relevante se documenta en `docs/` el mismo día (no dejar solo en el chat).
+- Lab de red MikroTik/Ubiquiti: actualizar `docs/lab-mikrotik-camino-a.md` y `.cursor/rules/lab-network-learnings.mdc`.
+- Decisiones de onboarding / seguridad de conexión: `mikrotik-first-isp.mdc` + doc de avance.
+- Ayuda al ISP dentro de la app: diseño en `docs/ayuda-contextual.md`; no inventar paneles sueltos sin ese patrón.
+- No pegar secretos/contraseñas en markdown.
