@@ -44,6 +44,7 @@ import { publicCaptiveRouter } from './routes/publicCaptive.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '10000');
+app.set('trust proxy', 1);
 
 console.log(
   '[boot] DATABASE_URL:',
