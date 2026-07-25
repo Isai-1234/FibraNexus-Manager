@@ -274,10 +274,10 @@ export async function reconcileDetectedGhosts(orgId) {
       isNotNull(equipment.detectedDeviceId),
     ));
 
-  for (const eq of orphanEquip) {
+  for (const orphan of orphanEquip) {
     await db.update(equipment)
       .set({ detectedDeviceId: null, updatedAt: new Date() })
-      .where(eq(equipment.id, eq.id));
+      .where(eq(equipment.id, orphan.id));
     stats.equipmentPointersCleared++;
   }
 
