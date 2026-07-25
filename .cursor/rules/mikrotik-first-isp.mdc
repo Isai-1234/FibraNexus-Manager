@@ -17,8 +17,9 @@ alwaysApply: true
 - No mezclar `rate-limit` dinámico del perfil/RADIUS con Simple Queues estáticas para el mismo abonado.
 
 ## Suspensión
-- Preferido ISP primerizo: **walled garden** (address-list + firewall) → solo portal de pago / DNS / HTTPS necesarios; resto drop. Portal: `/suspended` o URL de la org.
-- Al reactivar (pago): quitar listas/reglas y dejar el servicio operativo otra vez.
+- Preferido ISP primerizo: **walled garden** (address-list + firewall) → solo portal de pago / DNS; resto drop.
+- **No** aceptar TCP/443 a todo internet (deja YouTube/Google). Solo destinos en `FN-WALLED-GARDEN`.
+- Portal: `/suspended` o URL de la org. Al reactivar (pago): quitar listas/reglas.
 - Corte duro (disable secret + kick sesión) es opción secundaria, no el default de onboarding.
 
 ## Script de registro

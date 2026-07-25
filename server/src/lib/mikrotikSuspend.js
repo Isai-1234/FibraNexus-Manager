@@ -61,6 +61,8 @@ async function removeFilterRulesByComment(router, commentPrefix) {
 
 /**
  * Walled garden por IP del abonado — no deshabilita PPPoE ni colas del router del nodo.
+ * Solo permite DNS + destinos en FN-WALLED-GARDEN (portal / pagos).
+ * No abrir TCP/443 a todo internet: eso deja YouTube/Google y rompe la suspensión.
  */
 export async function applyMikrotikSubscriberSuspend(router, { serviceId, clientIp, portalIps = [] }) {
   const tag = suspendTag(serviceId);
@@ -71,19 +73,21 @@ export async function applyMikrotikSubscriberSuspend(router, { serviceId, client
     await ensureAddressListEntry(router, GARDEN_LIST, ip, `${tag}-garden-${ip}`);
   }
 
+  // Quitar regla legacy que aceptaba todo HTTPS (fn-suspend-*-https)
+  await removeFilterRulesByComment(router, `${tag}-https`);
+
   const rules = [
-  { chain: 'forward', 'src-address-list': SUSPENDED_LIST, 'dst-address-list': GARDEN_LIST, action: 'accept', comment: `${tag}-garden` },
-  { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'tcp', 'dst-port': '443', action: 'accept', comment: `${tag}-https` },
-  { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'udp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-udp` },
-  { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'tcp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-tcp` },
-  { chain: 'forward', 'src-address-list': SUSPENDED_LIST, action: 'drop', comment: `${tag}-drop` },
+    { chain: 'forward', 'src-address-list': SUSPENDED_LIST, 'dst-address-list': GARDEN_LIST, action: 'accept', comment: `${tag}-garden` },
+    { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'udp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-udp` },
+    { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'tcp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-tcp` },
+    { chain: 'forward', 'src-address-list': SUSPENDED_LIST, action: 'drop', comment: `${tag}-drop` },
   ];
 
   const results = [];
   for (const rule of rules) {
     results.push(await upsertFilterRule(router, rule));
   }
-  return { success: true, clientIp, rules: results.length };
+  return { success: true, clientIp, rules: results.length, gardenIps };
 }
 
 export async function removeMikrotikSubscriberSuspend(router, { serviceId }) {

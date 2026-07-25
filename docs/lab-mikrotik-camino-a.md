@@ -69,8 +69,8 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - [x] Conectar LiteBeam a ether3 → DHCP + Detectados + adopción.
 - [x] SNMP airOS community `internetsur-lab` + poll online vía L009 (sysName NanoStation 5AC loco).
 - [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue (evitar que sync pise la IP remota con la de gestión).
-- [x] Lab: suspensión wall garden servicio 83 → IP `172.16.11.251` en `FN-SUSPENDED`; reglas forward garden/DNS/HTTPS/drop; PPPoE sigue activo; portal `https://app.fibranexus.cl/suspended`.
-- [ ] Endurecer wall garden: hoy se acepta **todo TCP/443** (para que el portal HTTPS funcione); el drop corta HTTP y el resto. Mejorar con redirect DNS/captive o allowlist HTTPS solo a IPs del portal.
+- [x] Lab: suspensión wall garden servicio 83 → IP `172.16.11.251` en `FN-SUSPENDED`; reglas forward garden/DNS/drop; PPPoE sigue activo; portal `https://app.fibranexus.cl/suspended`.
+- [x] Quitar accept TCP/443 global (dejaba YouTube/Google); garden solo a IPs del portal + DNS.
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
 - [x] Lab: loco sectorial + CPE cliente Station + PPPoE `fn83s83` → `172.16.11.251` + Simple Queue 25M/25M.
 - [x] Service-name PPPoE en airOS debe coincidir con el server del L009 (`internet`).
