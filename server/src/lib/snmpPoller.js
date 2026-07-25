@@ -15,6 +15,15 @@ const SYS_NAME = '1.3.6.1.2.1.1.5.0';
 const SYS_UPTIME = '1.3.6.1.2.1.1.3.0';
 const SNMP_OIDS = [SYS_DESCR, SYS_NAME, SYS_UPTIME];
 
+/** El batch corta a 6s por equipo: la MIB wireless no puede consumirse todo el presupuesto. */
+const WIRELESS_BUDGET_MS = 2500;
+
+const PRIVATE_HOST_RE = /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+
+function isPrivateHost(host) {
+  return PRIVATE_HOST_RE.test(String(host || ''));
+}
+
 const UBNT_WL_STAT = '1.3.6.1.4.1.41112.1.4.5.1';
 const UBNT_COLS = {
   signal: 5,
@@ -276,24 +285,34 @@ export async function pollDeviceSnmp(equipment, router = null) {
   let data = {};
   let pollMethod = 'direct';
 
-  try {
-    // P0: si hay router como fallback, el intento directo usa timeout corto (2s, sin retry)
-    // para no bloquear 10s en CPEs en LAN privada que nunca son accesibles directamente.
-    const directOpts = router
-      ? { timeout: 2000, retries: 0 }
-      : { timeout: 5000, retries: 1 };
-    data = await snmpGet(host, community, SNMP_OIDS, directOpts);
-  } catch (directErr) {
-    if (!router) throw directErr;
+  // Una IP privada nunca responde al servidor público: el intento directo solo
+  // gasta 2s del presupuesto de poll. Con puente MikroTik se va directo al router.
+  if (router && isPrivateHost(host)) {
     pollMethod = 'router';
     data = await snmpGetViaRouter(router, host, community, SNMP_OIDS);
     if (!Object.keys(data).length) {
-      throw new Error(`SNMP falló (directo y vía router): ${directErr.message}`);
+      throw new Error('SNMP falló vía router: sin respuesta del equipo');
+    }
+  } else {
+    try {
+      const directOpts = router
+        ? { timeout: 2000, retries: 0 }
+        : { timeout: 5000, retries: 1 };
+      data = await snmpGet(host, community, SNMP_OIDS, directOpts);
+    } catch (directErr) {
+      if (!router) throw directErr;
+      pollMethod = 'router';
+      data = await snmpGetViaRouter(router, host, community, SNMP_OIDS);
+      if (!Object.keys(data).length) {
+        throw new Error(`SNMP falló (directo y vía router): ${directErr.message}`);
+      }
     }
   }
 
   const uptimeRaw = data[SYS_UPTIME];
-  const online = uptimeRaw != null;
+  // Vía router un OID puede perderse con el MikroTik ocupado; con cualquiera que
+  // responda el equipo está vivo (antes un uptime perdido lo marcaba offline).
+  const online = uptimeRaw != null || data[SYS_NAME] != null || data[SYS_DESCR] != null;
 
   let wireless = null;
   let wirelessDebug = null;
@@ -302,9 +321,20 @@ export async function pollDeviceSnmp(equipment, router = null) {
   );
 
   if (online && isUbiquiti) {
-    const wl = await fetchUbntWireless(host, community, router, pollMethod);
-    wireless = wl.wireless;
-    wirelessDebug = wl.wirelessDebug;
+    try {
+      const wl = await withHardTimeout(
+        fetchUbntWireless(host, community, router, pollMethod),
+        WIRELESS_BUDGET_MS,
+        'wireless',
+      );
+      wireless = wl.wireless;
+      wirelessDebug = wl.wirelessDebug;
+    } catch (err) {
+      wirelessDebug = {
+        attempts: ['wireless-budget-exceeded'],
+        hint: `Equipo online, MIB wireless sin responder a tiempo (${err.message}).`,
+      };
+    }
   }
 
   return {

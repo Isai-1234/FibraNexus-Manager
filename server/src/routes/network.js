@@ -19,6 +19,7 @@ import {
 } from '../lib/mikrotikNetwork.js';
 import { listPppoeActive } from '../lib/mikrotikClient.js';
 import { pollEquipmentList } from '../lib/snmpPoller.js';
+import { persistPollResult } from '../lib/equipmentStatus.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { findNextFreeIpForSite, resolveMacForIp } from '../lib/ipAllocation.js';
 
@@ -304,15 +305,9 @@ networkRouter.post('/equipment/:id/snmp/poll', requireRole('admin', 'technician'
       .limit(1);
     if (!equipmentRow) return res.status(404).json({ error: 'Equipo no encontrado' });
 
+    // El job ya persiste vía persistPollResult (conserva wireless previo y el
+    // margen de fallos consecutivos); no sobrescribir el estado acá.
     const result = await dispatch(JobNames.SNMP_POLL_ONE, { equipmentId: id, orgId });
-    const status = result.online ? 'online' : 'offline';
-    const meta = { ...(equipmentRow.credentials || {}), lastSnmp: result };
-    await db.update(equipment).set({
-      status,
-      lastSeen: new Date(),
-      credentials: meta,
-      updatedAt: new Date(),
-    }).where(eq(equipment.id, id));
 
     res.json({ equipment: equipmentRow.name, ...result });
   } catch (error) {
@@ -331,15 +326,10 @@ networkRouter.post('/equipment/snmp/poll-all', requireRole('admin', 'technician'
     const results = await pollEquipmentList(pollable, routerBySite);
 
     for (const r of results) {
-      if (r.skipped || r.error) continue;
+      if (r.skipped) continue;
       const eqRow = items.find((e) => e.id === r.id);
       if (!eqRow) continue;
-      await db.update(equipment).set({
-        status: r.online ? 'online' : 'offline',
-        lastSeen: new Date(),
-        credentials: { ...(eqRow.credentials || {}), lastSnmp: r },
-        updatedAt: new Date(),
-      }).where(eq(equipment.id, r.id));
+      await persistPollResult(eqRow, r);
     }
 
     res.json({ polled: results.length, results });

@@ -202,13 +202,14 @@ function withTimeout(promise, ms) {
 }
 
 export async function snmpGetViaRouter(router, host, community, oids) {
-  // Paralelo + timeout duro por OID: 3 OIDs × 15s serial → max 1.5s paralelo
+  // Paralelo + timeout duro por OID: con varios equipos en el mismo router 1.5s
+  // dejaba caer OIDs y el equipo aparecía offline. 2.5s cabe en el presupuesto del batch.
   const entries = await Promise.all(
     oids.map(async (oid) => {
       try {
         const val = await withTimeout(
           mikrotikSnmpGet(router, { address: host, community, oid }),
-          1500,
+          2500,
         );
         if (val != null) return [oid, String(val)];
       } catch { /* OID no disponible o timeout */ }

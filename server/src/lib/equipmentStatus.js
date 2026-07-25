@@ -80,6 +80,15 @@ function mergeFailedPollSnmp(row, result, consecutiveFailures) {
   };
 }
 
+/** Un timeout de la MIB wireless no debe borrar la última señal conocida del equipo. */
+function carryOverWireless(row, result) {
+  if (!result.online || result.wireless) return result;
+  const budgetExceeded = result.wirelessDebug?.attempts?.includes('wireless-budget-exceeded');
+  const prevWireless = row.credentials?.lastSnmp?.wireless;
+  if (!budgetExceeded || !prevWireless) return result;
+  return { ...result, wireless: prevWireless, wirelessStale: true };
+}
+
 function resolveStatusAfterPoll(row, failed, consecutiveFailures) {
   if (!failed) return 'online';
   if (hasRecentHeartbeatPresence(row)) return row.status === 'online' ? 'online' : row.status;
@@ -119,7 +128,9 @@ export async function persistPollResult(row, result) {
   const failed = !result.online || Boolean(result.error);
   const consecutiveFailures = failed ? prevFailures + 1 : 0;
   const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
-  const lastSnmp = failed ? mergeFailedPollSnmp(row, result, consecutiveFailures) : result;
+  const lastSnmp = failed
+    ? mergeFailedPollSnmp(row, result, consecutiveFailures)
+    : carryOverWireless(row, result);
 
   const [updated] = await db.update(equipment).set({
     status,
@@ -208,7 +219,9 @@ async function applyPollResults(items, results) {
     const failed = !r.online || Boolean(r.error);
     const consecutiveFailures = failed ? prevFailures + 1 : 0;
     const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
-    const lastSnmp = failed ? mergeFailedPollSnmp(row, r, consecutiveFailures) : r;
+    const lastSnmp = failed
+      ? mergeFailedPollSnmp(row, r, consecutiveFailures)
+      : carryOverWireless(row, r);
     const keepHeartbeatSeen = failed && hasRecentHeartbeatPresence(row);
 
     const patch = {
