@@ -107,14 +107,6 @@ function pickPortalRedirectIp(portalIps = []) {
   return candidates.find((ip) => ip !== '8.8.8.8' && ip !== '8.8.4.4' && !ip.startsWith('127.')) || null;
 }
 
-function portalHostname(portalUrl) {
-  try {
-    return new URL(portalUrl).hostname;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Walled garden por IP del abonado — no deshabilita PPPoE ni colas.
  * - Solo DNS + destinos FN-WALLED-GARDEN (portal del ISP).
