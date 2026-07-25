@@ -27,9 +27,10 @@ alwaysApply: true
 - Tras registrar: heartbeat/API listos; el ISP no vuelve a Winbox para abonados.
 
 ## IP pública — dos modos
-- **Segura automática (default):** script con cert + www-ssl + usuario dedicado + allowlist solo IPs FibraNexus + heartbeat; si hay borde, mostrar dst-nat sugerido.
+- **Segura automática (default):** script con cert + www-ssl + usuario dedicado + allowlist solo IPs FibraNexus (`FIBRANEXUS_EGRESS_CIDRS`) + heartbeat; si hay borde, mostrar dst-nat sugerido.
 - **Manual:** ISP ya tiene API; solo IP/puerto/usuario/clave + probar. Advertir si queda abierto a internet.
 - Sin IP pública: túnel/agente (no abrir puertos).
+- La allowlist es la misma para todos los ISP (escala por IPs de FibraNexus, no por cantidad de ISP).
 
 ## Ayuda al ISP
 - Patrón UISP: `?` → columna lateral. Diseño: `docs/ayuda-contextual.md`.

@@ -54,8 +54,10 @@ L009 lab (192.168.3.253)
 
 Dos modos en onboarding:
 
-1. **Segura automática (default)** — un script: cert + www-ssl + usuario dedicado + allowlist solo IPs FibraNexus + heartbeat + (si aplica) NAT sugerido del borde.
+1. **Segura automática (default)** — un script: cert `fn-https` + www-ssl + usuario `fibranexus` + allowlist `FIBRANEXUS_EGRESS_CIDRS` + heartbeat + (si aplica) NAT sugerido del borde.
 2. **Manual** — ISP ya tiene API; solo IP/puerto/usuario/clave + “Probar conexión”. Advertir si queda abierto a `0.0.0.0/0`.
+
+La allowlist **no crece por ISP**: todos los MikroTik permiten las mismas IPs de control de FibraNexus.
 
 Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 
@@ -63,13 +65,13 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 
 - [x] L009 online vía Camino A (NAT + www-ssl + allowlist VPS).
 - [x] Perfil `fn-pppoe` + servidor PPPoE `internet` en **ether3** (pool `dhcp_pool1` 172.16.11.0/24, sin rate-limit).
-- [ ] Reescribir script Camino A del wizard (`mikrotik-script`) con allowlist + cert + usuario.
-- [ ] UI: separar “Segura automática” vs “Manual” bajo “Tengo IP pública”.
+- [x] Wizard Camino A: **Segura automática** (default) vs **Manual**; script con cert + www-ssl + usuario + allowlist + hint NAT (`FIBRANEXUS_EGRESS_CIDRS`).
 - [x] Conectar LiteBeam a ether3 → DHCP + Detectados + adopción.
 - [x] SNMP airOS community `internetsur-lab` + poll online vía L009 (sysName NanoStation 5AC loco).
 - [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue.
 - [ ] Probar suspensión wall garden + reactivación.
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
+- [ ] Lab: loco AC como sectorial + CPE cliente + plan PPPoE/cola.
 
 ## Credenciales / secretos
 

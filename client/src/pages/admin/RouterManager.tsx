@@ -239,18 +239,15 @@ function getWizardHelpGuide(routerType: string, method: string): HelpGuide | nul
 
   if (isMikro && method === 'direct') {
     return {
-      title: 'IP pública / DDNS — prepara la API del MikroTik',
+      title: 'IP pública — Segura automática (recomendado)',
       steps: [
-        { title: 'Abre Winbox → New Terminal', icon: Terminal },
-        { title: 'Habilita el servicio web seguro', code: '/ip service enable www-ssl', icon: Lock },
-        {
-          title: 'Crea un usuario de solo lectura',
-          code: '/user add name=fibranexus password=TU_CLAVE group=read',
-          icon: Shield,
-        },
-        { title: 'Asegura acceso externo', detail: 'El puerto 443 (o el que indiques) debe estar accesible desde internet.', icon: Globe },
+        { title: 'MikroTik ya con salida a internet', detail: 'FibraNexus no configura la WAN.', icon: Globe },
+        { title: 'Indica IP pública (y puerto si hay NAT) + IP local', icon: Server },
+        { title: 'Registra y copia el script', detail: 'Crea cert, www-ssl, usuario fibranexus y allowlist solo IPs FibraNexus.', icon: Shield },
+        { title: 'Winbox → New Terminal → pegar una vez', icon: Terminal },
+        { title: 'Si hay borde, aplica la sugerencia NAT', detail: 'dst-nat del puerto público al MikroTik interno.', icon: Lock },
       ],
-      note: 'Necesitas IP pública o DDNS apuntando a tu router.',
+      note: 'Modo Manual: solo si ya tienes REST API y quieres pegar usuario/clave existentes.',
     }
   }
 
@@ -590,14 +587,38 @@ export default function RouterManager({ API, onBack }: Props) {
             <Terminal className="h-4 w-4" />
             {script.kind === 'edgeos'
               ? 'Script EdgeOS — antenas Ubiquiti (SNMP) + heartbeat'
-              : 'Script MikroTik — heartbeat y monitoreo'}
+              : script.publicIpMode === 'secure_auto'
+                ? 'Script MikroTik — segura automática (cert + API + allowlist + heartbeat)'
+                : 'Script MikroTik — heartbeat y monitoreo'}
           </p>
           <p className="text-xs text-blue-700">
             {script.kind === 'edgeos'
               ? 'SSH al EdgeRouter (ubnt@IP) → pegar script completo → Enter. Poll SNMP de CPEs AirMax en la LAN.'
-              : 'Winbox → New Terminal → pegar → Enter. Incluye heartbeat hacia FibraNexus.'}
+              : script.publicIpMode === 'secure_auto'
+                ? 'Winbox → New Terminal → pegar una vez. No abras www-ssl a todo internet: el script deja allowlist solo a FibraNexus.'
+                : 'Winbox → New Terminal → pegar → Enter. Incluye heartbeat hacia FibraNexus.'}
           </p>
+          {Array.isArray(script.egressCidrs) && script.egressCidrs.length > 0 && script.publicIpMode === 'secure_auto' && (
+            <p className="text-xs text-blue-800 mt-2 font-mono">Allowlist: {script.egressCidrs.join(', ')}</p>
+          )}
         </div>
+
+        {script.natHint?.needed && script.natHint.script && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+            <p className="font-semibold text-amber-900 text-sm">Sugerencia NAT (MikroTik de borde)</p>
+            <p className="text-xs text-amber-800">{script.natHint.summary}</p>
+            <div className="bg-gray-900 rounded-lg p-3 relative max-h-40 overflow-y-auto">
+              <code className="text-amber-300 text-xs block whitespace-pre-wrap break-all font-mono">{script.natHint.script}</code>
+              <button
+                type="button"
+                onClick={() => copyText(script.natHint.script, `${scriptKey}-nat`)}
+                className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded"
+              >
+                {copied === `${scriptKey}-nat` ? <CheckCircle className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-white" />}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-ink-soft mb-2">Script completo</label>
@@ -711,6 +732,9 @@ export default function RouterManager({ API, onBack }: Props) {
   function applyRouterTypeSelection(rtValue: string) {
     const profile = DEVICE_PROFILES[rtValue]
     const base: any = { routerType: rtValue, connectionMethod: profile?.defaultMethod || 'direct' }
+    if (String(rtValue).startsWith('mikrotik') && (profile?.defaultMethod || 'direct') === 'direct') {
+      base.publicIpMode = 'secure_auto'
+    }
     if (rtValue === 'edgerouter_v4') {
       base.location = 'Nodo 2'
       base.model = 'EdgeRouter 4'
@@ -746,6 +770,9 @@ export default function RouterManager({ API, onBack }: Props) {
   const selectedMethod = CONNECTION_METHODS.find(m => m.value === form.connectionMethod)
   const defaultPort = form.routerType === 'mikrotik_v6' ? '8728' : '443'
   const isEdgeRouter = form.routerType === 'edgerouter_v4'
+  const isMikroTik = String(form.routerType || '').startsWith('mikrotik')
+  const isSecureAuto = isMikroTik && form.connectionMethod === 'direct' && (form.publicIpMode || 'secure_auto') === 'secure_auto'
+  const isManualPublicIp = isMikroTik && form.connectionMethod === 'direct' && form.publicIpMode === 'manual'
   const wizardHelp = getWizardHelpGuide(form.routerType, form.connectionMethod)
   const wizardScriptText = mikrotikScript ? routerScriptText(mikrotikScript) : ''
   const installCmd = newRouter ? `AGENT_TOKEN=${newRouter.agentToken} ROUTER_IP=${form.routerIp || '192.168.X.X'} ROUTER_TYPE=${form.routerType} ROUTER_USER=${form.routerUser || 'admin'} ROUTER_PASS=${form.routerPass || 'TU_PASSWORD'} node fibranexus-agent.js` : ''
@@ -867,7 +894,14 @@ export default function RouterManager({ API, onBack }: Props) {
                   )}
                   <div className="space-y-3">
                     {methodsForDevice(form.routerType).map(m => (
-                      <button key={m.value} onClick={() => { setForm({ ...form, connectionMethod: m.value }); setStep(3) }}
+                      <button key={m.value} onClick={() => {
+                        const next: any = { ...form, connectionMethod: m.value }
+                        if (String(form.routerType || '').startsWith('mikrotik') && m.value === 'direct') {
+                          next.publicIpMode = form.publicIpMode || 'secure_auto'
+                        }
+                        setForm(next)
+                        setStep(3)
+                      }}
                         className={`w-full text-left p-4 border-2 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition ${m.recommended ? 'border-blue-200' : m.advanced ? 'border-amber-200' : ''}`}>
                         <div className="flex items-start gap-3">
                           <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -915,6 +949,38 @@ export default function RouterManager({ API, onBack }: Props) {
                     <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="ej: Router Nodo Central" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />
                   </div>
 
+                  {isMikroTik && form.connectionMethod === 'direct' && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-ink-soft">Modo de acceso</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, publicIpMode: 'secure_auto', routerUser: undefined, routerPass: undefined })}
+                          className={`text-left p-3 rounded-xl border-2 transition ${
+                            (form.publicIpMode || 'secure_auto') === 'secure_auto'
+                              ? 'border-emerald-500 bg-emerald-50'
+                              : 'border-line hover:border-emerald-300'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-ink">Segura automática</p>
+                          <p className="text-xs text-ink-muted mt-0.5">Recomendado · un script crea API + allowlist</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, publicIpMode: 'manual' })}
+                          className={`text-left p-3 rounded-xl border-2 transition ${
+                            form.publicIpMode === 'manual'
+                              ? 'border-amber-500 bg-amber-50'
+                              : 'border-line hover:border-amber-300'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-ink">Manual</p>
+                          <p className="text-xs text-ink-muted mt-0.5">Ya tienes REST API · usuario/clave</p>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
                       <label className="block text-sm font-medium text-ink-soft mb-1">
@@ -928,7 +994,7 @@ export default function RouterManager({ API, onBack }: Props) {
                         <span className="text-red-500"> *</span>
                       </label>
                       <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono" 
-                        placeholder={form.connectionMethod === 'cloudflare_tunnel' ? '192.168.3.253' : form.connectionMethod === 'agent' ? (isEdgeRouter ? '192.168.2.1' : '192.168.1.1') : isEdgeRouter ? '192.168.2.1' : 'router.miempresa.cl'} 
+                        placeholder={form.connectionMethod === 'cloudflare_tunnel' ? '192.168.3.253' : form.connectionMethod === 'agent' ? (isEdgeRouter ? '192.168.2.1' : '192.168.1.1') : isEdgeRouter ? '192.168.2.1' : '190.217.242.4'} 
                         value={form.routerIp || ''} onChange={e => setForm({ ...form, routerIp: e.target.value })} />
                     </div>
                     <div>
@@ -938,6 +1004,19 @@ export default function RouterManager({ API, onBack }: Props) {
                         value={form.routerPort || ''} onChange={e => setForm({ ...form, routerPort: e.target.value })} />
                     </div>
                   </div>
+
+                  {isMikroTik && form.connectionMethod === 'direct' && (form.publicIpMode || 'secure_auto') === 'secure_auto' && (
+                    <div>
+                      <label className="block text-sm font-medium text-ink-soft mb-1">IP local del MikroTik (LAN)</label>
+                      <input
+                        className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono"
+                        placeholder="192.168.3.253"
+                        value={form.routerLocalIp || ''}
+                        onChange={e => setForm({ ...form, routerLocalIp: e.target.value })}
+                      />
+                      <p className="text-xs text-ink-muted mt-1">Si está detrás de un borde, sirve para sugerir el dst-nat. El script crea el usuario <code className="font-mono">fibranexus</code> automáticamente.</p>
+                    </div>
+                  )}
 
                   {form.connectionMethod === 'cloudflare_tunnel' && (
                     <div className="space-y-3 p-4 bg-sky-50 border border-sky-200 rounded-xl">
@@ -1015,6 +1094,7 @@ export default function RouterManager({ API, onBack }: Props) {
                     </div>
                   )}
 
+                  {(!isSecureAuto) && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-ink-soft mb-1">Usuario del router <span className="text-red-500">*</span></label>
@@ -1034,6 +1114,21 @@ export default function RouterManager({ API, onBack }: Props) {
                       </div>
                     </div>
                   </div>
+                  )}
+
+                  {isManualPublicIp && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-800">Si www-ssl queda abierto a todo internet (`0.0.0.0/0`), cualquiera puede intentar entrar a la API. Prefiere Segura automática.</p>
+                    </div>
+                  )}
+
+                  {isSecureAuto && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex gap-2">
+                      <Shield className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-emerald-900">Al registrar se genera el usuario <strong>fibranexus</strong> y una clave. El script las aplica en el MikroTik y deja www-ssl solo para las IPs de FibraNexus.</p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1047,7 +1142,7 @@ export default function RouterManager({ API, onBack }: Props) {
                   </div>
 
                   {/* Test de conexión */}
-                  {form.connectionMethod !== 'agent' && form.routerUser && form.routerPass && (form.connectionMethod === 'cloudflare_tunnel' ? form.tunnelHostname : form.routerIp) && (
+                  {!isSecureAuto && form.connectionMethod !== 'agent' && form.routerUser && form.routerPass && (form.connectionMethod === 'cloudflare_tunnel' ? form.tunnelHostname : form.routerIp) && (
                     <div>
                       <button onClick={handleTestConnection} disabled={testing}
                         className="w-full py-2.5 border-2 border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 font-medium flex items-center justify-center gap-2 disabled:opacity-50">
@@ -1086,7 +1181,8 @@ export default function RouterManager({ API, onBack }: Props) {
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setStep(2)} className="flex-1 py-2.5 border rounded-lg hover:bg-surface-raised font-medium">Atrás</button>
                     <button onClick={handleCreate} disabled={
-                      !form.name || !form.routerUser || !form.routerPass
+                      !form.name
+                      || (!isSecureAuto && form.connectionMethod !== 'agent' && (!form.routerUser || !form.routerPass))
                       || (form.connectionMethod === 'cloudflare_tunnel' && isEdgeRouter && (!form.tunnelHostname || !form.routerIp))
                       || (form.connectionMethod === 'cloudflare_tunnel' && !isEdgeRouter && (!form.tunnelHostname || !form.tunnelToken))
                       || (form.connectionMethod !== 'cloudflare_tunnel' && !form.routerIp)

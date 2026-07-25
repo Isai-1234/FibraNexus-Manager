@@ -15,6 +15,78 @@ function serverBaseUrl() {
   return process.env.PUBLIC_URL || process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'https://app.fibranexus.cl';
 }
 
+/** CIDRs de salida FibraNexus para allowlist www-ssl (escala: lista corta compartida por todos los ISP). */
+export function parseEgressCidrs() {
+  const raw = process.env.FIBRANEXUS_EGRESS_CIDRS || '134.209.43.175/32';
+  return raw
+    .split(/[\s,;]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(s))
+    .map((s) => (s.includes('/') ? s : `${s}/32`));
+}
+
+function escapeRosString(value) {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
+ * Camino A — segura automática: cert + www-ssl + usuario dedicado + allowlist egress.
+ * Idempotente; no toca WAN/NAT existente.
+ */
+export function buildSecurePublicIpSetupScript({ apiUser, apiPassword, egressCidrs, wwwSslPort = 443 }) {
+  const user = escapeRosString(apiUser || 'fibranexus');
+  const pass = escapeRosString(apiPassword);
+  const cidrs = (egressCidrs?.length ? egressCidrs : parseEgressCidrs()).join(',');
+  const port = String(wwwSslPort || 443);
+  return `# FibraNexus — acceso API seguro (IP pública)
+# Solo permite www-ssl desde IPs FibraNexus: ${cidrs}
+
+:if ([:len [/certificate find name="fn-https"]] = 0) do={
+  /certificate add name=fn-https common-name=fibranexus days-valid=3650 key-usage=tls-server,digital-signature,key-encipherment
+  :delay 2s
+  /certificate sign [find name=fn-https] name=fn-https
+  :delay 3s
+}
+
+:do {
+  /ip service set www-ssl disabled=no port=${port} certificate=fn-https address=${cidrs}
+} on-error={
+  /ip service set www-ssl disabled=no certificate=fn-https
+  /ip service set www-ssl address=${cidrs}
+}
+
+:if ([:len [/user find name="${user}"]] = 0) do={
+  /user add name="${user}" password="${pass}" group=full comment="FibraNexus API"
+} else={
+  /user set [find name="${user}"] password="${pass}" group=full disabled=no comment="FibraNexus API"
+}
+
+:put "FibraNexus: www-ssl + usuario ${user} listos (allowlist ${cidrs})"`;
+}
+
+export function buildNatHint({ publicHost, externalPort, localIp, localPort = 443 }) {
+  const ext = String(externalPort || 443);
+  const local = localIp || 'IP_LOCAL_MIKROTIK';
+  const toPort = String(localPort || 443);
+  if (!publicHost && !localIp) return null;
+  if (ext === '443' && (!localIp || localIp === publicHost)) {
+    return {
+      needed: false,
+      summary: 'Si el MikroTik tiene la IP pública directamente en WAN, no necesitas dst-nat.',
+      script: null,
+    };
+  }
+  return {
+    needed: true,
+    summary: `En el MikroTik de BORDE (si aplica): reenvía TCP ${ext} → ${local}:${toPort}`,
+    script: [
+      '# Ejecutar en el MikroTik de BORDE (no en el router de acceso interno)',
+      `/ip firewall nat remove [find comment="fibranexus-api"]`,
+      `/ip firewall nat add chain=dstnat protocol=tcp dst-port=${ext} action=dst-nat to-addresses=${local} to-ports=${toPort} comment=fibranexus-api`,
+    ].join('\n'),
+  };
+}
+
 function buildHeartbeatScript(token, routerId) {
   const serverUrl = `${serverBaseUrl()}/api/routers/agent/heartbeat`;
   return `:local token "${token}"
@@ -229,11 +301,42 @@ sudo nohup /bin/bash /config/scripts/fibranexus/heartbeat.sh >/dev/null 2>&1 &
 echo "FibraNexus iniciado — verifica el dashboard en ~30 segundos."`;
 }
 
-function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connectionMethod }) {
+function buildFullSetupScript({
+  token,
+  routerId,
+  tunnelToken,
+  routerIp,
+  connectionMethod,
+  publicIpMode,
+  apiUser,
+  apiPassword,
+  egressCidrs,
+  wwwSslPort,
+}) {
   const heartbeat = buildHeartbeatScript(token, routerId);
   const lines = [
     '# FibraNexus — instalación automática (pegar en Terminal, ejecutar una vez)',
     '',
+  ];
+
+  const useSecureAuto = connectionMethod === 'direct'
+    && publicIpMode !== 'manual'
+    && apiUser
+    && apiPassword;
+
+  if (useSecureAuto) {
+    lines.push(
+      buildSecurePublicIpSetupScript({
+        apiUser,
+        apiPassword,
+        egressCidrs,
+        wwwSslPort,
+      }),
+      '',
+    );
+  }
+
+  lines.push(
     '/system script remove [find name=fibranexus-agent]',
     '/system script add name=fibranexus-agent policy=read,write,test source={',
     heartbeat,
@@ -241,7 +344,7 @@ function buildFullSetupScript({ token, routerId, tunnelToken, routerIp, connecti
     '',
     '/system scheduler remove [find name=fibranexus-heartbeat]',
     '/system scheduler add name=fibranexus-heartbeat interval=30s on-event=fibranexus-agent',
-  ];
+  );
 
   if (connectionMethod === 'cloudflare_tunnel' && tunnelToken) {
     lines.push('', buildTunnelSetupScript(tunnelToken, routerIp));
@@ -305,12 +408,14 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       name, brand, model, location, routerType, snmpCommunity,
       connectionMethod, routerIp, routerPort, routerUser, routerPass,
       tunnelHostname, tunnelToken, lanSubnet, lanInterface, dhcpSharedNetwork,
-      parentRouterId,
+      parentRouterId, publicIpMode, routerLocalIp,
     } = req.body;
     if (!name || !routerType) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
 
     const isEdge = String(routerType).startsWith('edgerouter');
+    const isMikro = String(routerType).startsWith('mikrotik');
     const method = connectionMethod || (isEdge ? 'cloudflare_tunnel' : 'direct');
+    const mode = publicIpMode === 'manual' ? 'manual' : 'secure_auto';
     if (method === 'cloudflare_tunnel' && !tunnelHostname && !isEdge) {
       return res.status(400).json({ error: 'Hostname del túnel requerido' });
     }
@@ -320,6 +425,18 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
     if (isEdge && method === 'cloudflare_tunnel' && !routerIp) {
       return res.status(400).json({ error: 'IP local del EdgeRouter requerida (ej: 172.16.11.254)' });
     }
+
+    let apiUser = routerUser || null;
+    let apiPass = routerPass || null;
+    let generatedApiPassword = null;
+    if (isMikro && method === 'direct' && mode === 'secure_auto') {
+      apiUser = 'fibranexus';
+      generatedApiPassword = crypto.randomBytes(18).toString('base64url');
+      apiPass = generatedApiPassword;
+    } else if (method !== 'agent' && (!apiUser || !apiPass)) {
+      return res.status(400).json({ error: 'Usuario y contraseña del router requeridos' });
+    }
+
     const agentToken = crypto.randomUUID();
     const { encryptCredentialsObject, encryptSecret, sanitizeEquipmentRow } = await import('../lib/secrets.js');
     const { assertWithinRouterLimit } = await import('../lib/orgLimits.js');
@@ -329,13 +446,14 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       agentToken,
       routerType,
       connectionMethod: method,
+      publicIpMode: isMikro && method === 'direct' ? mode : null,
       routerPort: routerPort || '443',
       tunnelHostname: tunnelHostname || null,
       tunnelToken: tunnelToken || null,
       parentRouterId: parentRouterId ? parseInt(parentRouterId, 10) : null,
-      routerUser: routerUser || null,
-      routerPass: routerPass || null,
-      routerLocalIp: routerIp || null,
+      routerUser: apiUser,
+      routerPass: apiPass,
+      routerLocalIp: routerLocalIp || (method === 'direct' ? null : routerIp) || null,
       lanSubnet: lanSubnet || null,
       lanInterface: lanInterface || null,
       dhcpSharedNetwork: dhcpSharedNetwork || null,
@@ -363,8 +481,16 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
       ipAddress: clientIp(req),
     });
 
-    // agentToken solo en creación (one-shot)
-    res.status(201).json({ ...sanitizeEquipmentRow(router), agentToken });
+    // agentToken / generatedApiPassword solo en creación (one-shot)
+    res.status(201).json({
+      ...sanitizeEquipmentRow(router),
+      agentToken,
+      ...(generatedApiPassword ? {
+        publicIpMode: mode,
+        apiUser,
+        generatedApiPassword,
+      } : {}),
+    });
   } catch (error) {
     const status = error.status || 500;
     res.status(status).json({ error: error.message || 'Error al registrar router' });
@@ -883,27 +1009,54 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
     );
     if (!routers.length) return res.status(404).json({ error: 'Router no encontrado' });
     const router = routers[0];
-    let token = router.credentials?.agentToken;
+    const creds = router.credentials || {};
+    let token = creds.agentToken;
     if (!token) {
       token = crypto.randomUUID();
-      const updatedCreds = { ...(router.credentials || {}), agentToken: token };
+      const updatedCreds = { ...creds, agentToken: token };
       await db.update(equipment).set({ credentials: updatedCreds, updatedAt: new Date() })
         .where(eq(equipment.id, router.id));
     }
 
     const connectionMethod = inferConnectionMethod(router);
-    const tunnelToken = router.credentials?.tunnelToken;
+    const publicIpMode = creds.publicIpMode === 'manual' ? 'manual' : 'secure_auto';
+    let tunnelToken = creds.tunnelToken || null;
+    let apiPassword = creds.routerPass || null;
+    try {
+      if (tunnelToken) tunnelToken = decryptSecret(tunnelToken) || tunnelToken;
+    } catch { /* plaintext legacy */ }
+    try {
+      if (apiPassword) apiPassword = decryptSecret(apiPassword) || apiPassword;
+    } catch { /* plaintext legacy */ }
+
     const routerIp = router.ipAddress?.includes('fibranexus.cl') ? null : router.ipAddress;
+    const localIp = creds.routerLocalIp || null;
+    const egressCidrs = parseEgressCidrs();
+    const externalPort = parseInt(creds.routerPort || '443', 10) || 443;
+    const isSecureAuto = connectionMethod === 'direct' && publicIpMode === 'secure_auto';
 
     const heartbeatScript = buildHeartbeatScript(token, routerId);
     const fullSetupScript = buildFullSetupScript({
       token,
       routerId,
       tunnelToken,
-      routerIp,
+      routerIp: localIp || routerIp,
       connectionMethod,
+      publicIpMode,
+      apiUser: creds.routerUser || 'fibranexus',
+      apiPassword: isSecureAuto ? apiPassword : null,
+      egressCidrs,
+      wwwSslPort: 443,
     });
     const persistenceScript = buildPersistenceScript();
+    const natHint = connectionMethod === 'direct'
+      ? buildNatHint({
+        publicHost: router.ipAddress,
+        externalPort,
+        localIp,
+        localPort: 443,
+      })
+      : null;
 
     const isTunnel = connectionMethod === 'cloudflare_tunnel';
     res.json({
@@ -911,6 +1064,9 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
       fullSetupScript,
       persistenceScript,
       connectionMethod,
+      publicIpMode: connectionMethod === 'direct' ? publicIpMode : null,
+      egressCidrs,
+      natHint,
       installInstructions: isTunnel ? [
         '1. En Cloudflare Zero Trust → Networks → Tunnels → crea un túnel',
         '2. Publica HTTP → http://IP_LOCAL:80 (ej: http://192.168.3.253:80)',
@@ -918,6 +1074,11 @@ routersRouter.get('/:id/mikrotik-script', requireRole('admin'), async (req, res)
         '4. En el MikroTik: activa container mode (/system device-mode update container=yes + reinicio)',
         '5. Abre Terminal en Winbox y pega el script completo (fullSetupScript)',
         '6. Espera 1 minuto — el dashboard mostrará "Conectado"',
+      ] : isSecureAuto ? [
+        '1. Abre Winbox → New Terminal en el MikroTik (ya con internet)',
+        '2. Pega el script completo — crea cert, www-ssl, usuario fibranexus y allowlist',
+        '3. Si el router está detrás de un borde, aplica la sugerencia NAT en el borde',
+        '4. En FibraNexus: Probar conexión — debe quedar online',
       ] : [
         '1. Abre Winbox → Terminal',
         '2. Pega el script completo (fullSetupScript)',
