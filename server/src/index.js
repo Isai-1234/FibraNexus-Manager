@@ -74,6 +74,59 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
+// Captive portal / wall garden: HTTP ajeno o probes del SO → aviso de suspensión
+const CAPTIVE_PROBE_PATHS = new Set([
+  '/generate_204',
+  '/gen_204',
+  '/hotspot-detect.html',
+  '/library/test/success.html',
+  '/connecttest.txt',
+  '/ncsi.txt',
+  '/success.txt',
+  '/canonical.html',
+  '/redirect',
+]);
+function suspendedPortalAbsoluteUrl() {
+  const base = (process.env.PUBLIC_URL || process.env.FRONTEND_URL || 'https://app.fibranexus.cl')
+    .split(',')[0]
+    .trim()
+    .replace(/\/$/, '');
+  try {
+    const u = new URL(base.startsWith('http') ? base : `https://${base}`);
+    return `${u.protocol}//${u.host}/suspended`;
+  } catch {
+    return 'https://app.fibranexus.cl/suspended';
+  }
+}
+function isOurPublicHost(host) {
+  const h = String(host || '').split(':')[0].toLowerCase();
+  if (!h) return false;
+  if (h === 'localhost' || h === '127.0.0.1') return true;
+  if (h.endsWith('.fibranexus.cl') || h === 'fibranexus.cl') return true;
+  const candidates = [
+    process.env.PUBLIC_URL,
+    process.env.FRONTEND_URL,
+    process.env.RENDER_EXTERNAL_URL,
+  ].flatMap((raw) => String(raw || '').split(',')).map((s) => s.trim()).filter(Boolean);
+  for (const raw of candidates) {
+    try {
+      const u = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+      if (u.hostname.toLowerCase() === h) return true;
+    } catch { /* ignore */ }
+  }
+  return false;
+}
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+  const host = String(req.headers.host || '').split(':')[0].toLowerCase();
+  const foreignHost = Boolean(host) && !isOurPublicHost(host);
+  const isProbe = CAPTIVE_PROBE_PATHS.has(req.path);
+  if (foreignHost || isProbe) {
+    return res.redirect(302, suspendedPortalAbsoluteUrl());
+  }
+  return next();
+});
+
 // Siempre declarar UTF-8 en JSON (evita mojibake en clientes / proxies)
 app.use((req, res, next) => {
   const originalJson = res.json.bind(res);

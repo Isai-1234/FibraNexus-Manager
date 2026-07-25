@@ -19,7 +19,8 @@ alwaysApply: true
 ## Suspensión
 - Preferido ISP primerizo: **walled garden** (address-list + firewall) → solo portal de pago / DNS; resto drop.
 - **No** aceptar TCP/443 a todo internet (deja YouTube/Google). Solo destinos en `FN-WALLED-GARDEN`.
-- Portal: `/suspended` o URL de la org. Al reactivar (pago): quitar listas/reglas.
+- **Captive HTTP:** dst-nat TCP/80 de `FN-SUSPENDED` → IP del portal; nginx (Host ajeno / probes) → `302 /suspended` con CTA de pago. HTTPS ajeno no redirige sin MITM.
+- Portal: `/suspended` o URL de la org. Al reactivar (pago): quitar listas/reglas/NAT.
 - Corte duro (disable secret + kick sesión) es opción secundaria, no el default de onboarding.
 
 ## Script de registro

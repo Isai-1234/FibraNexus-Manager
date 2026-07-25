@@ -32,6 +32,11 @@ alwaysApply: true
 3. Verificar online.
 4. Configurar PPPoE + Simple Queue desde FibraNexus (no Winbox manual).
 
+## Wall garden + captive (validado 2026-07-24/25)
+- Drop solo ≠ aviso: hace falta **dst-nat TCP 80** de `FN-SUSPENDED` al portal + nginx `default_server`/`generate_204` → `302 /suspended`.
+- Página `/suspended` con CTA **Pagar aquí** → login portal abonado.
+- HTTPS (YouTube/Google) no redirige sin MITM; sí quedan bloqueados si no hay accept 443 global.
+
 ## Camino A — IP pública (validado 2026-07-24)
 - Lab: L009 `192.168.3.253` detrás de borde `190.217.242.4`, NAT `44300→443`.
 - Org QA: router id 1 online (RouterOS 7.23.1, board L009UiGS).

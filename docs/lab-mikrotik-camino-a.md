@@ -71,6 +71,7 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue (evitar que sync pise la IP remota con la de gestión).
 - [x] Lab: suspensión wall garden servicio 83 → IP `172.16.11.251` en `FN-SUSPENDED`; reglas forward garden/DNS/drop; PPPoE sigue activo; portal `https://app.fibranexus.cl/suspended`.
 - [x] Quitar accept TCP/443 global (dejaba YouTube/Google); garden solo a IPs del portal + DNS.
+- [x] Captive redirect HTTP: MikroTik dst-nat TCP/80 de `FN-SUSPENDED` → IP del portal; nginx default_server + probes → `302 https://app.fibranexus.cl/suspended` con CTA **Pagar aquí**. HTTPS ajenos siguen sin MITM (solo bloqueo).
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
 - [x] Lab: loco sectorial + CPE cliente Station + PPPoE `fn83s83` → `172.16.11.251` + Simple Queue 25M/25M.
 - [x] Service-name PPPoE en airOS debe coincidir con el server del L009 (`internet`).
