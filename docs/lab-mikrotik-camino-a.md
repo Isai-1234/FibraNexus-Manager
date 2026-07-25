@@ -68,10 +68,11 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - [x] Wizard Camino A: **Segura automática** (default) vs **Manual**; script con cert + www-ssl + usuario + allowlist + hint NAT (`FIBRANEXUS_EGRESS_CIDRS`).
 - [x] Conectar LiteBeam a ether3 → DHCP + Detectados + adopción.
 - [x] SNMP airOS community `internetsur-lab` + poll online vía L009 (sysName NanoStation 5AC loco).
-- [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue.
+- [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue (evitar que sync pise la IP remota con la de gestión).
 - [ ] Probar suspensión wall garden + reactivación.
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
-- [ ] Lab: loco AC como sectorial + CPE cliente + plan PPPoE/cola.
+- [x] Lab: loco sectorial + CPE cliente Station + PPPoE `fn83s83` → `172.16.11.251` + Simple Queue 25M/25M.
+- [x] Service-name PPPoE en airOS debe coincidir con el server del L009 (`internet`).
 
 ## Credenciales / secretos
 
