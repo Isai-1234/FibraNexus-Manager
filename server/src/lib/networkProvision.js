@@ -112,8 +112,11 @@ export async function provisionServiceNetwork(serviceId, orgId, routerId, provis
   }
 
   if (doQueue) {
-    const target = username || ctx.service.ipAddress;
-    if (!target) throw new Error('Simple Queue requiere usuario PPPoE o una IP estática en el servicio');
+    // Target = IP remota del abonado (PPPoE/DHCP), nunca el nombre del secret.
+    const target = ctx.service.ipAddress || null;
+    if (!target) {
+      throw new Error('Simple Queue requiere la IP remota del abonado en el servicio (no el usuario PPPoE)');
+    }
 
     const oldQueueName = ctx.service.queueName;
     const existingOnRouter = await findSimpleQueueByTarget(router, target);
@@ -174,8 +177,8 @@ export async function syncServiceQueueMetadata(serviceId, orgId) {
   const router = await loadRouter(ctx.service.routerId, orgId);
   if (!router) return { skipped: true, reason: 'Router no encontrado' };
 
-  const target = ctx.service.pppoeUsername || ctx.service.ipAddress;
-  if (!target) return { skipped: true, reason: 'Sin IP o usuario PPPoE en el servicio' };
+  const target = ctx.service.ipAddress;
+  if (!target) return { skipped: true, reason: 'Sin IP remota en el servicio para la cola' };
 
   const queueName = buildQueueName(ctx.client.fullName, serviceId);
   const maxLimit = ctx.service.networkMeta?.maxLimit
