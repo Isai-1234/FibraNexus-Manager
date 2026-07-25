@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, CreditCard, LogIn, ExternalLink } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { AlertTriangle, CreditCard, ExternalLink, Copy, Check } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || '/api'
 const DEFAULT_LOGIN = 'https://app.fibranexus.cl/login'
@@ -13,12 +13,14 @@ type MoraBrand = {
   accentColor?: string
   portalTitle?: string
   payUrl?: string
+  portalUrl?: string
 }
 
 export default function SuspendedNotice() {
   const { slug } = useParams<{ slug?: string }>()
   const [brand, setBrand] = useState<MoraBrand | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!slug) return
@@ -37,10 +39,21 @@ export default function SuspendedNotice() {
     return () => { cancelled = true }
   }, [slug])
 
-  const orgName = brand?.orgName || (slug ? null : null)
+  const orgName = brand?.orgName || null
   const title = brand?.portalTitle || orgName || 'Servicio suspendido'
   const primary = brand?.primaryColor || '#2563eb'
   const payUrl = brand?.payUrl || DEFAULT_LOGIN
+  const portalUrl = brand?.portalUrl
+    || (typeof window !== 'undefined' ? window.location.href.split('?')[0] : '')
+    || (slug ? `https://app.fibranexus.cl/mora/${slug}` : 'https://app.fibranexus.cl/suspended')
+
+  async function copyUrl() {
+    try {
+      await navigator.clipboard.writeText(portalUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* ignore */ }
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -65,9 +78,29 @@ export default function SuspendedNotice() {
         <div className="px-8 py-8 space-y-5">
           <p className="text-gray-700 leading-relaxed">
             {orgName
-              ? `${orgName} limitó tu acceso por falta de pago. Solo puedes usar esta página y el portal para regularizar.`
-              : 'Por falta de pago, solo puedes usar esta página y el portal para regularizar. El resto de sitios están bloqueados hasta que pagues.'}
+              ? `${orgName} limitó tu acceso por falta de pago. Desde aquí puedes entrar al portal y pagar.`
+              : 'Por falta de pago el acceso está limitado. Entra al portal para regularizar.'}
           </p>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 space-y-2">
+            <p className="font-semibold">Si estás en el celular</p>
+            <ol className="list-decimal list-inside space-y-1 text-amber-900/90">
+              <li>Cierra o ignora el aviso de Wi‑Fi del sistema.</li>
+              <li>Abre <strong>Chrome</strong> o Safari (no el avisito pequeño).</li>
+              <li>Entra a esta dirección:</li>
+            </ol>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="flex-1 text-xs bg-white border rounded-lg px-3 py-2 break-all">{portalUrl.replace(/^https?:\/\//, '')}</code>
+              <button
+                type="button"
+                onClick={copyUrl}
+                className="shrink-0 p-2 rounded-lg border bg-white hover:bg-slate-50"
+                aria-label="Copiar enlace"
+              >
+                {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
 
           {loadError && slug && (
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -77,6 +110,8 @@ export default function SuspendedNotice() {
 
           <a
             href={payUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full inline-flex items-center justify-center gap-2 px-5 py-4 text-white text-lg font-semibold rounded-xl transition-opacity hover:opacity-90 shadow-lg"
             style={{ backgroundColor: primary }}
           >
@@ -90,19 +125,6 @@ export default function SuspendedNotice() {
             <li>2. Revisa la factura pendiente y registra el pago.</li>
             <li>3. Al confirmarse, el servicio se reactiva solo.</li>
           </ul>
-
-          <Link
-            to="/login"
-            className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            <LogIn className="h-4 w-4" />
-            Ir al portal de clientes
-          </Link>
-
-          <p className="text-xs text-gray-400 text-center pt-1">
-            Apps como YouTube no muestran este aviso (usan HTTPS). Abre el navegador en una página HTTP
-            (p. ej. neverssl.com) o usa el aviso de Wi‑Fi del teléfono.
-          </p>
         </div>
       </div>
     </div>

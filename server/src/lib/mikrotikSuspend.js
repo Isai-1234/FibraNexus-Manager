@@ -2,7 +2,6 @@ import { mikrotikRequest } from './mikrotikClient.js';
 
 const SUSPENDED_LIST = 'FN-SUSPENDED';
 const GARDEN_LIST = 'FN-WALLED-GARDEN';
-const PROXY_PORT = '8080';
 
 function suspendTag(serviceId) {
   return `fn-suspend-s${serviceId}`;
@@ -94,38 +93,12 @@ async function removeNatRulesByComment(router, commentPrefix) {
   }
 }
 
-async function upsertProxyAccess(router, spec) {
-  const rules = await listProxyAccess(router);
-  const found = rules.find((r) => r.comment === spec.comment);
-  if (found?.['.id']) {
-    await mikrotikRequest(router, 'PATCH', `/ip/proxy/access/${found['.id']}`, spec);
-    return { action: 'updated' };
-  }
-  await mikrotikRequest(router, 'PUT', '/ip/proxy/access', spec);
-  return { action: 'created' };
-}
-
 async function removeProxyAccessByComment(router, commentPrefix) {
   const rules = await listProxyAccess(router);
   for (const rule of rules) {
     if (rule.comment?.startsWith(commentPrefix)) {
       await mikrotikRequest(router, 'DELETE', `/ip/proxy/access/${rule['.id']}`);
     }
-  }
-}
-
-async function ensureHttpProxy(router) {
-  // Recurso singleton: PATCH /ip/proxy
-  try {
-    await mikrotikRequest(router, 'PATCH', '/ip/proxy', {
-      enabled: 'true',
-      port: PROXY_PORT,
-    });
-  } catch {
-    await mikrotikRequest(router, 'POST', '/ip/proxy/set', {
-      enabled: 'true',
-      port: PROXY_PORT,
-    });
   }
 }
 
@@ -157,7 +130,13 @@ export async function applyMikrotikSubscriberSuspend(router, {
   const tag = suspendTag(serviceId);
   await ensureAddressListEntry(router, SUSPENDED_LIST, clientIp, tag);
 
-  const gardenIps = [...new Set([...portalIps, '8.8.8.8', '8.8.4.4'])];
+  // DNS públicos frecuentes (Android Private DNS / DoH) + portal
+  const gardenIps = [...new Set([
+    ...portalIps,
+    '8.8.8.8', '8.8.4.4',
+    '1.1.1.1', '1.0.0.1',
+    '9.9.9.9',
+  ])];
   for (const ip of gardenIps) {
     await ensureAddressListEntry(router, GARDEN_LIST, ip, `${tag}-garden-${ip}`);
   }
@@ -165,74 +144,34 @@ export async function applyMikrotikSubscriberSuspend(router, {
   await removeFilterRulesByComment(router, `${tag}-https`);
 
   let httpRedirect = null;
-  const host = portalHostname(portalUrl);
   const redirIp = pickPortalRedirectIp(portalIps);
 
-  try {
-    await ensureHttpProxy(router);
-
-    // Permitir portal (HTTP vía proxy, si aplica) antes del deny+redirect
-    if (host) {
-      await upsertProxyAccess(router, {
-        action: 'allow',
-        'dst-host': host,
-        comment: `${tag}-proxy-allow-host`,
-      });
-    }
-    if (redirIp) {
-      await upsertProxyAccess(router, {
-        action: 'allow',
-        'dst-address': redirIp,
-        comment: `${tag}-proxy-allow-ip`,
-      });
-    }
-
-    await upsertProxyAccess(router, {
-      action: 'deny',
-      'redirect-to': portalUrl,
-      comment: `${tag}-proxy-redir`,
-    });
-
-    // Transparent proxy: solo suspendidos, TCP/80 → proxy local
+  // dst-nat HTTP → portal (captive). El proxy MikroTik no expone redirect-to fiable por REST.
+  if (redirIp) {
     httpRedirect = await upsertNatRule(router, {
       chain: 'dstnat',
       'src-address-list': SUSPENDED_LIST,
       protocol: 'tcp',
       'dst-port': '80',
-      action: 'redirect',
-      'to-ports': PROXY_PORT,
+      action: 'dst-nat',
+      'to-addresses': redirIp,
+      'to-ports': '80',
       comment: `${tag}-http-redir`,
     });
-    httpRedirect = { mode: 'proxy-redirect', portalUrl, ...httpRedirect };
-  } catch (proxyErr) {
-    // Fallback: dst-nat al IP del portal (nginx/API resuelven marca ISP)
-    if (redirIp) {
-      httpRedirect = await upsertNatRule(router, {
-        chain: 'dstnat',
-        'src-address-list': SUSPENDED_LIST,
-        protocol: 'tcp',
-        'dst-port': '80',
-        action: 'dst-nat',
-        'to-addresses': redirIp,
-        'to-ports': '80',
-        comment: `${tag}-http-redir`,
-      });
-      httpRedirect = {
-        mode: 'dst-nat-fallback',
-        to: redirIp,
-        portalUrl,
-        proxyError: String(proxyErr.message || proxyErr),
-        ...httpRedirect,
-      };
-    } else {
-      throw proxyErr;
-    }
+    httpRedirect = { mode: 'dst-nat', to: redirIp, portalUrl, ...httpRedirect };
   }
+
+  // Limpia intentos previos de proxy access de este servicio
+  try {
+    await removeProxyAccessByComment(router, tag);
+  } catch { /* ignore */ }
 
   const rules = [
     { chain: 'forward', 'src-address-list': SUSPENDED_LIST, 'dst-address-list': GARDEN_LIST, action: 'accept', comment: `${tag}-garden` },
     { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'udp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-udp` },
     { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'tcp', 'dst-port': '53', action: 'accept', comment: `${tag}-dns-tcp` },
+    // Android Private DNS (DoT)
+    { chain: 'forward', 'src-address-list': SUSPENDED_LIST, protocol: 'tcp', 'dst-port': '853', action: 'accept', comment: `${tag}-dns-dot` },
     { chain: 'forward', 'src-address-list': SUSPENDED_LIST, action: 'drop', comment: `${tag}-drop` },
   ];
 
