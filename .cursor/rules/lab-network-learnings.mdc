@@ -33,10 +33,11 @@ alwaysApply: true
 4. Configurar PPPoE + Simple Queue desde FibraNexus (no Winbox manual).
 
 ## Wall garden + captive (validado 2026-07-24/25)
-- Drop solo ≠ aviso: HTTP de `FN-SUSPENDED` → proxy MikroTik con `redirect-to` = portal **del ISP** (`/mora/{slug}` o `suspendPortalUrl`).
-- Fallback: dst-nat al VPS + `/api/public/captive` resuelve ISP por IP WAN del router.
-- HTTPS (YouTube/Chrome HTTPS-First) no redirige sin MITM; el aviso llega por sheet Wi‑Fi del SO o `http://neverssl.com`.
-- Página `/mora/:slug` muestra nombre/logo del ISP, no marca SaaS.
+- Drop solo ≠ aviso: HTTP de `FN-SUSPENDED` → dst-nat al VPS + `/api/public/captive` resuelve ISP por IP WAN → `/mora/{slug}`.
+- Login abonado con marca ISP: `/portal/{slug}` (no `/login` SaaS).
+- HTTPS (YouTube/Chrome HTTPS-First) no redirige sin MITM; el aviso llega por sheet Wi‑Fi o `http://neverssl.com`.
+- **Siguiente:** botón mora → checkout Flow directo (sin login), con “Ya tengo cuenta” secundario.
+- Checkpoint documentado en `docs/lab-mikrotik-camino-a.md` (sección 2026-07-24/25).
 
 ## Camino A — IP pública (validado 2026-07-24)
 - Lab: L009 `192.168.3.253` detrás de borde `190.217.242.4`, NAT `44300→443`.

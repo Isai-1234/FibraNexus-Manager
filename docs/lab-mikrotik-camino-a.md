@@ -61,7 +61,32 @@ La allowlist **no crece por ISP**: todos los MikroTik permiten las mismas IPs de
 
 Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 
-## Pendiente inmediato
+## Checkpoint 2026-07-24/25 (wall garden + mora ISP) — pausado
+
+**Estado en prod:** commit reciente en `main` desplegado en VPS (`pm2 fibranexus-api`).  
+**Lab:** servicio **83** (Abonado Antena Lab) queda **suspendido** con wall garden.
+
+### Hecho y validado
+- Wall garden MikroTik: `FN-SUSPENDED` = IP PPPoE `172.16.11.251`; garden = portal + DNS (8.8.8.8/8.8.4.4 + 1.1.1.1 + DoT 853); resto drop. Sin accept TCP/443 global.
+- Captive HTTP: dst-nat TCP/80 → VPS; nginx `default_server` + probes → `GET /api/public/captive` → portal del ISP por IP WAN del router.
+- Página de mora **por ISP**: `https://app.fibranexus.cl/mora/{slug}` (lab: `/mora/nexus-sur-qa`) con marca del ISP.
+- Login abonados **por ISP** (no SaaS genérico): `https://app.fibranexus.cl/portal/{slug}` — botón “Entrar y pagar” de la mora apunta ahí.
+- Login genérico `/login` queda para admin ISP / SaaS.
+- HTTPS / YouTube / Chrome HTTPS-First: **no redirigen** (solo bloqueo). El aviso llega por sheet Wi‑Fi o HTTP (`neverssl.com`).
+
+### Siguiente (acordado, no implementado)
+- Botón grande **“Pagar ahora”** en mora → crear checkout Flow/pasarela **sin login** (identificar abonado por IP suspendida o token) + link secundario “Ya tengo cuenta” → `/portal/{slug}`.
+- Requiere endpoint público tipo `/api/public/pay/:slug` + factura pendiente + `createCheckout` + webhook de reactivación (ya existe post-pago).
+
+### URLs lab
+| Qué | URL |
+|-----|-----|
+| Mora ISP | `https://app.fibranexus.cl/mora/nexus-sur-qa` |
+| Login abonado ISP | `https://app.fibranexus.cl/portal/nexus-sur-qa` |
+| Captive API | `GET /api/public/captive` |
+| Branding JSON | `GET /api/public/mora/nexus-sur-qa` |
+
+### Pendiente inmediato (lab anterior)
 
 - [x] L009 online vía Camino A (NAT + www-ssl + allowlist VPS).
 - [x] Perfil `fn-pppoe` + servidor PPPoE `internet` en **ether3** (pool `dhcp_pool1` 172.16.11.0/24, sin rate-limit).
@@ -69,9 +94,10 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - [x] Conectar LiteBeam a ether3 → DHCP + Detectados + adopción.
 - [x] SNMP airOS community `internetsur-lab` + poll online vía L009 (sysName NanoStation 5AC loco).
 - [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue (evitar que sync pise la IP remota con la de gestión).
-- [x] Lab: suspensión wall garden servicio 83 → IP `172.16.11.251` en `FN-SUSPENDED`; reglas forward garden/DNS/drop; PPPoE sigue activo; portal `https://app.fibranexus.cl/suspended`.
+- [x] Lab: suspensión wall garden servicio 83 → IP `172.16.11.251` en `FN-SUSPENDED`; reglas forward garden/DNS/drop; PPPoE sigue activo.
 - [x] Quitar accept TCP/443 global (dejaba YouTube/Google); garden solo a IPs del portal + DNS.
-- [x] Captive redirect HTTP: MikroTik **proxy** `redirect-to` = portal del ISP (`/mora/{slug}` o URL custom); nginx `/api/public/captive` por IP WAN. HTTPS/YouTube no redirigen (solo bloqueo).
+- [x] Captive + mora/login por slug ISP (`/mora/{slug}`, `/portal/{slug}`).
+- [ ] Mora: pagar directo a Flow/pasarela sin login (siguiente sesión).
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
 - [x] Lab: loco sectorial + CPE cliente Station + PPPoE `fn83s83` → `172.16.11.251` + Simple Queue 25M/25M.
 - [x] Service-name PPPoE en airOS debe coincidir con el server del L009 (`internet`).
