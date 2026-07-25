@@ -2283,7 +2283,6 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           </p>
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setEditingBillingService(s)}
                           className="px-3 py-1.5 text-xs font-medium bg-cyan-50 text-cyan-700 rounded-lg hover:bg-cyan-100 flex items-center gap-1">
@@ -2292,14 +2291,6 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-surface-raised'}`}>
                           {statusLabel[s.status] || s.status}
                         </span>
-                      </div>
-                      {(s.status === 'suspended' || s.status === 'cut' || s.networkMeta?.suspendState) && (
-                        <NetworkSuspendStatus
-                          serviceStatus={s.status}
-                          suspendState={s.networkMeta?.suspendState}
-                          compact
-                        />
-                      )}
                       </div>
                     </div>
 
