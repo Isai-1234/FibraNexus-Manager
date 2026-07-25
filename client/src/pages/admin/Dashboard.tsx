@@ -483,7 +483,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
     inventory: 'Todos los equipos del ISP — switches, OLTs, antenas sueltas, etc.',
-    'detected-devices': 'Dispositivos conectados a tus routers vía DHCP+ARP — adóptalos como abonados con un clic',
+    'detected-devices': 'Dispositivos vía DHCP, ARP y PPPoE activo — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
     finance: 'Ingresos, egresos y tendencias del ISP',
