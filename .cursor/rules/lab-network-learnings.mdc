@@ -22,8 +22,9 @@ alwaysApply: true
 ## LiteBeam M5 / 5AC (airOS)
 - No es SMTP: es **SNMP**.
 - En airOS: **Services → SNMP** ON, community igual a la del equipo en FibraNexus (lab: `internetsur-lab`).
-- Poll: Render → túnel → MikroTik → IP privada del CPE (no hace falta IP pública en la antena).
-- Sin community/SNMP activo solo se ve online básico; dBm/CCQ requieren MIB Ubiquiti.
+- Poll Camino A: VPS → API L009 (`/tool/snmp-get`) → IP privada del CPE. El CPE **debe** compartir sitio o `parentId` con el MikroTik; si no, timeout desde el VPS.
+- Validado 2026-07-24: CPE `172.16.11.254` online vía router; wireless 0 = sin enlace airMAX (cable a ether3).
+- Sin community/SNMP activo solo se ve online básico; dBm/CCQ reales requieren MIB Ubiquiti **y** enlace al AP.
 
 ## Flujo ISP primerizo (objetivo)
 1. MikroTik con WAN/NAT e internet.

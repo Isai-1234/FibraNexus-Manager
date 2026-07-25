@@ -16,10 +16,23 @@ export const jobTasks = {
       .where(and(eq(equipment.id, equipmentId), orgFilter(equipment, orgId)))
       .limit(1);
     if (!eqRow) throw new Error('Equipo no encontrado');
+    // Puente SNMP: sitio → parentId → primer router MikroTik de la org (CPE en LAN privada).
     let siteRouter = null;
     if (eqRow.siteId) {
       const [r] = await db.select().from(equipment)
         .where(and(eq(equipment.siteId, eqRow.siteId), eq(equipment.type, 'router'), orgFilter(equipment, orgId)))
+        .limit(1);
+      siteRouter = r || null;
+    }
+    if (!siteRouter && eqRow.parentId) {
+      const [r] = await db.select().from(equipment)
+        .where(and(eq(equipment.id, eqRow.parentId), eq(equipment.type, 'router'), orgFilter(equipment, orgId)))
+        .limit(1);
+      siteRouter = r || null;
+    }
+    if (!siteRouter) {
+      const [r] = await db.select().from(equipment)
+        .where(and(eq(equipment.type, 'router'), orgFilter(equipment, orgId)))
         .limit(1);
       siteRouter = r || null;
     }

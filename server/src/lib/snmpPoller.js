@@ -209,6 +209,21 @@ async function fetchUbntWireless(host, community, router, pollMethod) {
 
   console.log(`[SNMP-DEBUG] host=${host} raw_merged=${JSON.stringify(merged)} attempts=${JSON.stringify(attempts)}`);
 
+  // airOS a veces responde MIB wireless con ceros cuando no hay enlace (CPE solo por cable).
+  const rawNums = ['signal', 'rssi', 'ccq', 'noiseFloor', 'txRate', 'rxRate']
+    .map((k) => Number(merged[k]))
+    .filter((n) => !Number.isNaN(n));
+  if (rawNums.length > 0 && rawNums.every((n) => n === 0)) {
+    return {
+      wireless: null,
+      wirelessDebug: {
+        attempts,
+        raw: merged,
+        hint: 'SNMP OK; sin enlace airMAX (valores wireless en 0). Normal si la antena está solo cableada al router.',
+      },
+    };
+  }
+
   const signal = normalizeDbm(merged.signal ?? merged.rssi);
   const rssi = normalizeDbm(merged.rssi ?? merged.signal);
   const ccq = normalizeCcq(merged.ccq);

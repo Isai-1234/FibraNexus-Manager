@@ -35,6 +35,8 @@ L009 lab (192.168.3.253)
 | DHCP `dhcp2` en ether3 | OK · LiteBeam tomó `172.16.11.254` |
 | Detectados → adopción | OK · MAC `6C:63:F8:D8:7A:DC`, CPE equipment id 2 |
 | Acceso web desde IP en plataforma | Implementado en Detectados y perfil del abonado |
+| SNMP vía L009 (`/tool/snmp-get`) | OK · community lab `internetsur-lab` · pollMethod `router` |
+| Nodo sitio | `Torre Lab Camino A` (site id 1) con L009 + CPE |
 
 ## Incidentes / aprendizajes
 
@@ -45,6 +47,8 @@ L009 lab (192.168.3.253)
 5. El L009 ve la IP real del VPS (`134.209.43.175`) tras dst-nat → el allowlist por IP funciona.
 6. La IP DHCP de la LiteBeam es su IP de **gestión**. No debe usarse automáticamente como target de la Simple Queue PPPoE del abonado.
 7. Las communities SNMP cifradas deben descifrarse antes de enviarlas al agente EdgeRouter; nunca enviar el ciphertext como community.
+8. CPE en LAN privada (`172.16.11.x`) **no** es alcanzable por SNMP directo desde el VPS: hace falta puente vía MikroTik del mismo sitio/`parentId`. Sin sitio, el poll da timeout aunque SNMP esté bien en airOS.
+9. MIB wireless en 0/0/0 con sysDescr OK = antena sin enlace airMAX (p.ej. solo cableada a ether3); no es fallo de community.
 
 ## Decisión de producto (IP pública)
 
@@ -62,7 +66,7 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - [ ] Reescribir script Camino A del wizard (`mikrotik-script`) con allowlist + cert + usuario.
 - [ ] UI: separar “Segura automática” vs “Manual” bajo “Tengo IP pública”.
 - [x] Conectar LiteBeam a ether3 → DHCP + Detectados + adopción.
-- [ ] Entrar por `172.16.11.254`, habilitar SNMP en airOS y guardar community en el equipo.
+- [x] SNMP airOS community `internetsur-lab` + poll online vía L009 (sysName NanoStation 5AC loco).
 - [ ] Separar IP de gestión CPE vs IP remota PPPoE al provisionar Simple Queue.
 - [ ] Probar suspensión wall garden + reactivación.
 - [ ] Ayuda contextual tipo UISP (ver `docs/ayuda-contextual.md`).
