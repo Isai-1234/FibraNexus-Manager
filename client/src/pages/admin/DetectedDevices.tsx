@@ -338,7 +338,7 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
           <Radar className="h-5 w-5 text-indigo-600 flex-shrink-0" />
           <div>
             <p className="text-sm font-medium text-indigo-900">
-              Detección automática cada 5 min vía DHCP+ARP
+              Detección automática cada 5 min vía DHCP + ARP + PPPoE activo
               {pendingCount > 0 && (
                 <span className="ml-2 bg-indigo-600 text-white text-xs rounded-full px-2 py-0.5">{pendingCount} nuevos</span>
               )}
@@ -467,7 +467,11 @@ export default function DetectedDevices({ API, onOpenClient }: { API: string; on
                       {device.interfaceName || <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${device.source === 'dhcp' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                        device.source === 'dhcp' ? 'bg-blue-50 text-blue-600'
+                          : device.source === 'pppoe' ? 'bg-purple-50 text-purple-700'
+                            : 'bg-amber-50 text-amber-600'
+                      }`}>
                         {device.source.toUpperCase()}
                       </span>
                     </td>

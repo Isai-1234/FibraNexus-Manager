@@ -82,6 +82,28 @@ async function getDevicesFromMikrotik(router) {
     }
   }
 
+  // Sesiones PPPoE activas: IP remota del abonado (no la de gestión DHCP de la antena).
+  const { listPppoeActive } = await import('./mikrotikClient.js');
+  const pppoeActive = await listPppoeActive(router).catch(() => []);
+  for (const sess of (Array.isArray(pppoeActive) ? pppoeActive : [pppoeActive]).filter(Boolean)) {
+    const mac = normalizeMac(sess['caller-id']);
+    if (!mac) continue;
+    const remoteIp = String(sess.address || '').split('/')[0] || null;
+    const username = sess.name || null;
+    const existing = devicesMap.get(mac);
+    devicesMap.set(mac, {
+      macAddress: mac,
+      ipAddress: remoteIp || existing?.ipAddress || null,
+      hostname: username
+        ? (existing?.hostname && existing.hostname !== username ? `${username} · ${existing.hostname}` : username)
+        : (existing?.hostname || sess.comment || null),
+      interfaceName: existing?.interfaceName || 'pppoe',
+      source: 'pppoe',
+      pppoeUsername: username,
+      managementIp: existing?.source !== 'pppoe' ? existing?.ipAddress : null,
+    });
+  }
+
   return Array.from(devicesMap.values());
 }
 
@@ -294,6 +316,7 @@ async function upsertDetectedDevices(router, devices, orgId, allRouters = []) {
           ipAddress: device.ipAddress || null,
           hostname: device.hostname || null,
           interfaceName: device.interfaceName || null,
+          source: device.source || 'dhcp',
           lastSeen: now,
           updatedAt: now,
         },
