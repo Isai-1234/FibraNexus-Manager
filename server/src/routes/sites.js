@@ -214,7 +214,7 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
     if (!orgId) return;
     const {
       name, type, brand, model, ipAddress, siteId, macAddress, notes, snmpCommunity, clientId,
-      connectionMode, pppoeUsername, parentId,
+      connectionMode, pppoeUsername, parentId, webUser, webPass, wifiSsid, wifiPass,
     } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'Nombre y tipo requeridos' });
 
@@ -243,10 +243,15 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       macAddress,
     });
 
+    const { encryptSecret, encryptCredentialsObject } = await import('../lib/secrets.js');
     const initCreds = {};
     if (connectionMode && connectionMode !== 'static') initCreds.connectionMode = connectionMode;
     if (pppoeUsername) initCreds.pppoeUsername = pppoeUsername;
     if (parentResult.parentId) initCreds.routerId = parentResult.parentId;
+    if (webUser) initCreds.webUser = webUser;
+    if (webPass) initCreds.webPass = webPass;
+    if (wifiSsid) initCreds.wifiSsid = wifiSsid;
+    if (wifiPass) initCreds.wifiPass = wifiPass;
 
     const [created] = await db.insert(equipment).values({
       organizationId: orgId,
@@ -258,10 +263,10 @@ sitesRouter.post('/equipment', requireRole('admin'), async (req, res) => {
       model: model || 'Unknown',
       ipAddress: ipAddress || null,
       macAddress: resolvedMac || macAddress || null,
-      snmpCommunity: snmpCommunity || null,
+      snmpCommunity: snmpCommunity ? encryptSecret(snmpCommunity) : null,
       notes: notes || null,
       status: 'offline',
-      credentials: Object.keys(initCreds).length ? initCreds : null,
+      credentials: Object.keys(initCreds).length ? encryptCredentialsObject(initCreds) : null,
     }).returning();
 
     if (clientId) {
@@ -288,7 +293,7 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
 
     const {
       name, brand, model, ipAddress, macAddress, snmpCommunity, notes, clientId, siteId,
-      connectionMode, pppoeUsername, parentId,
+      connectionMode, pppoeUsername, parentId, webUser, webPass, wifiSsid, wifiPass,
     } = req.body;
 
     const mergedSiteForParent = siteId !== undefined
@@ -331,7 +336,10 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
       patch.parentId = parentId ? parseInt(parentId, 10) : null;
     }
 
-    if (parentId !== undefined || connectionMode !== undefined || pppoeUsername !== undefined) {
+    const touchAccessCreds = webUser !== undefined || webPass !== undefined
+      || wifiSsid !== undefined || wifiPass !== undefined;
+    if (parentId !== undefined || connectionMode !== undefined || pppoeUsername !== undefined || touchAccessCreds) {
+      const { encryptCredentialsObject } = await import('../lib/secrets.js');
       const currentCreds = existing.credentials || {};
       const mergedCreds = { ...currentCreds };
       if (parentId !== undefined) {
@@ -351,7 +359,21 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
         if (pppoeUsername) mergedCreds.pppoeUsername = pppoeUsername;
         else delete mergedCreds.pppoeUsername;
       }
-      patch.credentials = mergedCreds;
+      if (webUser !== undefined) {
+        if (webUser) mergedCreds.webUser = webUser;
+        else delete mergedCreds.webUser;
+      }
+      if (webPass !== undefined && String(webPass).length > 0) {
+        mergedCreds.webPass = webPass;
+      }
+      if (wifiSsid !== undefined) {
+        if (wifiSsid) mergedCreds.wifiSsid = wifiSsid;
+        else delete mergedCreds.wifiSsid;
+      }
+      if (wifiPass !== undefined && String(wifiPass).length > 0) {
+        mergedCreds.wifiPass = wifiPass;
+      }
+      patch.credentials = encryptCredentialsObject(mergedCreds);
     }
 
     const [updated] = await db.update(equipment).set(patch)
@@ -380,6 +402,34 @@ sitesRouter.patch('/equipment/:id', requireRole('admin'), async (req, res) => {
     res.json(enriched[0]);
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar equipo: ' + error.message });
+  }
+});
+
+/** Revela usuario/clave web y WiFi del equipo (solo admin/técnico, on-demand). */
+sitesRouter.get('/equipment/:id/access-credentials', requireRole('admin', 'technician'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const equipmentId = parseInt(req.params.id, 10);
+    const [row] = await db.select().from(equipment)
+      .where(and(eq(equipment.id, equipmentId), orgFilter(equipment, orgId)))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: 'Equipo no encontrado' });
+
+    const { decryptCredentialsObject } = await import('../lib/secrets.js');
+    const creds = decryptCredentialsObject(row.credentials || {}) || {};
+    res.json({
+      id: row.id,
+      name: row.name,
+      webUser: creds.webUser || null,
+      webPass: creds.webPass || null,
+      wifiSsid: creds.wifiSsid || null,
+      wifiPass: creds.wifiPass || null,
+      hasWebPass: !!creds.webPass,
+      hasWifiPass: !!creds.wifiPass,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al leer credenciales: ' + error.message });
   }
 });
 

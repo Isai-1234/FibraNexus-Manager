@@ -52,12 +52,12 @@ function defaultServiceForm() {
 
 const CLIENT_EQUIP_TYPES = [
   { value: 'cpe', label: 'Antena CPE (Ubiquiti, etc.)' },
+  { value: 'other', label: 'Router WiFi del cliente (Mercusys, TP-Link, etc.)' },
   { value: 'ap', label: 'Cámara / Access Point' },
-  { value: 'other', label: 'Router u otro dispositivo' },
 ]
 
 const EQUIP_TYPE_LABEL: Record<string, string> = {
-  cpe: 'Antena CPE', ap: 'Cámara / AP', other: 'Dispositivo', router: 'Router',
+  cpe: 'Antena CPE', ap: 'Cámara / AP', other: 'Router WiFi', router: 'Router',
 }
 
 function flattenSites(tree: any[]): any[] {
@@ -123,6 +123,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   const [equipForm, setEquipForm] = useState<any>({ type: 'cpe', brand: 'Ubiquiti' })
   const [editingEquip, setEditingEquip] = useState<any>(null)
   const [editEquipForm, setEditEquipForm] = useState<any>({})
+  const [revealedAccess, setRevealedAccess] = useState<any>(null)
   const [suggestingIp, setSuggestingIp] = useState(false)
   const [ipSuggestHint, setIpSuggestHint] = useState('')
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null)
@@ -821,23 +822,42 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       siteId: eq.siteId || '',
       connectionMode: eq.credentials?.connectionMode || 'static',
       pppoeUsername: eq.credentials?.pppoeUsername || '',
+      webUser: eq.credentials?.webUser || '',
+      webPass: '',
+      wifiSsid: eq.credentials?.wifiSsid || '',
+      wifiPass: '',
+      notes: eq.notes || '',
     })
+    setRevealedAccess(null)
     setIpSuggestHint('')
   }
 
   async function saveEditEquip() {
     if (!editingEquip) return
     try {
-      await api().patch(`/sites/equipment/${editingEquip.id}`, {
+      const body: any = {
         ...editEquipForm,
         clientId,
         siteId: editEquipForm.siteId || null,
-      })
+      }
+      // No enviar claves vacías (UI no precarga secretos)
+      if (!body.webPass) delete body.webPass
+      if (!body.wifiPass) delete body.wifiPass
+      if (!body.snmpCommunity) delete body.snmpCommunity
+      await api().patch(`/sites/equipment/${editingEquip.id}`, body)
       setEditingEquip(null)
       setEditEquipForm({})
+      setRevealedAccess(null)
       setIpSuggestHint('')
       await loadClientEquipment()
       loadAll()
+    } catch (e: any) { toast(e.response?.data?.error || e.message, 'error') }
+  }
+
+  async function revealEquipmentAccess(equipmentId: number) {
+    try {
+      const res = await api().get(`/sites/equipment/${equipmentId}/access-credentials`)
+      setRevealedAccess(res.data)
     } catch (e: any) { toast(e.response?.data?.error || e.message, 'error') }
   }
 
@@ -1555,6 +1575,38 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   )}
                 </>
               )}
+              <div className="border-t pt-3 space-y-3">
+                <p className="text-sm font-medium text-ink-soft">Acceso al equipo (inventario / retiro)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Usuario web</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="ubnt / admin"
+                      value={equipForm.webUser || ''} onChange={e => setEquipForm({ ...equipForm, webUser: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Clave web</label>
+                    <input type="password" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="••••••••"
+                      value={equipForm.webPass || ''} onChange={e => setEquipForm({ ...equipForm, webPass: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SSID WiFi</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Casa-Cliente"
+                      value={equipForm.wifiSsid || ''} onChange={e => setEquipForm({ ...equipForm, wifiSsid: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Clave WiFi</label>
+                    <input type="password" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="••••••••"
+                      value={equipForm.wifiPass || ''} onChange={e => setEquipForm({ ...equipForm, wifiPass: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notas</label>
+                  <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Ubicación, serie, propietario ISP…"
+                    value={equipForm.notes || ''} onChange={e => setEquipForm({ ...equipForm, notes: e.target.value })} />
+                </div>
+              </div>
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t">
               <button onClick={() => { setShowEquipForm(false); setIpSuggestHint('') }} className="flex-1 py-2.5 border rounded-lg">Cancelar</button>
@@ -1570,7 +1622,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
           <div className="bg-surface-card rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4 border-b pb-3">
               <h3 className="font-bold text-lg">Editar equipo</h3>
-              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
+              <button onClick={() => { setEditingEquip(null); setRevealedAccess(null); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -1649,9 +1701,51 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   )}
                 </>
               )}
+              <div className="border-t pt-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-ink-soft">Acceso al equipo</p>
+                  <button type="button" onClick={() => revealEquipmentAccess(editingEquip.id)}
+                    className="text-xs text-blue-600 hover:underline">Ver claves guardadas</button>
+                </div>
+                {revealedAccess && Number(revealedAccess.id) === Number(editingEquip.id) && (
+                  <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1 font-mono">
+                    <p>Web: {revealedAccess.webUser || '—'} / {revealedAccess.webPass || '—'}</p>
+                    <p>WiFi: {revealedAccess.wifiSsid || '—'} / {revealedAccess.wifiPass || '—'}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Usuario web</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="ubnt / admin"
+                      value={editEquipForm.webUser || ''} onChange={e => setEditEquipForm({ ...editEquipForm, webUser: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Clave web {editingEquip?.credentials?.hasWebPass ? '(vacío = no cambiar)' : ''}</label>
+                    <input type="password" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="••••••••"
+                      value={editEquipForm.webPass || ''} onChange={e => setEditEquipForm({ ...editEquipForm, webPass: e.target.value })} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SSID WiFi</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm"
+                      value={editEquipForm.wifiSsid || ''} onChange={e => setEditEquipForm({ ...editEquipForm, wifiSsid: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Clave WiFi {editingEquip?.credentials?.hasWifiPass ? '(vacío = no cambiar)' : ''}</label>
+                    <input type="password" className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="••••••••"
+                      value={editEquipForm.wifiPass || ''} onChange={e => setEditEquipForm({ ...editEquipForm, wifiPass: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notas</label>
+                  <input className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={editEquipForm.notes || ''} onChange={e => setEditEquipForm({ ...editEquipForm, notes: e.target.value })} />
+                </div>
+              </div>
             </div>
             <div className="flex gap-3 mt-6 pt-4 border-t">
-              <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }} className="flex-1 py-2.5 border rounded-lg">Cancelar</button>
+              <button onClick={() => { setEditingEquip(null); setRevealedAccess(null); setIpSuggestHint('') }} className="flex-1 py-2.5 border rounded-lg">Cancelar</button>
               <button onClick={saveEditEquip} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
             </div>
           </div>
@@ -2097,6 +2191,16 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           <div><span className="text-gray-400">MAC:</span> <span className="font-mono">{eq.macAddress || '—'}</span></div>
                           <div className="col-span-2"><span className="text-gray-400">Nodo:</span> {eq.siteName || 'Sin nodo'} {eq.siteCity ? `· ${eq.siteCity}` : ''}</div>
                           {(eq.hasSnmpCommunity || eq.snmpCommunitySet) && <div className="col-span-2"><span className="text-gray-400">SNMP:</span> configurado</div>}
+                          {(eq.credentials?.webUser || eq.credentials?.hasWebPass || eq.credentials?.wifiSsid) && (
+                            <div className="col-span-2 text-xs">
+                              <span className="text-gray-400">Acceso:</span>{' '}
+                              {eq.credentials?.webUser ? `web ${eq.credentials.webUser}` : 'web'}
+                              {eq.credentials?.hasWebPass ? ' · clave' : ''}
+                              {eq.credentials?.wifiSsid ? ` · WiFi ${eq.credentials.wifiSsid}` : ''}
+                              {eq.credentials?.hasWifiPass ? ' · clave WiFi' : ''}
+                            </div>
+                          )}
+                          {eq.notes && <div className="col-span-2 text-xs text-ink-muted">{eq.notes}</div>}
                           {eq.credentials?.lastMetrics && (
                             <div className="col-span-2">
                               <SignalBadge metrics={eq.credentials.lastMetrics} />

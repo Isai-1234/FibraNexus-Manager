@@ -12,6 +12,8 @@ const PREFIX = 'enc:v1:';
 const SECRET_CRED_KEYS = [
   'routerPass',
   'tunnelToken',
+  'webPass',
+  'wifiPass',
   // agentToken se guarda en claro para lookup del heartbeat; NUNCA se expone en GET
 ];
 
@@ -116,6 +118,8 @@ export function sanitizeCredentialsForApi(creds) {
     agentToken: _at,
     tunnelToken: _tt,
     snmpCommunity: _sc,
+    webPass: _wp,
+    wifiPass: _wfp,
     pendingCmds,
     cmdHistory,
     heartbeatArp,
@@ -129,6 +133,10 @@ export function sanitizeCredentialsForApi(creds) {
     hasAgentToken: !!creds.agentToken,
     hasTunnelToken: !!creds.tunnelToken,
     hasSnmpInCredentials: !!creds.snmpCommunity,
+    hasWebPass: !!creds.webPass,
+    hasWifiPass: !!creds.wifiPass,
+    webUser: creds.webUser || null,
+    wifiSsid: creds.wifiSsid || null,
     agentTokenRotatedAt: creds.agentTokenRotatedAt || null,
     pendingCmdCount: Array.isArray(pendingCmds) ? pendingCmds.length : 0,
     // No exponer historial de comandos con posibles datos sensibles

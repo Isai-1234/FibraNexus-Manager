@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { equipment, clients, clientServices, users, sites } from '../db/schema.js';
-import { and, eq, inArray, ne, desc } from 'drizzle-orm';
+import { and, eq, inArray, desc } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { revertDetectedDeviceForEquipment, markDetectedDeviceAdopted, syncDetectedDeviceStates, clearOrphanServiceMac } from './detectedDeviceSync.js';
 
@@ -18,7 +18,11 @@ export async function getClientInOrg(clientId, orgId) {
 export async function syncEquipmentToClientService(equipmentRow, clientId, orgId) {
   if (!clientId || !equipmentRow) return null;
 
-  const [service] = await db.select({ id: clientServices.id })
+  const [service] = await db.select({
+    id: clientServices.id,
+    ipAddress: clientServices.ipAddress,
+    pppoeUsername: clientServices.pppoeUsername,
+  })
     .from(clientServices)
     .innerJoin(clients, eq(clientServices.clientId, clients.id))
     .where(and(
@@ -32,9 +36,14 @@ export async function syncEquipmentToClientService(equipmentRow, clientId, orgId
   if (!service) return null;
 
   const patch = { updatedAt: new Date() };
-  if (equipmentRow.ipAddress) patch.ipAddress = equipmentRow.ipAddress.split('/')[0];
-  if (equipmentRow.macAddress) patch.macAddress = equipmentRow.macAddress;
+  // Inventario: varios equipos por abonado. La IP remota PPPoE del servicio
+  // NO se pisa con la IP de gestión de antena/router WiFi.
+  if (equipmentRow.type === 'cpe' && equipmentRow.macAddress) {
+    patch.macAddress = equipmentRow.macAddress;
+  }
   if (equipmentRow.siteId) patch.siteId = equipmentRow.siteId;
+
+  if (Object.keys(patch).length <= 1) return service;
 
   const [updated] = await db.update(clientServices)
     .set(patch)
@@ -53,13 +62,6 @@ export async function assignEquipmentToClient(equipmentId, clientId, orgId) {
   if (clientId) {
     const client = await getClientInOrg(clientId, orgId);
     if (!client) throw new Error('Abonado no encontrado');
-
-    await db.update(equipment).set({ clientId: null, updatedAt: new Date() })
-      .where(and(
-        eq(equipment.clientId, clientId),
-        ne(equipment.id, equipmentId),
-        orgFilter(equipment, orgId),
-      ));
   }
 
   // When unlinking, revert detected row and limpiar MAC huérfana en el servicio
