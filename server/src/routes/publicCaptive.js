@@ -80,7 +80,8 @@ publicCaptiveRouter.get('/mora/:slug', async (req, res) => {
 
     const settings = mergeOrgSettings(org.settings);
     const portalUrl = await getSuspendPortalUrl(org.id);
-    const payUrl = `${(config.publicUrl || 'https://app.fibranexus.cl').replace(/\/$/, '')}/login`;
+    // Login con marca del ISP, no el login genérico del SaaS
+    const payUrl = `${(config.publicUrl || 'https://app.fibranexus.cl').replace(/\/$/, '')}/portal/${encodeURIComponent(org.slug)}`;
 
     res.json({
       orgName: org.name,

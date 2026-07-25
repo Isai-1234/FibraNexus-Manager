@@ -8,6 +8,7 @@ import ResetPassword from './pages/auth/ResetPassword'
 import AdminDashboard from './pages/admin/Dashboard'
 import ClientPortal from './pages/portal/ClientPortal'
 import SuspendedNotice from './pages/portal/SuspendedNotice'
+import IspLogin from './pages/auth/IspLogin'
 import PlatformDashboard from './pages/platform/PlatformDashboard'
 
 const API = import.meta.env.VITE_API_URL || '/api'
@@ -69,6 +70,7 @@ function App() {
       <Routes>
         <Route path="/suspended" element={<SuspendedNotice />} />
         <Route path="/mora/:slug" element={<SuspendedNotice />} />
+        <Route path="/portal/:slug" element={!user ? <IspLogin onLogin={login} /> : <Navigate to="/" />} />
         <Route path="/login" element={!user ? <Login onLogin={login} /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register onRegister={setUser} /> : <Navigate to="/" />} />
         <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/" />} />

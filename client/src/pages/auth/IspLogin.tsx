@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { Wifi } from 'lucide-react'
+
+const API = import.meta.env.VITE_API_URL || '/api'
+
+type IspBrand = {
+  orgName: string
+  slug: string
+  logoUrl?: string
+  primaryColor?: string
+  accentColor?: string
+  portalTitle?: string
+}
+
+/** Login con marca del ISP (portal de abonados): /portal/:slug */
+export default function IspLogin({ onLogin }: { onLogin: (e: string, p: string) => Promise<void> }) {
+  const { slug } = useParams<{ slug: string }>()
+  const [brand, setBrand] = useState<IspBrand | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!slug) return
+    let cancelled = false
+    fetch(`${API}/public/mora/${encodeURIComponent(slug)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (!cancelled && data) setBrand(data) })
+      .catch(() => { /* marca por defecto */ })
+    return () => { cancelled = true }
+  }, [slug])
+
+  const orgName = brand?.orgName || 'Portal de abonados'
+  const primary = brand?.primaryColor || '#2563eb'
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try { await onLogin(email, password) }
+    catch (err: any) { setError(err.response?.data?.error || 'Correo o contraseña incorrectos') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200">
+        <div className="px-8 py-6 flex items-center gap-4" style={{ backgroundColor: primary }}>
+          {brand?.logoUrl ? (
+            <img src={brand.logoUrl} alt={orgName} className="h-12 w-12 rounded-lg bg-white object-contain p-1" />
+          ) : (
+            <div className="bg-white/20 rounded-full p-3">
+              <Wifi className="h-7 w-7 text-white" />
+            </div>
+          )}
+          <div>
+            <h1 className="text-xl font-bold text-white">{orgName}</h1>
+            <p className="text-white/90 text-sm">{brand?.portalTitle || 'Portal de abonados'}</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+          {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</div>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Correo</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username" inputMode="email"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+            <p className="mt-1 text-right">
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:underline">¿Olvidaste tu contraseña?</Link>
+            </p>
+          </div>
+          <button type="submit" disabled={loading}
+            className="w-full py-3.5 text-white rounded-xl font-semibold disabled:opacity-50 transition-opacity hover:opacity-90"
+            style={{ backgroundColor: primary }}>
+            {loading ? 'Entrando…' : 'Entrar a mi cuenta'}
+          </button>
+          <p className="text-center text-xs text-gray-400">
+            Si no tienes tu clave, contacta a {orgName}.
+          </p>
+        </form>
+      </div>
+    </div>
+  )
+}
