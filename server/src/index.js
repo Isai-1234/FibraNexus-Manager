@@ -40,6 +40,7 @@ import { db } from './db/index.js';
 import { equipment } from './db/schema.js';
 import { eq } from 'drizzle-orm';
 import { rateLimit } from './lib/rateLimit.js';
+import { publicCaptiveRouter } from './routes/publicCaptive.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '10000');
@@ -86,18 +87,6 @@ const CAPTIVE_PROBE_PATHS = new Set([
   '/canonical.html',
   '/redirect',
 ]);
-function suspendedPortalAbsoluteUrl() {
-  const base = (process.env.PUBLIC_URL || process.env.FRONTEND_URL || 'https://app.fibranexus.cl')
-    .split(',')[0]
-    .trim()
-    .replace(/\/$/, '');
-  try {
-    const u = new URL(base.startsWith('http') ? base : `https://${base}`);
-    return `${u.protocol}//${u.host}/suspended`;
-  } catch {
-    return 'https://app.fibranexus.cl/suspended';
-  }
-}
 function isOurPublicHost(host) {
   const h = String(host || '').split(':')[0].toLowerCase();
   if (!h) return false;
@@ -122,7 +111,8 @@ app.use((req, res, next) => {
   const foreignHost = Boolean(host) && !isOurPublicHost(host);
   const isProbe = CAPTIVE_PROBE_PATHS.has(req.path);
   if (foreignHost || isProbe) {
-    return res.redirect(302, suspendedPortalAbsoluteUrl());
+    // Deja que /api/public/captive elija el portal del ISP (por IP WAN)
+    return res.redirect(302, '/api/public/captive');
   }
   return next();
 });
@@ -146,6 +136,7 @@ app.use((req, res, next) => {
 
 // Webhooks de pago (públicos, firmados) — antes de auth
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/public', publicCaptiveRouter);
 
 // Cabeceras de seguridad básicas
 app.use((req, res, next) => {

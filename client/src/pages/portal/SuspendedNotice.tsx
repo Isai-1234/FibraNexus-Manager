@@ -1,32 +1,84 @@
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { AlertTriangle, CreditCard, LogIn, ExternalLink } from 'lucide-react'
 
+const API = import.meta.env.VITE_API_URL || '/api'
 const DEFAULT_LOGIN = 'https://app.fibranexus.cl/login'
-const payUrl = import.meta.env.VITE_PORTAL_LOGIN_URL || DEFAULT_LOGIN
+
+type MoraBrand = {
+  orgName: string
+  slug: string
+  logoUrl?: string
+  primaryColor?: string
+  accentColor?: string
+  portalTitle?: string
+  payUrl?: string
+}
 
 export default function SuspendedNotice() {
+  const { slug } = useParams<{ slug?: string }>()
+  const [brand, setBrand] = useState<MoraBrand | null>(null)
+  const [loadError, setLoadError] = useState(false)
+
+  useEffect(() => {
+    if (!slug) return
+    let cancelled = false
+    fetch(`${API}/public/mora/${encodeURIComponent(slug)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error('not found')
+        return r.json()
+      })
+      .then((data) => {
+        if (!cancelled) setBrand(data)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true)
+      })
+    return () => { cancelled = true }
+  }, [slug])
+
+  const orgName = brand?.orgName || (slug ? null : null)
+  const title = brand?.portalTitle || orgName || 'Servicio suspendido'
+  const primary = brand?.primaryColor || '#2563eb'
+  const payUrl = brand?.payUrl || DEFAULT_LOGIN
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-6">
-      <div className="max-w-lg w-full bg-white rounded-2xl shadow-2xl overflow-hidden">
-        <div className="bg-amber-500 px-8 py-6 flex items-center gap-4">
-          <div className="bg-white/20 rounded-full p-3">
-            <AlertTriangle className="h-8 w-8 text-white" />
-          </div>
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+      <div className="max-w-lg w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+        <div className="px-8 py-6 flex items-center gap-4" style={{ backgroundColor: primary }}>
+          {brand?.logoUrl ? (
+            <img src={brand.logoUrl} alt={orgName || 'ISP'} className="h-12 w-12 rounded-lg bg-white object-contain p-1" />
+          ) : (
+            <div className="bg-white/20 rounded-full p-3">
+              <AlertTriangle className="h-8 w-8 text-white" />
+            </div>
+          )}
           <div>
-            <h1 className="text-xl font-bold text-white">Servicio suspendido</h1>
-            <p className="text-amber-100 text-sm">Tu internet está limitado por mora</p>
+            <p className="text-white/80 text-xs font-medium uppercase tracking-wide">
+              {orgName || 'Tu proveedor de internet'}
+            </p>
+            <h1 className="text-xl font-bold text-white">{title}</h1>
+            <p className="text-white/90 text-sm">Internet limitado por mora</p>
           </div>
         </div>
 
         <div className="px-8 py-8 space-y-5">
           <p className="text-gray-700 leading-relaxed">
-            Por falta de pago, solo puedes usar esta página y el portal para regularizar.
-            El resto de sitios (YouTube, redes, etc.) están bloqueados hasta que pagues.
+            {orgName
+              ? `${orgName} limitó tu acceso por falta de pago. Solo puedes usar esta página y el portal para regularizar.`
+              : 'Por falta de pago, solo puedes usar esta página y el portal para regularizar. El resto de sitios están bloqueados hasta que pagues.'}
           </p>
+
+          {loadError && slug && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              No se pudo cargar la marca del ISP. Puedes pagar igual desde el portal.
+            </p>
+          )}
 
           <a
             href={payUrl}
-            className="w-full inline-flex items-center justify-center gap-2 px-5 py-4 bg-blue-600 text-white text-lg font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30"
+            className="w-full inline-flex items-center justify-center gap-2 px-5 py-4 text-white text-lg font-semibold rounded-xl transition-opacity hover:opacity-90 shadow-lg"
+            style={{ backgroundColor: primary }}
           >
             <CreditCard className="h-5 w-5" />
             Pagar aquí
@@ -48,8 +100,8 @@ export default function SuspendedNotice() {
           </Link>
 
           <p className="text-xs text-gray-400 text-center pt-1">
-            Si el celular no abre solo esta página, escribe en el navegador:{' '}
-            <span className="font-mono text-gray-500">app.fibranexus.cl/suspended</span>
+            Apps como YouTube no muestran este aviso (usan HTTPS). Abre el navegador en una página HTTP
+            (p. ej. neverssl.com) o usa el aviso de Wi‑Fi del teléfono.
           </p>
         </div>
       </div>

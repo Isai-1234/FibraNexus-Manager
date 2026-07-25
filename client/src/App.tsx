@@ -68,6 +68,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/suspended" element={<SuspendedNotice />} />
+        <Route path="/mora/:slug" element={<SuspendedNotice />} />
         <Route path="/login" element={!user ? <Login onLogin={login} /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register onRegister={setUser} /> : <Navigate to="/" />} />
         <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/" />} />

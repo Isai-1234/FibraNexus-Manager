@@ -688,11 +688,12 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">URL pantalla de mora (cautiva)</label>
                 <input type="url" value={settings.suspendPortalUrl || ''}
-                  placeholder="https://app.fibranexus.cl/suspended"
+                  placeholder="https://app.fibranexus.cl/mora/tu-isp"
                   onChange={(e) => setSettings({ ...settings, suspendPortalUrl: e.target.value })}
                   className="w-full border rounded-lg px-3 py-2 text-sm" />
                 <p className="text-xs text-gray-400 mt-1">
-                  Página a la que el abonado suspendido puede acceder para pagar. Deja vacío para usar /suspended por defecto.
+                  Página del ISP que ve el abonado suspendido (Wi‑Fi cautivo / HTTP). Vacío = /mora/tu-slug con tu marca.
+                  YouTube y sitios HTTPS no pueden redirigirse sin MITM: solo se bloquean.
                 </p>
               </div>
             </section>

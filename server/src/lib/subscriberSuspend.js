@@ -1,6 +1,6 @@
 import dns from 'dns/promises';
 import { db } from '../db/index.js';
-import { clientServices, equipment, clients } from '../db/schema.js';
+import { clientServices, equipment, clients, organizations } from '../db/schema.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { config } from './config.js';
@@ -57,19 +57,28 @@ export async function resolveSubscriberIp(service, clientId, orgId, router = nul
   return null;
 }
 
-export function buildDefaultPortalUrl() {
+export function buildDefaultPortalUrl(orgSlug) {
   const base = (config.publicUrl || 'https://app.fibranexus.cl').replace(/\/$/, '');
+  const slug = String(orgSlug || '').trim().toLowerCase();
+  if (slug) return `${base}/mora/${encodeURIComponent(slug)}`;
   return `${base}/suspended`;
 }
 
 export async function getSuspendPortalUrl(orgId) {
   const settings = await getOrgSettings(orgId);
-  const url = settings.suspendPortalUrl?.trim() || buildDefaultPortalUrl();
-  try {
-    return new URL(url).toString();
-  } catch {
-    return buildDefaultPortalUrl();
+  if (settings.suspendPortalUrl?.trim()) {
+    try {
+      return new URL(settings.suspendPortalUrl.trim()).toString();
+    } catch {
+      /* usar default con marca ISP */
+    }
   }
+
+  const [org] = await db.select({ slug: organizations.slug })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  return buildDefaultPortalUrl(org?.slug);
 }
 
 export async function resolvePortalHostIps(portalUrl) {
@@ -146,7 +155,12 @@ export async function suspendSubscriberNetwork(serviceId, orgId) {
   }
 
   const portalHostIps = await resolvePortalHostIps(portalUrl);
-  const result = await applyMikrotikSubscriberSuspend(router, { serviceId, clientIp, portalIps: portalHostIps });
+  const result = await applyMikrotikSubscriberSuspend(router, {
+    serviceId,
+    clientIp,
+    portalIps: portalHostIps,
+    portalUrl,
+  });
 
   await db.update(clientServices).set({
     networkMeta: {
