@@ -164,53 +164,72 @@ export async function getRouterNetworkSnapshot(router) {
 }
 
 // ─── SNMP vía router (para CPE en LAN privada) ──────────────
-export async function mikrotikSnmpGet(router, { address, community, oid }) {
-  const res = await mikrotikRequest(router, 'POST', '/tool/snmp-get', {
-    address,
-    community,
-    oid,
-    'as-value': '',
-  });
-  if (Array.isArray(res)) {
-    const row = res[0] || {};
-    return row.value ?? row['value'] ?? null;
-  }
-  if (res && typeof res === 'object') {
-    return res.value ?? res['value'] ?? null;
-  }
-  return res ?? null;
+const SNMP_BRIDGE_TIMEOUT_MS = 3000;
+const SYSTEM_SUBTREE = '1.3.6.1.2.1.1';
+
+/**
+ * RouterOS atiende /tool/snmp-* de forma bloqueante: un CPE que no responde
+ * retiene el comando varios segundos y dejaba sin turno a los equipos vivos del
+ * mismo router. Se serializa por router y cada llamada lleva su propio tope.
+ */
+const routerSnmpChain = new Map();
+
+function queueRouterSnmp(router, fn) {
+  const key = router?.id ?? router?.ipAddress ?? 'default';
+  const prev = routerSnmpChain.get(key) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  routerSnmpChain.set(key, next.then(() => {}, () => {}));
+  return next;
 }
 
-export async function mikrotikSnmpWalk(router, { address, community, oid }) {
-  try {
-    const res = await mikrotikRequest(router, 'POST', '/tool/snmp-walk', {
+export async function mikrotikSnmpGet(router, { address, community, oid, timeoutMs = SNMP_BRIDGE_TIMEOUT_MS }) {
+  return queueRouterSnmp(router, async () => {
+    const res = await mikrotikRequest(router, 'POST', '/tool/snmp-get', {
       address,
       community,
       oid,
-    });
-    return asList(res);
-  } catch {
-    return [];
-  }
+      'as-value': '',
+    }, { timeoutMs });
+    if (Array.isArray(res)) {
+      const row = res[0] || {};
+      return row.value ?? row['value'] ?? null;
+    }
+    if (res && typeof res === 'object') {
+      return res.value ?? res['value'] ?? null;
+    }
+    return res ?? null;
+  });
 }
 
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`snmp-via-router timeout ${ms}ms`)), ms)),
-  ]);
+export async function mikrotikSnmpWalk(router, { address, community, oid, timeoutMs = SNMP_BRIDGE_TIMEOUT_MS }) {
+  return queueRouterSnmp(router, async () => {
+    try {
+      const res = await mikrotikRequest(router, 'POST', '/tool/snmp-walk', {
+        address,
+        community,
+        oid,
+      }, { timeoutMs });
+      return asList(res);
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function snmpGetViaRouter(router, host, community, oids) {
-  // Paralelo + timeout duro por OID: con varios equipos en el mismo router 1.5s
-  // dejaba caer OIDs y el equipo aparecía offline. 2.5s cabe en el presupuesto del batch.
+  // Un walk del subárbol system cuesta ~250ms y trae todos los OIDs básicos;
+  // los snmp-get individuales costaban ~800ms cada uno y saturaban el router.
+  const walk = await snmpWalkViaRouter(router, host, community, SYSTEM_SUBTREE);
+  const fromWalk = {};
+  for (const oid of oids) {
+    if (walk[oid] != null) fromWalk[oid] = walk[oid];
+  }
+  if (Object.keys(fromWalk).length) return fromWalk;
+
   const entries = await Promise.all(
     oids.map(async (oid) => {
       try {
-        const val = await withTimeout(
-          mikrotikSnmpGet(router, { address: host, community, oid }),
-          2500,
-        );
+        const val = await mikrotikSnmpGet(router, { address: host, community, oid });
         if (val != null) return [oid, String(val)];
       } catch { /* OID no disponible o timeout */ }
       return null;
@@ -225,7 +244,7 @@ export async function snmpWalkViaRouter(router, host, community, baseOid) {
   for (const row of rows) {
     const oid = row.oid ?? row['.oid'] ?? row.name;
     const val = row.value ?? row['value'];
-    if (oid && val != null) out[String(oid)] = String(val);
+    if (oid && val != null) out[String(oid).replace(/^\./, '')] = String(val);
   }
   return out;
 }

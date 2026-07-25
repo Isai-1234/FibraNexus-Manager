@@ -8,6 +8,16 @@ const STALE_MS = 2 * 60 * 1000;
 /** Heartbeat ~30s; métricas del agente válidas un poco más que un ciclo. */
 const METRICS_FRESH_MS = 90 * 1000;
 const OFFLINE_AFTER_FAILURES = 3;
+/** Un equipo que no responde retiene el puente SNMP del router: se reintenta espaciado. */
+const FAILED_RETRY_MS = 10 * 60 * 1000;
+
+function isInFailureBackoff(item) {
+  const creds = item.credentials || {};
+  if ((creds.consecutiveFailures || 0) < OFFLINE_AFTER_FAILURES) return false;
+  const lastAttempt = creds.lastSnmp?.polledAt;
+  if (!lastAttempt) return false;
+  return Date.now() - new Date(lastAttempt).getTime() < FAILED_RETRY_MS;
+}
 
 function isMetricsFresh(lastMetrics) {
   if (!lastMetrics?.ts) return false;
@@ -263,7 +273,7 @@ function filterPollableFromRender(items, routerBySite) {
 export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 } = {}) {
   const routerBySite = await buildRouterBySiteMap(items, orgId);
   const stale = filterPollableFromRender(items, routerBySite)
-    .filter((e) => isPollStale(e.lastSeen));
+    .filter((e) => isPollStale(e.lastSeen) && !isInFailureBackoff(e));
   if (!stale.length) return items.map(attachEquipmentDisplay);
 
   const toPoll = stale.slice(0, maxPoll);
@@ -285,7 +295,7 @@ export async function forceRefreshEquipmentStatus(items, orgId, { maxPoll = 15 }
 export async function pollAllSnmpForOrg(orgId) {
   const items = await db.select().from(equipment)
     .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')));
-  const pollable = items.filter(isPollable);
+  const pollable = items.filter((e) => isPollable(e) && !isInFailureBackoff(e));
   if (!pollable.length) return { polled: 0, online: 0, offline: 0 };
 
   const routerBySite = await buildRouterBySiteMap(pollable, orgId);

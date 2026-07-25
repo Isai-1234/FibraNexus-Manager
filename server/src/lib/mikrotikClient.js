@@ -30,7 +30,7 @@ export function getRouterCredentials(router) {
   return { user, pass };
 }
 
-export function mikrotikRequest(router, method, path, body = null) {
+export function mikrotikRequest(router, method, path, body = null, { timeoutMs = 6000 } = {}) {
   const host = resolveHost(router);
   if (!host) throw new Error('Router sin host configurado');
 
@@ -52,7 +52,7 @@ export function mikrotikRequest(router, method, path, body = null) {
         ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
       },
       rejectUnauthorized: false,
-      timeout: 6000,
+      timeout: timeoutMs,
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
