@@ -12,6 +12,7 @@ import WorkOrdersManager from './WorkOrdersManager'
 import FieldWorkOrders from '../technician/FieldWorkOrders'
 import ThemeToggle from '../../components/ThemeToggle'
 import { formatDateCL, formatBillingPeriod } from '../../lib/formatDate'
+import EquipmentInventory from './EquipmentInventory'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
@@ -482,7 +483,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     clients: 'Lista de abonados — clic en la IP para gestionar la antena',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
-    inventory: 'Todos los equipos del ISP — switches, OLTs, antenas sueltas, etc.',
+    inventory: 'Listado operativo de toda la red — estado, señal, CPU y alertas.',
     'detected-devices': 'Dispositivos vía DHCP, ARP y PPPoE activo — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
@@ -1292,82 +1293,13 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               : <WorkOrdersManager API={API} />
           )}
 
-          {/* EQUIPOS con subtabs */}
+          {/* EQUIPOS — inventario operativo NOC */}
           {activeTab === 'equipment' && (
-            <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
-                <span><strong>Inventario global</strong> — todos los equipos del ISP. Para ver por nodo y torre, usa Red ISP.</span>
-                <button type="button" onClick={openRedIsp}
-                  className="px-3 py-1.5 bg-surface-card border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50">
-                  Ir a Red ISP →
-                </button>
-              </div>
-
-              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-5 py-3 text-sm text-emerald-900">
-                <strong>Estado automático vía SNMP</strong> — Si la antena tiene IP y community configurada (ej. <code className="font-mono text-xs">internetsur-lab</code>),
-                el sistema la consulta cada ~3 min y al abrir esta lista. Verde = responde SNMP; gris/rojo = no responde.
-              </div>
-
-              {/* Botón nuevo equipo */}
-              <div className="flex justify-end">
-                <button onClick={() => { setEditingItem(null); setForm({}); setShowForm(true) }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
-                  <Plus className="h-4 w-4" /> Nuevo equipo
-                </button>
-              </div>
-
-              {/* Tabla equipos */}
-              <div className="bg-surface-card rounded-xl shadow-sm border border-line">
-                {loading ? (
-                  <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>
-                ) : data.length === 0 ? (
-                  <div className="text-center py-16 text-gray-400">
-                    <Server className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                    <p className="font-medium text-ink-muted">Sin equipos registrados</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-surface border-b">
-                        <tr>{['Equipo', 'Tipo', 'IP / Host', 'RouterOS', 'Uptime', 'CPU', 'Estado', 'Acciones'].map(h => <th key={h} className="text-left p-4 text-xs font-semibold text-ink-muted uppercase tracking-wider">{h}</th>)}</tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {data.map((item: any) => (
-                          <tr key={item.id} className="hover:bg-blue-50/30 transition">
-                            <td className="p-4 font-medium">{item.name}<br/><span className="text-xs text-gray-400">{item.brand} {item.model}</span></td>
-                            <td className="p-4"><span className="px-2 py-1 bg-surface-raised text-ink-soft rounded-full text-xs">{statusLabel[item.type] || item.type}</span></td>
-                            <td className="p-4 font-mono text-sm">{item.ipAddress || item.credentials?.tunnelHostname || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-xs">{item.routerInfo?.version?.split(' ')[0] || item.firmware || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-xs">{item.snmpUptime || item.credentials?.lastSnmp?.uptime || item.routerInfo?.uptime || <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4 text-xs">{item.routerInfo?.cpuLoad != null ? `${item.routerInfo.cpuLoad}%` : <span className="text-gray-400">—</span>}</td>
-                            <td className="p-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${item.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-surface-raised text-gray-600'}`}>
-                                <span className={`w-2 h-2 rounded-full ${item.status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} />
-                                {statusLabel[item.status] || item.status}
-                              </span>
-                              {(item.hasSnmpCommunity || item.snmpCommunitySet) && item.status !== 'online' && item.type !== 'router' && (
-                                <p className="text-xs text-amber-600 mt-1">Revisar SNMP en antena</p>
-                              )}
-                              {item.type === 'router' && item.status !== 'online' && item.credentials?.routerType?.startsWith('edgerouter') && (
-                                <p className="text-xs text-amber-600 mt-1">Configurar hostname Cloudflare → IP local</p>
-                              )}
-                              {item.type === 'router' && item.status !== 'online' && !item.credentials?.routerType?.startsWith('edgerouter') && item.credentials?.connectionMethod === 'cloudflare_tunnel' && (
-                                <p className="text-xs text-amber-600 mt-1">Revisar túnel Cloudflare / credenciales API</p>
-                              )}
-                            </td>
-                            <td className="p-4">
-                              <div className="flex items-center gap-1">
-                                <button onClick={() => openEdit(item)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"><Edit2 className="h-4 w-4" /></button>
-                                <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"><Trash2 className="h-4 w-4" /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            <EquipmentInventory
+              API={API}
+              onOpenRedIsp={openRedIsp}
+              onOpenClient={(id) => openClientProfile(id, 'overview')}
+            />
           )}
 
           {/* TABLAS GENERALES */}

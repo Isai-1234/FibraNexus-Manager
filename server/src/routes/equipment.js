@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { connectedAgents } from './routers.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
@@ -67,17 +67,113 @@ equipmentRouter.get('/', requireRole('admin', 'technician'), async (req, res) =>
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
-    const allEquipment = await db.select().from(equipment)
-      .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')))
-      .limit(50);
 
-    // Capa 4: caché BD directo — sin SNMP en el handler HTTP
-    res.json(allEquipment.map((item) => ({
-      ...attachSnmpDisplay(item),
-      isStale: isPollStale(item.lastSeen),
-    })));
+    const allEquipment = await db.select().from(equipment)
+      .where(orgFilter(equipment, orgId))
+      .limit(500);
+
+    const { enrichEquipmentWithClients } = await import('../lib/equipmentClientLink.js');
+    const { sites } = await import('../db/schema.js');
+
+    const siteRows = await db.select({ id: sites.id, name: sites.name })
+      .from(sites)
+      .where(orgFilter(sites, orgId));
+    const siteNameById = new Map(siteRows.map((s) => [s.id, s.name]));
+
+    const displayed = await enrichEquipmentWithClients(
+      allEquipment.map((item) => {
+        const agent = item.type === 'router' ? connectedAgents.get(item.id.toString()) : null;
+        const agentFresh = agent != null && Date.now() - new Date(agent.lastSeen).getTime() < 120_000;
+        const base = attachSnmpDisplay(item);
+        const online = Boolean(
+          item.status === 'online'
+          || agentFresh
+          || (item.credentials?.lastHeartbeat
+            && Date.now() - new Date(item.credentials.lastHeartbeat).getTime() < 120_000),
+        );
+        const info = item.credentials?.lastRouterInfo || {};
+        const cpuLoad = info['cpu-load'] != null ? Number(info['cpu-load']) : null;
+        const totalMem = info['total-memory'] != null ? Number(info['total-memory']) : null;
+        const freeMem = info['free-memory'] != null ? Number(info['free-memory']) : null;
+        const ramPercent = (totalMem > 0 && freeMem != null)
+          ? Math.round(((totalMem - freeMem) / totalMem) * 100)
+          : null;
+
+        const failures = Number(item.credentials?.consecutiveFailures || item.credentials?.lastSnmp?.consecutivePollFailures || 0);
+        const linkDown = Boolean(base.linkDown);
+        const hasSnmp = Boolean(base.hasSnmpCommunity);
+        let alertKind = null;
+        if (linkDown) alertKind = 'link';
+        else if (!online && (item.type === 'router' || hasSnmp)) alertKind = 'down';
+        else if (online && cpuLoad != null && cpuLoad >= 80) alertKind = 'cpu';
+        else if (!online && !hasSnmp && item.type !== 'router') alertKind = null; // sin monitoreo
+        else if (failures >= 2 && online) alertKind = 'warn';
+
+        return {
+          ...base,
+          siteName: item.siteId ? (siteNameById.get(item.siteId) || null) : null,
+          connectionMethod: item.type === 'router' ? inferConnectionMethod(item) : null,
+          agentConnected: item.type === 'router' && (
+            agentFresh
+            || (item.credentials?.lastHeartbeat
+              ? Date.now() - new Date(item.credentials.lastHeartbeat).getTime() < 120_000
+              : item.status === 'online')
+          ),
+          agentLastSeen: agent?.lastSeen || item.lastSeen || null,
+          isStale: isPollStale(item.lastSeen),
+          inventoryOnline: online,
+          cpuLoad: Number.isFinite(cpuLoad) ? cpuLoad : null,
+          ramPercent: Number.isFinite(ramPercent) ? ramPercent : null,
+          alertKind,
+          firmwareVersion: item.firmware
+            || info.version
+            || null,
+        };
+      }),
+      orgId,
+    );
+
+    // Estaciones por sitio: útil en sectoriales/AP (clientes inventariados en el mismo nodo)
+    const stationsBySite = new Map();
+    for (const eq of displayed) {
+      if (!eq.siteId || !eq.clientId) continue;
+      stationsBySite.set(eq.siteId, (stationsBySite.get(eq.siteId) || 0) + 1);
+    }
+
+    const withCounts = displayed.map((eq) => {
+      const isApLike = eq.type === 'ap'
+        || (eq.type === 'cpe' && !eq.clientId && /sector|ap\b|base|ubiquiti|airmax|litebeam|rocket|\bloco\b/i.test(
+          `${eq.name || ''} ${eq.brand || ''} ${eq.model || ''} ${eq.notes || ''}`,
+        ));
+      return {
+        ...eq,
+        stationCount: isApLike && eq.siteId ? (stationsBySite.get(eq.siteId) || 0) : null,
+        roleHint: eq.type === 'router'
+          ? 'router'
+          : isApLike
+            ? 'ap'
+            : (eq.clientId ? 'station' : eq.type),
+      };
+    });
+
+    const stats = {
+      total: withCounts.length,
+      online: withCounts.filter((e) => e.inventoryOnline).length,
+      offline: withCounts.filter((e) => !e.inventoryOnline && (e.type === 'router' || e.hasSnmpCommunity)).length,
+      alerts: withCounts.filter((e) => e.alertKind).length,
+      byType: {
+        router: withCounts.filter((e) => e.type === 'router').length,
+        ap: withCounts.filter((e) => e.roleHint === 'ap').length,
+        cpe: withCounts.filter((e) => e.roleHint === 'station' || (e.type === 'cpe' && e.roleHint !== 'ap')).length,
+        switch: withCounts.filter((e) => e.type === 'switch').length,
+        olt: withCounts.filter((e) => e.type === 'olt').length,
+        other: withCounts.filter((e) => e.roleHint === 'other' || ['server', 'other', 'ont'].includes(e.type)).length,
+      },
+    };
+
+    res.json({ items: withCounts, stats });
   } catch (error) {
-    res.status(500).json({ error: 'Error al listar equipos' });
+    res.status(500).json({ error: 'Error al listar equipos: ' + error.message });
   }
 });
 
