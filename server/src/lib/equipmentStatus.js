@@ -234,6 +234,7 @@ export function attachSnmpDisplay(item) {
     wirelessSignal: wireless?.signalDbm ?? null,
     wirelessRssi: wireless?.rssiDbm ?? null,
     wirelessCcq: wireless?.ccqPercent ?? null,
+    wirelessNoise: wireless?.noiseFloorDbm ?? null,
     wirelessSnr: wireless?.snrDb ?? null,
     wirelessTxRate: wireless?.txRateMbps ?? null,
     wirelessRxRate: wireless?.rxRateMbps ?? null,

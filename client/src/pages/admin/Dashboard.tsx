@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar, Search } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar, Search, Antenna } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
@@ -474,7 +474,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       roles: ['admin', 'technician'],
       items: [
         { id: 'red-isp', label: 'Red ISP', icon: Network },
-        { id: 'inventory', label: 'Inventario', icon: Server },
+        { id: 'inventory', label: 'Señales RF e Inventario', icon: Antenna },
         { id: 'routers', label: 'Routers y agentes', icon: Router },
         { id: 'detected-devices', label: 'Dispositivos detectados', icon: Radar },
       ],
@@ -501,8 +501,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     clients: 'Abonados',
     services: 'Auditoría técnica (IPs y estados)',
     plans: 'Planes comerciales',
-    equipment: 'Inventario global',
-    inventory: 'Inventario global',
+    equipment: 'Señales RF e Inventario',
+    inventory: 'Señales RF e Inventario',
     'detected-devices': 'Dispositivos detectados',
     ips: 'Gestión de IPs',
     invoices: 'Facturación',
@@ -517,7 +517,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     clients: 'Lista de abonados — clic en la IP para gestionar la antena',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
-    inventory: 'Listado operativo de toda la red — estado, señal, CPU y alertas.',
+    inventory: 'Sectoriales y CPEs con señal RF — clic en un AP para ver estaciones conectadas.',
+    equipment: 'Sectoriales y CPEs con señal RF — clic en un AP para ver estaciones conectadas.',
     'detected-devices': 'Dispositivos vía DHCP, ARP y PPPoE activo — adóptalos como abonados con un clic',
     ips: 'Pools y asignación de direcciones IP',
     invoices: 'Facturas mensuales de tus abonados',
