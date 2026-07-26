@@ -179,7 +179,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [networkView, setNetworkView] = useState<NetworkView>('topology')
   const [topologyFocusId, setTopologyFocusId] = useState<number | null>(null)
   const [selectedEquip, setSelectedEquip] = useState<any>(null)
-  const [sitesUpdatedAt, setSitesUpdatedAt] = useState<number | null>(null)
 
   function api() {
     return axios.create({
@@ -214,7 +213,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
       setRouters(routersRes.data || [])
       const clientData = clientsRes.data
       setClients(Array.isArray(clientData) ? clientData : clientData?.items || [])
-      setSitesUpdatedAt(Date.now())
       // Mantener selección de sitio/equipo sincronizada con datos frescos
       if (selectedSite) {
         const fresh = findSiteInTree(nextTree, selectedSite.id)
@@ -706,7 +704,17 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               focusSiteId={topologyFocusId}
               onFocusSiteChange={setTopologyFocusId}
               selectedEquipId={selectedEquip?.id ?? null}
-              onSelectEquip={setSelectedEquip}
+              onSelectEquip={(eq) => {
+                setSelectedEquip(eq)
+                if (eq?.type === 'router') {
+                  setSelectedRouter(eq)
+                  setRouterPanelTab('subscribers')
+                  setRouterNetwork(null)
+                } else {
+                  setSelectedRouter(null)
+                  setRouterNetwork(null)
+                }
+              }}
               onOpenClient={onOpenClient ? (id) => onOpenClient(id, 'overview') : undefined}
             />
           </div>
@@ -722,7 +730,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </p>
                 <p className="text-sm mt-1">
                   {networkView === 'topology'
-                    ? 'Clic en un nodo (torre) para entrar y ver router → sectorial → estaciones online/offline'
+                    ? 'Clic en un equipo del mapa para ver solo ese dispositivo y sus configuraciones'
                     : 'Desde aquí agregas routers, switches y antenas del nodo'}
                 </p>
                 {networkView === 'topology' && (
@@ -736,110 +744,389 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 )}
               </div>
             </div>
-          ) : (
-            <>
-              {networkView === 'topology' && (() => {
-                const siteEquip = selectedSite.equipment || []
-                const sectorial = selectedEquip && isSectorialEquip(selectedEquip)
-                  ? selectedEquip
-                  : siteEquip.find((e: any) => isSectorialEquip(e)) || null
-                const clientEquip = siteEquip.filter((e: any) => e.clientId && e.id !== sectorial?.id)
-                const stations = clientEquip
-                  .filter((e: any) => !isHomeRouterEquip(e))
+          ) : networkView === 'topology' ? (
+            (() => {
+              const eq = selectedEquip
+              if (!eq) {
+                return (
+                  <div className="flex-1 bg-surface-card rounded-xl border flex items-center justify-center text-gray-400 p-6">
+                    <div className="text-center max-w-xs">
+                      <Radio className="h-12 w-12 mx-auto mb-3 opacity-25" />
+                      <p className="font-medium text-ink">Selecciona un equipo en el mapa</p>
+                      <p className="text-sm mt-1">
+                        Router MikroTik, sectorial, CPE o WiFi de casa — aquí verás solo ese equipo y lo que puedes editar.
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              const online = Boolean(eq.agentConnected || eq.status === 'online')
+              const isRouter = eq.type === 'router'
+              const isSectorial = isSectorialEquip(eq)
+              const isHomeWifi = isHomeRouterEquip(eq)
+              const isCpe = !isRouter && !isHomeWifi && (eq.type === 'cpe' || eq.clientId || isSectorial)
+              const siteEquip = selectedSite.equipment || []
+              const stations = isSectorial
+                ? siteEquip
+                  .filter((e: any) => e.clientId && e.id !== eq.id && !isHomeRouterEquip(e))
                   .sort((a: any, b: any) => Number(b.status === 'online') - Number(a.status === 'online')
                     || String(a.clientName || a.name).localeCompare(String(b.clientName || b.name)))
-                const homeRouterByClient = new Map<number, any>()
-                for (const hr of clientEquip.filter(isHomeRouterEquip)) {
-                  if (!homeRouterByClient.has(hr.clientId)) homeRouterByClient.set(hr.clientId, hr)
-                }
-                const onlineCount = stations.filter((e: any) => e.status === 'online').length
-                const showingSelected = selectedEquip && isSectorialEquip(selectedEquip)
-                return (
+                : []
+              const homeRouterByClient = new Map<number, any>()
+              for (const hr of siteEquip.filter(isHomeRouterEquip)) {
+                if (hr.clientId && !homeRouterByClient.has(hr.clientId)) homeRouterByClient.set(hr.clientId, hr)
+              }
+              const linkedHome = eq.clientId ? homeRouterByClient.get(eq.clientId) : null
+              const parentRouterId = eq.parentId || eq.credentials?.routerId
+              const parentRouter = parentRouterId
+                ? siteEquip.find((x: any) => x.id === parentRouterId)
+                : null
+              const roleLabel = isRouter
+                ? routerTypeLabel(eq)
+                : isSectorial
+                  ? 'Sectorial / AP'
+                  : isHomeWifi
+                    ? 'Router WiFi casa'
+                    : (EQUIP_TYPES.find((t) => t.value === eq.type)?.label || 'Equipo')
+
+              return (
+                <div className="flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto">
                   <div className="bg-surface-card rounded-xl border overflow-hidden">
-                    <div className="px-4 py-3 border-b bg-orange-50/60 flex items-start justify-between gap-3">
+                    <div className={`px-4 py-3 border-b flex items-start justify-between gap-3 ${
+                      isRouter ? 'bg-violet-50/70' : isSectorial ? 'bg-teal-50/70' : isHomeWifi ? 'bg-indigo-50/70' : 'bg-sky-50/70'
+                    }`}>
                       <div className="min-w-0">
-                        <p className="text-[10px] uppercase tracking-widest text-orange-600/80 font-semibold">Estaciones</p>
-                        <h3 className="text-sm font-bold text-ink truncate">
-                          {sectorial ? (sectorial.name || 'Sectorial') : 'Selecciona una sectorial en el mapa'}
-                        </h3>
-                        {sectorial && (
-                          <p className="text-xs text-ink-muted mt-0.5">
-                            {sectorial.displayIp || sectorial.ipAddress || 'sin IP'}
-                            {' · '}
-                            <span className={sectorial.status === 'online' ? 'text-emerald-600' : 'text-red-600'}>
-                              {sectorial.status === 'online' ? 'en línea' : 'offline'}
-                            </span>
-                            {' · '}
-                            {stations.length} estaciones · {onlineCount} online
-                          </p>
-                        )}
+                        <p className="text-[10px] uppercase tracking-widest font-semibold text-ink-muted">
+                          {selectedSite.name}
+                        </p>
+                        <h3 className="text-base font-bold text-ink truncate mt-0.5">{eq.name}</h3>
+                        <p className="text-xs text-ink-muted mt-0.5">
+                          {roleLabel}
+                          {(eq.brand || eq.model) ? ` · ${[eq.brand, eq.model].filter(Boolean).join(' ')}` : ''}
+                        </p>
                       </div>
-                      {sitesUpdatedAt && (
-                        <p className="text-[10px] text-ink-muted whitespace-nowrap pt-1">
-                          hace {Math.max(0, Math.round((Date.now() - sitesUpdatedAt) / 1000))}s
+                      <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                        online ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {online ? 'Online' : 'Offline'}
+                      </span>
+                    </div>
+
+                    <div className="px-4 py-3 space-y-2 border-b">
+                      {eq.ipAddress || eq.displayIp ? (
+                        <p className="text-xs flex flex-wrap items-center gap-1.5">
+                          <span className="text-ink-muted w-14">IP</span>
+                          <DeviceIpLink
+                            ip={eq.displayIp || eq.ipAddress}
+                            className="font-mono text-blue-600 hover:underline break-all"
+                            showIcon
+                          />
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-600">Sin IP asignada</p>
+                      )}
+                      {eq.macAddress && (
+                        <p className="text-xs flex items-center gap-1.5">
+                          <span className="text-ink-muted w-14">MAC</span>
+                          <span className="font-mono text-ink">{eq.macAddress}</span>
+                        </p>
+                      )}
+                      {eq.wirelessSignal != null && (
+                        <p className="text-xs flex items-center gap-1.5">
+                          <span className="text-ink-muted w-14">Señal</span>
+                          <span className="text-ink">{eq.wirelessSignal} dBm
+                            {eq.wirelessCcq != null ? ` · CCQ ${eq.wirelessCcq}%` : ''}
+                          </span>
+                        </p>
+                      )}
+                      {eq.clientName && (
+                        <p className="text-xs flex items-center gap-1.5">
+                          <span className="text-ink-muted w-14">Abonado</span>
+                          {eq.clientId && onOpenClient ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenClient(eq.clientId, 'overview')}
+                              className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                            >
+                              <User className="h-3 w-3" /> {eq.clientName}
+                            </button>
+                          ) : (
+                            <span className="text-ink">{eq.clientName}</span>
+                          )}
+                        </p>
+                      )}
+                      {parentRouter && (
+                        <p className="text-xs flex items-center gap-1.5">
+                          <span className="text-ink-muted w-14">Router</span>
+                          <span className="text-ink inline-flex items-center gap-1">
+                            <Router className="h-3 w-3" /> {parentRouter.name}
+                          </span>
+                        </p>
+                      )}
+                      {linkedHome && !isHomeWifi && (
+                        <p className="text-xs flex items-center gap-1.5">
+                          <span className="text-ink-muted w-14">WiFi</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEquip(linkedHome)}
+                            className="text-blue-600 hover:underline truncate"
+                          >
+                            {linkedHome.name}
+                            {linkedHome.ipAddress ? ` · ${linkedHome.ipAddress}` : ''}
+                          </button>
                         </p>
                       )}
                     </div>
-                    {!sectorial ? (
-                      <p className="px-4 py-6 text-sm text-ink-muted text-center">
-                        Entra al nodo y haz clic en la sectorial (naranja) para ver quién está enlazado.
+
+                    <div className="px-4 py-3 space-y-2">
+                      <p className="text-[10px] uppercase tracking-widest font-semibold text-ink-muted">
+                        Acciones
                       </p>
-                    ) : stations.length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-ink-muted text-center">
-                        Sin abonados inventariados en este nodo.
-                      </p>
-                    ) : (
-                      <ul className="divide-y max-h-[320px] overflow-auto">
-                        {stations.map((st: any) => {
-                          const online = st.status === 'online'
-                          const homeRouter = st.clientId ? homeRouterByClient.get(st.clientId) : null
-                          return (
-                            <li key={st.id} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-raised/60">
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${online ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-ink truncate">{st.clientName || st.name}</p>
-                                <p className="text-xs text-ink-muted font-mono truncate">
-                                  {st.displayIp || st.ipAddress || '—'}
-                                  {st.wirelessSignal != null ? ` · ${st.wirelessSignal} dBm` : ''}
-                                  {st.wirelessCcq != null ? ` · CCQ ${st.wirelessCcq}%` : ''}
+                      <div className="flex flex-wrap gap-2">
+                        {isRouter && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEditRouter(eq)}
+                              className="px-3 py-1.5 text-xs border border-line text-ink-soft rounded-lg hover:bg-surface-raised flex items-center gap-1.5"
+                            >
+                              <Pencil className="h-3.5 w-3.5" /> Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                              className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 ${
+                                selectedRouter?.id === eq.id && routerPanelTab === 'subscribers'
+                                  ? 'bg-blue-700 text-white'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                              }`}
+                            >
+                              <Eye className="h-3.5 w-3.5" /> Abonados / PPPoE
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => loadRouterNetwork(eq, 'infra')}
+                              className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 ${
+                                selectedRouter?.id === eq.id && routerPanelTab === 'infra'
+                                  ? 'bg-purple-700 text-white'
+                                  : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                              }`}
+                            >
+                              <Server className="h-3.5 w-3.5" /> DHCP / Infra
+                            </button>
+                          </>
+                        )}
+                        {(isCpe || isSectorial || isHomeWifi || eq.type === 'other' || eq.type === 'switch') && !isRouter && (
+                          <button
+                            type="button"
+                            onClick={() => openEditCpe(eq)}
+                            className="px-3 py-1.5 text-xs border border-line text-ink-soft rounded-lg hover:bg-surface-raised flex items-center gap-1.5"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            {isHomeWifi ? 'Editar router WiFi' : isSectorial ? 'Editar sectorial' : 'Editar equipo'}
+                          </button>
+                        )}
+                        {eq.clientId && onOpenClient && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenClient(eq.clientId, 'overview')}
+                            className="px-3 py-1.5 text-xs bg-sky-100 text-sky-800 rounded-lg hover:bg-sky-200 flex items-center gap-1.5"
+                          >
+                            <User className="h-3.5 w-3.5" /> Ver abonado
+                          </button>
+                        )}
+                        {isSectorial && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const routers = siteEquip.filter((e: any) => e.type === 'router')
+                              setEquipForm({
+                                ...equipForm,
+                                siteId: selectedSite.id,
+                                type: 'cpe',
+                                brand: 'Ubiquiti',
+                                parentId: routers.length === 1 ? routers[0].id : (eq.parentId || ''),
+                              })
+                              setIpSuggestHint('')
+                              setShowEquipForm(true)
+                            }}
+                            className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 flex items-center gap-1.5"
+                          >
+                            <Plus className="h-3.5 w-3.5" /> Agregar CPE
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {isRouter && selectedRouter?.id === eq.id && (
+                    <div className="bg-surface-card rounded-xl border flex flex-col overflow-hidden min-h-[280px] flex-1">
+                      <div className="px-4 py-3 border-b bg-surface flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-gray-800 text-sm truncate">
+                            {routerPanelTab === 'subscribers' ? 'Abonados · colas y PPPoE' : 'DHCP e infraestructura'}
+                          </h3>
+                          <p className="text-xs text-ink-muted mt-0.5">{routerTypeLabel(eq)}</p>
+                        </div>
+                        <div className="flex gap-1 bg-surface-raised rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                            className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'subscribers' ? 'bg-surface-card shadow font-medium' : 'text-ink-muted'}`}
+                          >
+                            Abonados
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => loadRouterNetwork(eq, 'infra')}
+                            className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'infra' ? 'bg-surface-card shadow font-medium' : 'text-ink-muted'}`}
+                          >
+                            Infra
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                        {routerPanelTab === 'infra' ? (
+                          <RouterNetworkConfig
+                            API={API}
+                            routerId={eq.id}
+                            routerName={eq.name}
+                            siteEquipment={siteEquip}
+                          />
+                        ) : routerNetwork?.error ? (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 flex gap-2">
+                            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                            {routerNetwork.error}
+                          </div>
+                        ) : !routerNetwork ? (
+                          <div className="text-center py-10 space-y-3">
+                            <p className="text-sm text-ink-muted">Carga las colas y sesiones PPPoE de este router.</p>
+                            <button
+                              type="button"
+                              onClick={() => loadRouterNetwork(eq, 'subscribers')}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                            >
+                              Cargar abonados
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-5">
+                            {(routerNetwork.simpleQueues || []).length > 0 ? (
+                              <div>
+                                <p className="text-xs font-semibold text-ink-muted uppercase mb-3 tracking-wide">
+                                  Simple Queues ({routerNetwork.simpleQueues.length})
                                 </p>
-                                {homeRouter && (
-                                  <p className="text-[11px] text-ink-muted truncate mt-0.5">
-                                    router WiFi: {homeRouter.name}
-                                    {homeRouter.displayIp || homeRouter.ipAddress
-                                      ? ` · ${homeRouter.displayIp || homeRouter.ipAddress}`
-                                      : ''}
-                                  </p>
+                                <div className="space-y-3">
+                                  {(routerNetwork.simpleQueues || []).map((q: any) => (
+                                    <SubscriberQueueCard
+                                      key={q['.id'] || q.name}
+                                      name={q.name}
+                                      target={q.target}
+                                      maxLimit={q['max-limit']}
+                                      comment={q.comment}
+                                      disabled={q.disabled === 'true'}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-400 text-center py-4">Sin colas configuradas</p>
+                            )}
+                            <div className="border-t pt-4">
+                              <p className="text-xs font-semibold text-ink-muted uppercase mb-2 tracking-wide">
+                                PPPoE conectados ({routerNetwork.pppoeActive?.filter((a: any) => a.name)?.length || 0})
+                              </p>
+                              <div className="space-y-1">
+                                {(routerNetwork.pppoeActive || []).filter((a: any) => a.name).map((a: any) => (
+                                  <div key={a['.id'] || a.name} className="flex items-center gap-2 text-sm bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                                    <CheckCircle className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
+                                    <span className="font-medium truncate">{a.name}</span>
+                                    <span className="text-xs text-ink-muted font-mono ml-auto">{a.address}</span>
+                                  </div>
+                                ))}
+                                {!(routerNetwork.pppoeActive || []).some((a: any) => a.name) && (
+                                  <p className="text-xs text-gray-400 py-2">Nadie conectado por PPPoE ahora</p>
                                 )}
                               </div>
-                              <span className={`text-[10px] font-semibold uppercase ${online ? 'text-emerald-600' : 'text-red-600'}`}>
-                                {online ? 'online' : 'offline'}
-                              </span>
-                              {st.clientId && onOpenClient && (
+                            </div>
+                            {(routerNetwork.pppoeSecrets || []).length > 0 && (
+                              <div className="border-t pt-4">
+                                <p className="text-xs font-semibold text-ink-muted uppercase mb-2 tracking-wide">
+                                  Usuarios PPPoE ({routerNetwork.pppoeSecrets.length})
+                                </p>
+                                <div className="space-y-1 max-h-32 overflow-y-auto">
+                                  {(routerNetwork.pppoeSecrets || []).slice(0, 15).map((s: any) => (
+                                    <div key={s['.id']} className="flex items-center gap-2 text-xs border rounded-lg px-3 py-2 bg-surface">
+                                      <span className={`w-2 h-2 rounded-full ${s.disabled === 'true' ? 'bg-red-400' : 'bg-green-400'}`} />
+                                      <span className="font-medium">{s.name}</span>
+                                      <span className="text-gray-400 ml-auto">{s.profile}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {isSectorial && (
+                    <div className="bg-surface-card rounded-xl border overflow-hidden">
+                      <div className="px-4 py-3 border-b bg-teal-50/60">
+                        <p className="text-[10px] uppercase tracking-widest text-teal-700/80 font-semibold">Estaciones enlazadas</p>
+                        <p className="text-xs text-ink-muted mt-0.5">
+                          {stations.length} CPE · {stations.filter((s: any) => s.status === 'online').length} online
+                        </p>
+                      </div>
+                      {stations.length === 0 ? (
+                        <p className="px-4 py-6 text-sm text-ink-muted text-center">
+                          Sin abonados inventariados bajo esta sectorial.
+                        </p>
+                      ) : (
+                        <ul className="divide-y max-h-[360px] overflow-auto">
+                          {stations.map((st: any) => {
+                            const stOnline = st.status === 'online'
+                            const home = st.clientId ? homeRouterByClient.get(st.clientId) : null
+                            return (
+                              <li key={st.id}>
                                 <button
                                   type="button"
-                                  onClick={() => onOpenClient(st.clientId, 'overview')}
-                                  className="text-xs text-blue-600 hover:underline shrink-0"
+                                  onClick={() => setSelectedEquip(st)}
+                                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-raised/60 text-left"
                                 >
-                                  Ver
+                                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${stOnline ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-ink truncate">{st.clientName || st.name}</p>
+                                    <p className="text-xs text-ink-muted font-mono truncate">
+                                      {st.displayIp || st.ipAddress || '—'}
+                                      {st.wirelessSignal != null ? ` · ${st.wirelessSignal} dBm` : ''}
+                                    </p>
+                                    {home && (
+                                      <p className="text-[11px] text-ink-muted truncate mt-0.5">
+                                        WiFi: {home.name}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] font-semibold uppercase ${stOnline ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {stOnline ? 'online' : 'offline'}
+                                  </span>
                                 </button>
-                              )}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-                    {sectorial && !showingSelected && (
-                      <p className="px-4 py-2 text-[10px] text-ink-muted border-t bg-surface-raised/40">
-                        Mostrando la sectorial del nodo. Clic en el mapa para fijar otra.
-                      </p>
-                    )}
-                  </div>
-                )
-              })()}
-
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })()
+          ) : (
+            <>
               <div className="bg-surface-card rounded-xl border p-5 space-y-4">
-                <div className={networkView === 'topology' ? 'space-y-3' : 'flex justify-between items-start gap-4'}>
+                <div className="flex justify-between items-start gap-4">
                   <div>
                     <h2 className="text-lg font-bold text-ink flex items-center gap-2">
                       {selectedSite.name}
@@ -856,7 +1143,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                       {selectedSite.city || selectedSite.address || SITE_TYPES.find(t => t.value === selectedSite.type)?.label}
                     </p>
                   </div>
-                  <div className={`flex flex-wrap gap-2 ${networkView === 'topology' ? '' : 'justify-end'}`}>
+                  <div className="flex flex-wrap gap-2 justify-end">
                     <button onClick={openRouterModal}
                       className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 flex items-center gap-1.5">
                       <Router className="h-4 w-4" /> Router
@@ -884,7 +1171,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </div>
               </div>
 
-              <div className={`grid gap-4 flex-1 min-h-0 ${networkView === 'tree' ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
+              <div className="grid gap-4 flex-1 min-h-0 grid-cols-1 xl:grid-cols-2">
                 {/* Equipos del sitio */}
                 <div className="bg-surface-card rounded-xl border flex flex-col overflow-hidden">
                   <div className="px-4 py-3 border-b bg-surface">
@@ -1542,7 +1829,15 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-surface-card rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between mb-4">
-              <h3 className="font-bold text-lg">Editar antena CPE</h3>
+              <h3 className="font-bold text-lg">
+                {editingEquip?.type === 'router'
+                  ? 'Editar router'
+                  : isHomeRouterEquip(editingEquip)
+                    ? 'Editar router WiFi'
+                    : isSectorialEquip(editingEquip)
+                      ? 'Editar sectorial'
+                      : 'Editar antena / equipo'}
+              </h3>
               <button onClick={() => { setEditingEquip(null); setIpSuggestHint('') }}><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-3">
