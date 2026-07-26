@@ -19,9 +19,12 @@ type Props = {
   onSelectSite: (site: SiteNode) => void
   focusSiteId?: number | null
   onFocusSiteChange?: (siteId: number | null) => void
+  selectedEquipId?: number | null
+  onSelectEquip?: (equip: any | null) => void
+  onOpenClient?: (clientId: number) => void
 }
 
-type NodeKind = 'site' | 'router' | 'cpe' | 'site-label'
+type NodeKind = 'site' | 'router' | 'cpe' | 'ap' | 'site-label'
 
 type LayoutNode = {
   kind: NodeKind
@@ -200,6 +203,17 @@ function routerParentId(r: any, routerIds: Set<number>): number | null {
   return null
 }
 
+function isSectorialEquip(eq: any): boolean {
+  if (!eq || eq.type === 'router') return false
+  if (eq.type === 'ap') return true
+  if (eq.clientId) return false
+  const blob = `${eq.name || ''} ${eq.notes || ''}`
+  if (/sector|ap\b|base|tower|torre/i.test(blob)) return true
+  return eq.type === 'cpe' && /ubiquiti|airmax|airos|nanostation|litebeam|powerbeam|rocket|iso.?station|\bloco\b/i.test(
+    `${eq.brand || ''} ${eq.model || ''} ${eq.name || ''}`,
+  )
+}
+
 function assignCpesToRouters(cpes: any[], routers: any[]) {
   const map = new Map<number, any[]>()
   for (const r of routers) map.set(r.id, [])
@@ -225,16 +239,28 @@ function assignCpesToRouters(cpes: any[], routers: any[]) {
   return map
 }
 
+function measureEquipRow(items: any[]): number {
+  if (!items.length) return 0
+  return items.reduce((sum, _c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
+}
+
 function measureRouterBranch(
   router: any,
   cpeMap: Map<number, any[]>,
   allRouters: any[],
   routerIds: Set<number>,
 ): number {
-  const cpes = cpeMap.get(router.id) || []
-  const cpeW = cpes.length
-    ? cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
-    : 0
+  const gear = cpeMap.get(router.id) || []
+  const sectorials = gear.filter(isSectorialEquip)
+  const stations = gear.filter((e) => e.clientId)
+  const rest = gear.filter((e) => !isSectorialEquip(e) && !e.clientId)
+  const cpeW = sectorials.length
+    ? Math.max(
+      measureEquipRow(sectorials),
+      measureEquipRow(stations),
+      measureEquipRow(rest),
+    )
+    : measureEquipRow(gear)
   const children = allRouters.filter((r) => routerParentId(r, routerIds) === router.id)
   const childW = children.length
     ? children.reduce(
@@ -243,6 +269,55 @@ function measureRouterBranch(
     )
     : 0
   return Math.max(ROUTER_W, cpeW, childW)
+}
+
+function pushEquipNode(
+  ctx: BuildCtx,
+  eq: any,
+  x: number,
+  y: number,
+  kind: 'cpe' | 'ap',
+) {
+  const hostCpe = cleanDeviceHost(eq.ipAddress || eq.displayIp)
+  const id = `${kind}-${eq.id}`
+  ctx.nodes.push({
+    kind,
+    id,
+    siteId: eq.siteId,
+    clientId: eq.clientId,
+    name: eq.clientName || eq.name,
+    sub: hostCpe || (kind === 'ap' ? 'sectorial' : 'sin IP'),
+    host: hostCpe,
+    online: isOnline(eq),
+    x,
+    y,
+    w: CPE_W,
+    h: CPE_H,
+    equip: eq,
+  })
+  ctx.maxX = Math.max(ctx.maxX, x + CPE_W + PAD)
+  ctx.maxY = Math.max(ctx.maxY, y + CPE_H + PAD)
+  return id
+}
+
+function placeEquipRow(
+  ctx: BuildCtx,
+  parentId: string,
+  parentCx: number,
+  parentBottom: number,
+  items: any[],
+  kind: 'cpe' | 'ap',
+): number {
+  if (!items.length) return parentBottom
+  const rowW = measureEquipRow(items)
+  let cxPos = parentCx - rowW / 2
+  const y = parentBottom + V_GAP + 16
+  for (const eq of items) {
+    const id = pushEquipNode(ctx, eq, cxPos, y, kind)
+    ctx.edges.push({ fromId: parentId, toId: id, dashed: true })
+    cxPos += CPE_W + COL_GAP
+  }
+  return y + CPE_H
 }
 
 function placeRouterTree(
@@ -283,48 +358,41 @@ function placeRouterTree(
   ctx.maxX = Math.max(ctx.maxX, x + ROUTER_W + PAD)
   ctx.maxY = Math.max(ctx.maxY, bottom + PAD)
 
-  const routerCpes = cpeMap.get(router.id) || []
+  const gear = cpeMap.get(router.id) || []
+  const sectorials = gear.filter(isSectorialEquip)
+  const stations = gear.filter((e) => e.clientId)
+  const rest = gear.filter((e) => !isSectorialEquip(e) && !e.clientId)
   let subtreeBottom = bottom
 
-  if (routerCpes.length) {
-    const rowW = routerCpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
-    let cxPos = cx - rowW / 2
-    const cpeY = bottom + V_GAP + 16
-
-    for (const eq of routerCpes) {
-      const hostCpe = cleanDeviceHost(eq.ipAddress)
-      const cpeId = `cpe-${eq.id}`
-      ctx.nodes.push({
-        kind: 'cpe',
-        id: cpeId,
-        siteId: router.siteId,
-        clientId: eq.clientId,
-        name: eq.clientName || eq.name,
-        sub: hostCpe || 'sin IP',
-        host: hostCpe,
-        online: isOnline(eq),
-        x: cxPos,
-        y: cpeY,
-        w: CPE_W,
-        h: CPE_H,
-        equip: eq,
-      })
-      ctx.edges.push({ fromId: id, toId: cpeId, dashed: true })
-      cxPos += CPE_W + COL_GAP
-      ctx.maxX = Math.max(ctx.maxX, cxPos)
+  if (sectorials.length) {
+    // Estilo UISP: router → sectorial → estaciones del abonado
+    subtreeBottom = placeEquipRow(ctx, id, cx, bottom, sectorials, 'ap')
+    const primaryAp = ctx.nodes.find((n) => n.kind === 'ap' && n.equip?.id === sectorials[0].id)
+    if (primaryAp && stations.length) {
+      subtreeBottom = placeEquipRow(
+        ctx,
+        primaryAp.id,
+        primaryAp.x + primaryAp.w / 2,
+        primaryAp.y + primaryAp.h,
+        stations,
+        'cpe',
+      )
     }
-    subtreeBottom = cpeY + CPE_H
-    ctx.maxY = Math.max(ctx.maxY, subtreeBottom + PAD)
+    if (rest.length) {
+      subtreeBottom = placeEquipRow(ctx, id, cx, subtreeBottom, rest, 'cpe')
+    }
+  } else if (gear.length) {
+    subtreeBottom = placeEquipRow(ctx, id, cx, bottom, gear, 'cpe')
   }
 
   if (childRouters.length) {
+    const routerIds = new Set(allRouters.map((r) => r.id))
     const branchW = childRouters.reduce(
       (sum, r, i) => sum + measureRouterBranch(r, cpeMap, allRouters, routerIds) + (i ? COL_GAP : 0),
       0,
     )
     let childX = cx - branchW / 2
     const childY = subtreeBottom + V_GAP + 20
-    const routerIds = new Set(allRouters.map((r) => r.id))
 
     for (const child of childRouters) {
       const w = measureRouterBranch(child, cpeMap, allRouters, routerIds)
@@ -350,7 +418,8 @@ function placeRouterTree(
 function computeFocusLayout(site: SiteNode) {
   const ctx: BuildCtx = { nodes: [], edges: [], maxX: PAD, maxY: PAD }
   const routers = (site.equipment || []).filter((e) => e.type === 'router')
-  const cpes = (site.equipment || []).filter((e) => e.type === 'cpe')
+  // Incluir CPE/AP/other (WiFi abonado): no solo type=cpe
+  const cpes = (site.equipment || []).filter((e) => e.type !== 'router' && e.type !== 'switch' && e.type !== 'olt')
   const routerIds = new Set(routers.map((r) => r.id))
   const cpeMap = assignCpesToRouters(cpes, routers)
   const roots = routers.filter((r) => !routerParentId(r, routerIds))
@@ -400,6 +469,43 @@ function computeFocusLayout(site: SiteNode) {
   }
 
   if (!routers.length) {
+    const sectorials = cpes.filter(isSectorialEquip)
+    const stations = cpes.filter((e) => e.clientId)
+    const rest = cpes.filter((e) => !isSectorialEquip(e) && !e.clientId)
+    if (sectorials.length) {
+      const rowW = measureEquipRow(sectorials)
+      let x = centerX - rowW / 2
+      const apIds: string[] = []
+      for (const eq of sectorials) {
+        const id = pushEquipNode(ctx, eq, x, startY, 'ap')
+        ctx.edges.push({ fromId: labelId, toId: id, dashed: true })
+        apIds.push(id)
+        x += CPE_W + COL_GAP
+      }
+      let bottom = startY + CPE_H
+      if (stations.length && apIds[0]) {
+        const apNode = ctx.nodes.find((n) => n.id === apIds[0])!
+        bottom = placeEquipRow(
+          ctx,
+          apIds[0],
+          apNode.x + apNode.w / 2,
+          apNode.y + apNode.h,
+          stations,
+          'cpe',
+        )
+      }
+      if (rest.length) {
+        bottom = placeEquipRow(ctx, labelId, centerX, bottom, rest, 'cpe')
+      }
+      return {
+        nodes: ctx.nodes,
+        edges: ctx.edges,
+        width: Math.max(canvasW, ctx.maxX),
+        height: Math.max(bottom + PAD, ctx.maxY),
+        routerCount: 0,
+        cpeCount: cpes.length,
+      }
+    }
     const rowW = cpes.reduce((sum, c, i) => sum + CPE_W + (i ? COL_GAP : 0), 0)
     let x = centerX - rowW / 2
     for (const eq of cpes) {
@@ -566,6 +672,7 @@ function truncate(s: string, max: number) {
 
 export default function NetworkTopologyMap({
   tree, selectedSiteId, onSelectSite, focusSiteId: focusSiteIdProp, onFocusSiteChange,
+  selectedEquipId, onSelectEquip, onOpenClient,
 }: Props) {
   const [zoom, setZoom] = useState(1)
   const [internalFocusSiteId, setInternalFocusSiteId] = useState<number | null>(null)
@@ -620,10 +727,12 @@ export default function NetworkTopologyMap({
   function enterSite(site: SiteNode) {
     setFocusSiteId(site.id)
     onSelectSite(site)
+    onSelectEquip?.(null)
   }
 
   function backToOverview() {
     setFocusSiteId(null)
+    onSelectEquip?.(null)
   }
 
   function handleNodeClick(ev: MouseEvent, n: LayoutNode) {
@@ -631,9 +740,15 @@ export default function NetworkTopologyMap({
       enterSite(n.site)
       return
     }
-    if ((n.kind === 'router' || n.kind === 'cpe') && n.host) {
+    if ((n.kind === 'router' || n.kind === 'cpe' || n.kind === 'ap') && n.equip) {
       ev.stopPropagation()
-      openDeviceWeb(n.host)
+      onSelectEquip?.(n.equip)
+      if (n.kind === 'cpe' && n.clientId && onOpenClient && ev.detail >= 2) {
+        onOpenClient(n.clientId)
+        return
+      }
+      // Clic simple: seleccionar (panel estaciones). Shift+clic: abrir web del equipo.
+      if (ev.shiftKey && n.host) openDeviceWeb(n.host)
     }
   }
 
@@ -668,7 +783,7 @@ export default function NetworkTopologyMap({
           </div>
           <p className="text-xs text-ink-muted mt-0.5">
             {focusSite
-              ? `${layout.routerCount} router(s) · ${layout.cpeCount} CPE(s) dentro del nodo — clic IP = interfaz web`
+              ? `${layout.routerCount} router(s) · ${layout.cpeCount} CPE(s) — clic = seleccionar · Shift+clic = web · doble clic estación = abonado`
               : `${layout.routerCount} router(s) · ${layout.cpeCount} CPE(s) — clic en nodo para entrar y ver equipos`}
           </p>
         </div>
@@ -729,25 +844,38 @@ export default function NetworkTopologyMap({
             ))}
 
             {layout.nodes.map((n) => {
-              const selected = (n.kind === 'site' || n.kind === 'site-label') && n.siteId === selectedSiteId
+              const siteSelected = (n.kind === 'site' || n.kind === 'site-label') && n.siteId === selectedSiteId
+              const equipSelected = (n.kind === 'cpe' || n.kind === 'ap' || n.kind === 'router')
+                && n.equip?.id != null
+                && n.equip.id === selectedEquipId
+              const selected = siteSelected || equipSelected
               const fill =
                 n.kind === 'site' || n.kind === 'site-label'
                   ? (selected ? '#eff6ff' : '#ffffff')
                   : n.kind === 'router'
                     ? (n.online ? '#f5f3ff' : '#fafafa')
-                    : (n.online ? '#f0fdf4' : '#fafafa')
+                    : n.kind === 'ap'
+                      ? (n.online ? '#fff7ed' : '#fafafa')
+                      : (n.online ? '#f0fdf4' : '#fef2f2')
               const stroke =
                 n.kind === 'site' || n.kind === 'site-label'
                   ? (selected ? '#2563eb' : n.online ? '#22c55e' : '#cbd5e1')
                   : n.kind === 'router'
-                    ? (n.online ? '#a78bfa' : '#e2e8f0')
-                    : (n.online ? '#86efac' : '#e2e8f0')
+                    ? (selected ? '#7c3aed' : n.online ? '#a78bfa' : '#e2e8f0')
+                    : n.kind === 'ap'
+                      ? (selected ? '#ea580c' : n.online ? '#fdba74' : '#fca5a5')
+                      : (selected ? '#16a34a' : n.online ? '#86efac' : '#fca5a5')
+              const statusFill = n.online ? '#22c55e' : (n.kind === 'cpe' || n.kind === 'ap' ? '#ef4444' : '#94a3b8')
 
               return (
                 <g
                   key={n.id}
                   onClick={(ev) => handleNodeClick(ev, n)}
-                  className={n.kind === 'site' ? 'cursor-pointer' : n.host ? 'cursor-pointer' : 'cursor-default'}
+                  className={
+                    n.kind === 'site' || n.kind === 'router' || n.kind === 'cpe' || n.kind === 'ap'
+                      ? 'cursor-pointer'
+                      : 'cursor-default'
+                  }
                 >
                   <rect
                     x={n.x}
@@ -766,8 +894,8 @@ export default function NetworkTopologyMap({
                   {edgeTargets.outs.has(n.id) && (
                     <circle cx={n.x + n.w / 2} cy={n.y + n.h} r={4} fill="#fff" stroke="#6366f1" strokeWidth={2} />
                   )}
-                  {(n.kind === 'site' || n.kind === 'router' || n.kind === 'cpe') && (
-                    <circle cx={n.x + n.w - 12} cy={n.y + 12} r={5} fill={n.online ? '#22c55e' : '#94a3b8'} />
+                  {(n.kind === 'site' || n.kind === 'router' || n.kind === 'cpe' || n.kind === 'ap') && (
+                    <circle cx={n.x + n.w - 12} cy={n.y + 12} r={5} fill={statusFill} />
                   )}
 
                   {n.kind === 'site-label' && (
@@ -819,9 +947,26 @@ export default function NetworkTopologyMap({
                         x={n.x + 10}
                         y={n.y + 42}
                         fill={n.host ? '#7c3aed' : '#9ca3af'}
-                        style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace', textDecoration: n.host ? 'underline' : undefined }}
+                        style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace' }}
                       >
                         {truncate(n.sub || '', 20)}
+                      </text>
+                    </>
+                  )}
+
+                  {n.kind === 'ap' && (
+                    <>
+                      <rect x={n.x + 10} y={n.y + 14} width={14} height={10} rx={2} fill="#ea580c" opacity={0.9} />
+                      <text x={n.x + 28} y={n.y + 24} fill="#111827" style={{ fontSize: 10, fontWeight: 600 }}>
+                        {truncate(n.name, 12)}
+                      </text>
+                      <text
+                        x={n.x + 10}
+                        y={n.y + 42}
+                        fill="#c2410c"
+                        style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace' }}
+                      >
+                        {truncate(n.sub || 'sectorial', 18)}
                       </text>
                     </>
                   )}
@@ -835,10 +980,10 @@ export default function NetworkTopologyMap({
                       <text
                         x={n.x + 10}
                         y={n.y + 42}
-                        fill={n.host ? '#2563eb' : '#9ca3af'}
-                        style={{ fontSize: 10, fontFamily: 'ui-monospace, monospace', textDecoration: n.host ? 'underline' : undefined }}
+                        fill={n.online ? '#2563eb' : '#dc2626'}
+                        style={{ fontSize: 10, fontFamily: 'ui-monospace, monospace' }}
                       >
-                        {n.sub}
+                        {n.online ? (n.sub || 'online') : 'offline'}
                       </text>
                     </>
                   )}

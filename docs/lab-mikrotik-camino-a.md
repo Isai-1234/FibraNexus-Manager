@@ -93,6 +93,8 @@ En **Centro del Abonado → Abonado Antena Lab** el panel RADIO ENLACE quedaba e
 
 **Presencia estilo UISP (2026-07-25):** sync ligero `ap-station-sync-org` cada **45s** (solo tabla de estaciones del AP, no MIB completa) + refresco en vivo cada **30s** mientras el ISP mira el abonado. Objetivo: ver desconexiones casi al instante, como la lista de stations de UISP.
 
+**Vista amplia Red ISP → Topología (2026-07-26):** al entrar a un nodo, layout router → sectorial → estaciones; panel lateral con online/offline + señal. No hay agente en la antena (airOS solo habla UISP); FibraNexus usa SNMP vía MikroTik.
+
 **Qué configurar en un ISP nuevo para que el panel funcione:**
 1. Sectorial/AP en el mismo **sitio** que el CPE, con SNMP ON + community en FibraNexus.
 2. CPE abonado con **MAC correcta** (sirve para matchear la estación del AP).

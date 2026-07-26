@@ -80,12 +80,12 @@ function wirelessFromRaw(merged, attempts) {
   const noiseFloor = normalizeDbm(merged.noiseFloor);
   const snr = signal != null && noiseFloor != null ? Math.round(signal - noiseFloor) : null;
 
-  // AP/CPE idle: airOS suele reportar −96 / ruido −96 / CCQ 0 / tasas 0 cuando no hay estación.
+  // AP/CPE idle: airOS suele reportar 0/−96 / CCQ 0 / tasas 0 cuando no hay estación.
   // No es “mala señal”: es “sin enlace”. Tratarlo como sin métricas wireless.
   const tx = Number(merged.txRate);
   const rx = Number(merged.rxRate);
   const idleNoStation = (
-    signal != null && signal <= -90
+    (signal == null || signal === 0 || signal <= -90)
     && (noiseFloor == null || noiseFloor <= -90)
     && (ccq == null || ccq === 0)
     && (!tx || tx === 0)
@@ -97,7 +97,7 @@ function wirelessFromRaw(merged, attempts) {
       wirelessDebug: {
         attempts,
         raw: merged,
-        hint: 'Equipo online; sin estaciones airMAX activas (MIB idle −96). El AP puede estar bien y el CPE desconectado.',
+        hint: 'Equipo online; sin estaciones airMAX activas (MIB idle). El AP puede estar bien y el CPE desconectado.',
       },
     };
   }

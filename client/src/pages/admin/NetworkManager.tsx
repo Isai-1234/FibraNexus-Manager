@@ -178,6 +178,8 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [editRouterForm, setEditRouterForm] = useState<any>({})
   const [networkView, setNetworkView] = useState<NetworkView>('topology')
   const [topologyFocusId, setTopologyFocusId] = useState<number | null>(null)
+  const [selectedEquip, setSelectedEquip] = useState<any>(null)
+  const [sitesUpdatedAt, setSitesUpdatedAt] = useState<number | null>(null)
 
   function api() {
     return axios.create({
@@ -186,27 +188,60 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     })
   }
 
-  async function loadAll() {
-    setLoading(true)
+  function isSectorialEquip(eq: any): boolean {
+    if (!eq || eq.type === 'router') return false
+    if (eq.type === 'ap') return true
+    if (eq.clientId) return false
+    const blob = `${eq.name || ''} ${eq.notes || ''}`
+    if (/sector|ap\b|base|tower|torre/i.test(blob)) return true
+    return eq.type === 'cpe' && /ubiquiti|airmax|airos|nanostation|litebeam|powerbeam|rocket|iso.?station|\bloco\b/i.test(
+      `${eq.brand || ''} ${eq.model || ''} ${eq.name || ''}`,
+    )
+  }
+
+  async function loadAll(opts: { quiet?: boolean } = {}) {
+    if (!opts.quiet) setLoading(true)
     try {
       const [sitesRes, routersRes, clientsRes] = await Promise.all([
         api().get('/sites'),
         api().get('/routers'),
         api().get('/clients', { params: { page: 1, limit: 200 } }),
       ])
-      setTree(sitesRes.data.tree || [])
+      const nextTree = sitesRes.data.tree || []
+      setTree(nextTree)
       setUnassigned(sitesRes.data.unassigned || [])
       setStats(sitesRes.data.stats || {})
       setRouters(routersRes.data || [])
       const clientData = clientsRes.data
       setClients(Array.isArray(clientData) ? clientData : clientData?.items || [])
+      setSitesUpdatedAt(Date.now())
+      // Mantener selección de sitio/equipo sincronizada con datos frescos
+      if (selectedSite) {
+        const fresh = findSiteInTree(nextTree, selectedSite.id)
+        if (fresh) setSelectedSite(fresh)
+      }
+      if (selectedEquip) {
+        const flat = flattenSites(nextTree).flatMap((s) => s.equipment || [])
+        const freshEq = flat.find((e: any) => e.id === selectedEquip.id)
+        setSelectedEquip(freshEq || null)
+      }
     } catch (e: any) {
-      alert('Error: ' + (e.response?.data?.error || e.message))
+      if (!opts.quiet) alert('Error: ' + (e.response?.data?.error || e.message))
     }
-    setLoading(false)
+    if (!opts.quiet) setLoading(false)
   }
 
   useEffect(() => { loadAll() }, [])
+
+  // Topología: refresco vivo cada 30s (presencia estaciones vía sync backend)
+  useEffect(() => {
+    if (networkView !== 'topology') return
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      void loadAll({ quiet: true })
+    }, 30000)
+    return () => window.clearInterval(timer)
+  }, [networkView])
 
   function toggleExpand(id: number) {
     setExpanded(prev => {
@@ -222,6 +257,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     setSelectedRouter(null)
     setRouterNetwork(null)
     setRouterPanelTab('subscribers')
+    setSelectedEquip(null)
     setExpanded(prev => new Set(prev).add(site.id))
     setTopologyFocusId(site.id)
   }
@@ -669,6 +705,9 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               onSelectSite={selectSite}
               focusSiteId={topologyFocusId}
               onFocusSiteChange={setTopologyFocusId}
+              selectedEquipId={selectedEquip?.id ?? null}
+              onSelectEquip={setSelectedEquip}
+              onOpenClient={onOpenClient ? (id) => onOpenClient(id, 'overview') : undefined}
             />
           </div>
         )}
@@ -683,7 +722,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </p>
                 <p className="text-sm mt-1">
                   {networkView === 'topology'
-                    ? 'Clic en un nodo para entrar y ver routers y antenas · clic en IP para abrir interfaz web'
+                    ? 'Entra al nodo, selecciona la sectorial y verás quién está enlazado'
                     : 'Desde aquí agregas routers, switches y antenas del nodo'}
                 </p>
                 {networkView === 'topology' && (
@@ -699,6 +738,92 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
             </div>
           ) : (
             <>
+              {networkView === 'topology' && (() => {
+                const siteEquip = selectedSite.equipment || []
+                const sectorial = selectedEquip && isSectorialEquip(selectedEquip)
+                  ? selectedEquip
+                  : siteEquip.find((e: any) => isSectorialEquip(e)) || null
+                const stations = siteEquip
+                  .filter((e: any) => e.clientId && e.id !== sectorial?.id)
+                  .sort((a: any, b: any) => Number(b.status === 'online') - Number(a.status === 'online')
+                    || String(a.clientName || a.name).localeCompare(String(b.clientName || b.name)))
+                const onlineCount = stations.filter((e: any) => e.status === 'online').length
+                const showingSelected = selectedEquip && isSectorialEquip(selectedEquip)
+                return (
+                  <div className="bg-surface-card rounded-xl border overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-orange-50/60 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-widest text-orange-600/80 font-semibold">Estaciones</p>
+                        <h3 className="text-sm font-bold text-ink truncate">
+                          {sectorial ? (sectorial.name || 'Sectorial') : 'Selecciona una sectorial en el mapa'}
+                        </h3>
+                        {sectorial && (
+                          <p className="text-xs text-ink-muted mt-0.5">
+                            {sectorial.displayIp || sectorial.ipAddress || 'sin IP'}
+                            {' · '}
+                            <span className={sectorial.status === 'online' ? 'text-emerald-600' : 'text-red-600'}>
+                              {sectorial.status === 'online' ? 'en línea' : 'offline'}
+                            </span>
+                            {' · '}
+                            {stations.length} estaciones · {onlineCount} online
+                          </p>
+                        )}
+                      </div>
+                      {sitesUpdatedAt && (
+                        <p className="text-[10px] text-ink-muted whitespace-nowrap pt-1">
+                          hace {Math.max(0, Math.round((Date.now() - sitesUpdatedAt) / 1000))}s
+                        </p>
+                      )}
+                    </div>
+                    {!sectorial ? (
+                      <p className="px-4 py-6 text-sm text-ink-muted text-center">
+                        Entra al nodo y haz clic en la sectorial (naranja) para ver quién está enlazado.
+                      </p>
+                    ) : stations.length === 0 ? (
+                      <p className="px-4 py-6 text-sm text-ink-muted text-center">
+                        Sin abonados inventariados en este nodo.
+                      </p>
+                    ) : (
+                      <ul className="divide-y max-h-[320px] overflow-auto">
+                        {stations.map((st: any) => {
+                          const online = st.status === 'online'
+                          return (
+                            <li key={st.id} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-raised/60">
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${online ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-ink truncate">{st.clientName || st.name}</p>
+                                <p className="text-xs text-ink-muted font-mono truncate">
+                                  {st.displayIp || st.ipAddress || '—'}
+                                  {st.wirelessSignal != null ? ` · ${st.wirelessSignal} dBm` : ''}
+                                  {st.wirelessCcq != null ? ` · CCQ ${st.wirelessCcq}%` : ''}
+                                </p>
+                              </div>
+                              <span className={`text-[10px] font-semibold uppercase ${online ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {online ? 'online' : 'offline'}
+                              </span>
+                              {st.clientId && onOpenClient && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenClient(st.clientId, 'overview')}
+                                  className="text-xs text-blue-600 hover:underline shrink-0"
+                                >
+                                  Ver
+                                </button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                    {sectorial && !showingSelected && (
+                      <p className="px-4 py-2 text-[10px] text-ink-muted border-t bg-surface-raised/40">
+                        Mostrando la sectorial del nodo. Clic en el mapa para fijar otra.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div className="bg-surface-card rounded-xl border p-5 space-y-4">
                 <div className={networkView === 'topology' ? 'space-y-3' : 'flex justify-between items-start gap-4'}>
                   <div>

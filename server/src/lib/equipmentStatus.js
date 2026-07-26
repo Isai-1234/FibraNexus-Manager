@@ -58,7 +58,7 @@ function isIdleWireless(w) {
   const ccq = w.ccqPercent;
   const tx = w.txRateMbps;
   const rx = w.rxRateMbps;
-  return signal != null && signal <= -90
+  return (signal == null || signal === 0 || signal <= -90)
     && (noise == null || noise <= -90)
     && (ccq == null || ccq === 0)
     && (!tx || tx === 0)
@@ -161,7 +161,12 @@ async function buildRouterBySiteMap(items, orgId) {
 export async function persistPollResult(row, result) {
   const prevFailures = row.credentials?.consecutiveFailures || 0;
   const failed = !result.online || Boolean(result.error);
-  const consecutiveFailures = failed ? prevFailures + 1 : 0;
+  // Caída confirmada por AP: no inflar el contador cada 45s (station-sync).
+  const consecutiveFailures = failed
+    ? (result.apConfirmedDown
+      ? Math.max(prevFailures, OFFLINE_AFTER_FAILURES)
+      : prevFailures + 1)
+    : 0;
   const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, result);
   const lastSnmp = failed
     ? mergeFailedPollSnmp(row, result, consecutiveFailures)
@@ -201,9 +206,9 @@ export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
   const lastMetrics = item.credentials?.lastMetrics;
   const pollMethod = lastSnmp?.pollMethod;
-  const linkDown = Boolean(lastSnmp?.linkDown) || item.status === 'offline';
+  const linkDown = Boolean(lastSnmp?.linkDown);
   // Offline / caída confirmada: no mostrar la última señal como si fuera actual.
-  const wireless = linkDown
+  const wireless = (linkDown || item.status === 'offline')
     ? null
     : mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics, pollMethod);
   const metricsFromHeartbeat = !linkDown
@@ -301,7 +306,11 @@ async function applyPollResults(items, results) {
 
     const prevFailures = row.credentials?.consecutiveFailures || 0;
     const failed = !r.online || Boolean(r.error);
-    const consecutiveFailures = failed ? prevFailures + 1 : 0;
+    const consecutiveFailures = failed
+      ? (r.apConfirmedDown
+        ? Math.max(prevFailures, OFFLINE_AFTER_FAILURES)
+        : prevFailures + 1)
+      : 0;
     const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, r);
     const lastSnmp = failed
       ? mergeFailedPollSnmp(row, r, consecutiveFailures)
