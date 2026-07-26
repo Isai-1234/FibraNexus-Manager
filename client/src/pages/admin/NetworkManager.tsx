@@ -722,7 +722,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </p>
                 <p className="text-sm mt-1">
                   {networkView === 'topology'
-                    ? 'Entra al nodo, selecciona la sectorial y verás quién está enlazado'
+                    ? 'Clic en un nodo (torre) para entrar y ver router → sectorial → estaciones online/offline'
                     : 'Desde aquí agregas routers, switches y antenas del nodo'}
                 </p>
                 {networkView === 'topology' && (
