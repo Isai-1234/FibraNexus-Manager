@@ -756,17 +756,6 @@ export default function CpeLinkVisualizer({
               </g>
             )}
 
-            {online && (
-              <g
-                transform={`translate(${linkBeam.mid.x}, ${linkBeam.viewH - 28})`}
-                fontFamily="system-ui,sans-serif"
-                fontSize="8"
-                textAnchor="middle"
-              >
-                <text x="-48" y="7" fill="#22d3ee">Subida →</text>
-                <text x="48" y="7" fill="#4ade80">← Bajada</text>
-              </g>
-            )}
 
             <LinkHardwareLabelsSvg cpeLabel={cpeLabel} apLabel={apLabel} />
           </svg>
