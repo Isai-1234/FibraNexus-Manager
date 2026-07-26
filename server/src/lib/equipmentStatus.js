@@ -161,10 +161,10 @@ async function buildRouterBySiteMap(items, orgId) {
 export async function persistPollResult(row, result) {
   const prevFailures = row.credentials?.consecutiveFailures || 0;
   const failed = !result.online || Boolean(result.error);
-  // Caída confirmada por AP: no inflar el contador cada 45s (station-sync).
+  // Caída confirmada por AP: fijar en el umbral offline (no inflar cada 45s).
   const consecutiveFailures = failed
     ? (result.apConfirmedDown
-      ? Math.max(prevFailures, OFFLINE_AFTER_FAILURES)
+      ? OFFLINE_AFTER_FAILURES
       : prevFailures + 1)
     : 0;
   const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, result);
@@ -308,7 +308,7 @@ async function applyPollResults(items, results) {
     const failed = !r.online || Boolean(r.error);
     const consecutiveFailures = failed
       ? (r.apConfirmedDown
-        ? Math.max(prevFailures, OFFLINE_AFTER_FAILURES)
+        ? OFFLINE_AFTER_FAILURES
         : prevFailures + 1)
       : 0;
     const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, r);
