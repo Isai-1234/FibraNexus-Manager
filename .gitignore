@@ -6,4 +6,6 @@ uploads/
 .env
 *.log
 .DS_Store
+.cursor/qa-session.token
+.cursor/qa-credentials.md
 
