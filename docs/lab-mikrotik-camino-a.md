@@ -95,6 +95,19 @@ En **Centro del Abonado → Abonado Antena Lab** el panel RADIO ENLACE quedaba e
 
 **Vista amplia Red ISP → Topología (2026-07-26):** al entrar a un nodo, layout router → sectorial → estaciones; panel lateral con online/offline + señal. No hay agente en la antena (airOS solo habla UISP); FibraNexus usa SNMP vía MikroTik.
 
+**Simbología del mapa (2026-07-26):** cada rol de equipo tiene glifo propio, no el mismo icono de WiFi:
+
+| Rol | Símbolo | Color online |
+|-----|---------|--------------|
+| Router de borde | router con puertos (Lucide `Router`) | violeta |
+| Sectorial / AP | panel sobre mástil con lóbulo de radiación | teal |
+| CPE del abonado | plato direccional con feed | celeste |
+| Router WiFi en casa | caja con LEDs + arcos WiFi | índigo |
+
+Offline pinta el círculo en rojo para todos; el rol se sigue leyendo por la forma.
+
+**Casa del abonado:** el CPE cuelga del sectorial por radio (línea punteada) y el router WiFi cuelga **del CPE de ese mismo abonado** por cable (línea sólida). Antes ambos colgaban del sectorial y contaban como dos estaciones. La clasificación es heurística sobre marca/modelo/nombre (`isHomeRouterEquip`): Mercusys / TP-Link / ONT → router de casa; NanoStation / LiteBeam / PowerBeam / Rocket / Loco → antena. El panel lateral cuenta solo antenas y muestra el router de casa como detalle de su CPE.
+
 **Qué configurar en un ISP nuevo para que el panel funcione:**
 1. Sectorial/AP en el mismo **sitio** que el CPE, con SNMP ON + community en FibraNexus.
 2. CPE abonado con **MAC correcta** (sirve para matchear la estación del AP).
