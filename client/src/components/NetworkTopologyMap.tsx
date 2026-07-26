@@ -413,6 +413,8 @@ export default function NetworkTopologyMap({
     [tree, focusSite],
   )
 
+  const byId = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph.nodes])
+
   function enterSite(site: SiteNode) {
     setFocusSiteId(site.id)
     onSelectSite(site)
@@ -449,8 +451,6 @@ export default function NetworkTopologyMap({
       </div>
     )
   }
-
-  const byId = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph.nodes])
 
   return (
     <div className="h-full min-h-[480px] bg-white rounded-xl border flex flex-col overflow-hidden">
