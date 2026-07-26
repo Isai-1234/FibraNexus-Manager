@@ -51,8 +51,23 @@ function pickBestSignal(snmpSignal, heartbeatSignal, pollMethod) {
 }
 
 /** Combina lastSnmp.wireless con lastMetrics del heartbeat cuando SNMP no trae wireless. */
+function isIdleWireless(w) {
+  if (!w) return true;
+  const signal = w.signalDbm ?? w.rssiDbm;
+  const noise = w.noiseFloorDbm;
+  const ccq = w.ccqPercent;
+  const tx = w.txRateMbps;
+  const rx = w.rxRateMbps;
+  return signal != null && signal <= -90
+    && (noise == null || noise <= -90)
+    && (ccq == null || ccq === 0)
+    && (!tx || tx === 0)
+    && (!rx || rx === 0);
+}
+
 function mergeWirelessDisplay(lastSnmpWireless, lastMetrics, pollMethod) {
-  const w = lastSnmpWireless ? { ...lastSnmpWireless } : null;
+  if (isIdleWireless(lastSnmpWireless) && !isMetricsFresh(lastMetrics)) return null;
+  const w = lastSnmpWireless && !isIdleWireless(lastSnmpWireless) ? { ...lastSnmpWireless } : null;
   const hbSignal = isMetricsFresh(lastMetrics) && lastMetrics?.signal ? lastMetrics.signal : null;
   if (!w && !hbSignal) return null;
 
@@ -186,8 +201,13 @@ export function attachSnmpDisplay(item) {
   const lastSnmp = item.credentials?.lastSnmp;
   const lastMetrics = item.credentials?.lastMetrics;
   const pollMethod = lastSnmp?.pollMethod;
-  const wireless = mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics, pollMethod);
-  const metricsFromHeartbeat = isMetricsFresh(lastMetrics)
+  const linkDown = Boolean(lastSnmp?.linkDown) || item.status === 'offline';
+  // Offline / caída confirmada: no mostrar la última señal como si fuera actual.
+  const wireless = linkDown
+    ? null
+    : mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics, pollMethod);
+  const metricsFromHeartbeat = !linkDown
+    && isMetricsFresh(lastMetrics)
     && Boolean(lastMetrics?.signal)
     && (!lastSnmp?.wireless?.signalDbm || (lastSnmp?.pollMethod === 'edgerouter-arp'));
   const resolvedIp = item.credentials?.resolvedIp || null;
@@ -215,6 +235,7 @@ export function attachSnmpDisplay(item) {
     wirelessWarnings: wireless?.warnings || [],
     wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || lastSnmp?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
+    linkDown,
     // Sin SNMP no es “apagado”: es equipo de cliente sin monitoreo de gestión.
     statusLabel: item.status === 'online'
       ? 'Online'

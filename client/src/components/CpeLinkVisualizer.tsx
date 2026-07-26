@@ -138,6 +138,7 @@ interface EquipmentMetrics {
     snmpUptime?: string | null
     snmpPollMethod?: string | null
     wirelessDebugHint?: string | null
+    linkDown?: boolean
     linkPeer?: EquipmentMetrics | null
   }
 
@@ -514,16 +515,19 @@ export default function CpeLinkVisualizer({
   }
 
   const online = equipment.status === 'online'
-  const signal = equipment.wirelessSignal ?? equipment.wirelessRssi ?? null
+  const linkDown = Boolean(equipment.linkDown) || !online
+  const signal = linkDown ? null : (equipment.wirelessSignal ?? equipment.wirelessRssi ?? null)
   const beamStrength = signalStrengthPercent(signal)
-  const ccq = equipment.wirelessCcq
-  const snr = equipment.wirelessSnr
-  const warnings = equipment.wirelessWarnings || []
+  const ccq = linkDown ? null : equipment.wirelessCcq
+  const snr = linkDown ? null : equipment.wirelessSnr
+  const warnings = linkDown ? [] : (equipment.wirelessWarnings || [])
   const peer = equipment.linkPeer || null
   const peerOnline = peer?.status === 'online'
-  const peerSignal = peer?.wirelessSignal ?? peer?.wirelessRssi ?? null
-  const peerCcq = peer?.wirelessCcq ?? null
-  const peerSnr = peer?.wirelessSnr ?? null
+  // En panel de abonado: métricas de la sectorial = vista del enlace hacia ESTE CPE.
+  // Si el CPE está caído, la sectorial puede seguir online pero sin estación → sin dBm.
+  const peerSignal = linkDown ? null : (peer?.wirelessSignal ?? peer?.wirelessRssi ?? null)
+  const peerCcq = linkDown ? null : (peer?.wirelessCcq ?? null)
+  const peerSnr = linkDown ? null : (peer?.wirelessSnr ?? null)
   const apLabel = siteName || equipment.siteName || peer?.name || 'Torre sectorial'
   const cpeOwner = (clientName || '').trim()
   const cpeLabel = cpeOwner ? `CPE de ${cpeOwner}` : 'CPE del abonado'
@@ -536,9 +540,11 @@ export default function CpeLinkVisualizer({
   const metricSide = (
     label: string,
     vals: { signal: number | null; ccq: number | null; snr: number | null; quality: number },
+    note?: string | null,
   ) => (
     <div className="space-y-2">
       <p className="text-[10px] uppercase tracking-widest text-cyan-400/60 font-medium px-1">{label}</p>
+      {note && <p className="text-[11px] text-slate-500 px-1 -mt-1">{note}</p>}
       <div className="grid grid-cols-2 gap-2">
         {[
           {
@@ -766,15 +772,23 @@ export default function CpeLinkVisualizer({
       <div className="relative p-4 pt-2 border-t border-white/[0.05]">
         {peer ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {metricSide(`${cpeLabel}${equipment.displayIp || equipment.ipAddress ? ` · ${equipment.displayIp || equipment.ipAddress}` : ''}`, {
-              signal, ccq: ccq ?? null, snr: snr ?? null, quality: linkScore,
-            })}
-            {metricSide(`Sectorial · ${peer.name || 'AP'}${peer.displayIp || peer.ipAddress ? ` · ${peer.displayIp || peer.ipAddress}` : ''}`, {
-              signal: peerSignal,
-              ccq: peerCcq,
-              snr: peerSnr,
-              quality: computeLinkScore(Boolean(peerOnline), peerSignal, peerCcq, peerSnr),
-            })}
+            {metricSide(
+              `${cpeLabel}${equipment.displayIp || equipment.ipAddress ? ` · ${equipment.displayIp || equipment.ipAddress}` : ''}`,
+              { signal, ccq: ccq ?? null, snr: snr ?? null, quality: linkScore },
+              linkDown ? 'Sin enlace — CPE apagado o desconectado' : null,
+            )}
+            {metricSide(
+              `Sectorial · ${peer.name || 'AP'}${peer.displayIp || peer.ipAddress ? ` · ${peer.displayIp || peer.ipAddress}` : ''}`,
+              {
+                signal: peerSignal,
+                ccq: peerCcq,
+                snr: peerSnr,
+                quality: linkDown ? 0 : computeLinkScore(Boolean(peerOnline), peerSignal, peerCcq, peerSnr),
+              },
+              linkDown
+                ? (peerOnline ? 'Sectorial en línea · este CPE no aparece en sus estaciones' : 'Sectorial sin respuesta')
+                : null,
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -812,7 +826,18 @@ export default function CpeLinkVisualizer({
         )}
       </div>
 
-      {warnings.length > 0 && (
+      {linkDown && (
+        <div className="mx-4 mb-4 rounded-2xl border border-red-500/20 bg-red-500/[0.08] backdrop-blur-sm px-4 py-3 flex items-start gap-2.5 text-sm text-red-100/90">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
+          <span>
+            {peerOnline
+              ? 'El CPE del cliente no está enlazado. La sectorial sigue en línea; este abonado ya no aparece en su tabla de estaciones.'
+              : (equipment.wirelessDebugHint || 'Enlace caído o CPE apagado.')}
+          </span>
+        </div>
+      )}
+
+      {!linkDown && warnings.length > 0 && (
         <div className="mx-4 mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.08] backdrop-blur-sm px-4 py-3 space-y-2">
           {warnings.map((w) => (
             <div key={w.label} className="flex items-start gap-2.5 text-sm text-amber-100/90">
