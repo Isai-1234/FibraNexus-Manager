@@ -302,8 +302,9 @@ function buildFocusGraph(site: SiteNode) {
     id: 'internet',
     kind: 'internet',
     name: 'Internet',
-    sub: 'WAN',
+    sub: '← Toda la red',
     online: true,
+    enterable: true,
   }]
   const edges: GraphEdge[] = []
 
@@ -517,6 +518,11 @@ export default function NetworkTopologyMap({
   }
 
   function onCardClick(n: GraphNode) {
+    // Dentro de un nodo: Internet/WAN vuelve al mapa completo de la red
+    if (n.kind === 'internet') {
+      if (focusSite) backToOverview()
+      return
+    }
     if (n.kind === 'site' && n.site) {
       enterSite(n.site)
       return
@@ -568,7 +574,7 @@ export default function NetworkTopologyMap({
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             {focusSite
-              ? 'Clic en un equipo para seleccionar · doble clic en estación = abonado'
+              ? 'Clic en Internet/WAN para volver a toda la red · doble clic en estación = abonado'
               : 'Clic en un nodo para entrar a su topología'}
           </p>
         </div>
@@ -647,10 +653,20 @@ export default function NetworkTopologyMap({
                   onClick={() => onCardClick(n)}
                   onDoubleClick={() => onCardDoubleClick(n)}
                   className={`absolute flex items-center gap-2.5 rounded-xl bg-white px-2.5 text-left shadow-[0_1px_3px_rgba(15,23,42,0.08)] border transition-shadow hover:shadow-md ${
-                    selected ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-slate-200/90'
+                    selected
+                      ? 'border-teal-500 ring-2 ring-teal-500/20'
+                      : n.kind === 'internet' && focusSite
+                        ? 'border-slate-300 hover:border-teal-400 hover:ring-2 hover:ring-teal-500/15'
+                        : 'border-slate-200/90'
                   }`}
                   style={{ left: n.x, top: n.y, width: n.w, height: n.h }}
-                  title={n.enterable ? 'Entrar al nodo' : n.name}
+                  title={
+                    n.kind === 'internet' && focusSite
+                      ? 'Volver a toda la red'
+                      : n.enterable
+                        ? 'Entrar al nodo'
+                        : n.name
+                  }
                 >
                   <NodeIcon kind={n.kind} online={n.online} />
                   <span className="min-w-0 flex-1">

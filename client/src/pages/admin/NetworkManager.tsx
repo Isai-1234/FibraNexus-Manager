@@ -702,7 +702,15 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               selectedSiteId={selectedSite?.id}
               onSelectSite={selectSite}
               focusSiteId={topologyFocusId}
-              onFocusSiteChange={setTopologyFocusId}
+              onFocusSiteChange={(id) => {
+                setTopologyFocusId(id)
+                if (id == null) {
+                  setSelectedSite(null)
+                  setSelectedEquip(null)
+                  setSelectedRouter(null)
+                  setRouterNetwork(null)
+                }
+              }}
               selectedEquipId={selectedEquip?.id ?? null}
               onSelectEquip={(eq) => {
                 setSelectedEquip(eq)
