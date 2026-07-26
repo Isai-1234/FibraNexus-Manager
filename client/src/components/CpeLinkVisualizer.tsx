@@ -35,7 +35,7 @@ function boxFromCenter(centerX: number, groundY: number, w: number, h: number) {
 const LINK_LAYOUT = {
   viewW: LINK_SCENE.viewW,
   viewH: LINK_SCENE.viewH,
-  useAssetFiles: false,
+  useAssetFiles: true,
   cpeBox: {
     ...boxFromCenter(LINK_SCENE_X.cpe, LINK_SCENE.groundY, 92, 108),
     align: 'xMidYMax',
