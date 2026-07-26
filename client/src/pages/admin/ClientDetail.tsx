@@ -1890,6 +1890,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             <div className="md:col-span-2 group">
               <CpeLinkVisualizer
                 equipment={primaryAntenna || null}
+                clientName={client.user?.fullName}
                 siteName={primaryAntenna?.siteName}
                 isStale={primaryAntenna?.isStale ?? false}
                 onExpand={() => setLinkFullscreen(true)}
@@ -2126,6 +2127,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             {primaryAntenna && (
               <CpeLinkVisualizer
                 equipment={primaryAntenna}
+                clientName={client.user?.fullName}
                 siteName={primaryAntenna.siteName}
                 immersive
                 isStale={primaryAntenna?.isStale ?? false}
@@ -2755,6 +2757,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             <div className="w-full max-w-5xl">
               <CpeLinkVisualizer
                 equipment={primaryAntenna || null}
+                clientName={client.user?.fullName}
                 siteName={primaryAntenna?.siteName}
                 immersive
                 isStale={primaryAntenna?.isStale ?? false}

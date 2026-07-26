@@ -143,6 +143,7 @@ interface EquipmentMetrics {
 
 interface Props {
   equipment: EquipmentMetrics | null
+  clientName?: string
   siteName?: string
   immersive?: boolean
   onExpand?: () => void
@@ -326,9 +327,9 @@ function LinkHardwareSvg({
   )
 }
 
-function LinkHardwareLabelsSvg({ apLabel }: { apLabel: string }) {
+function LinkHardwareLabelsSvg({ cpeLabel, apLabel }: { cpeLabel: string; apLabel: string }) {
   const labelY = LINK_SCENE.viewH - 6
-  const towerText = apLabel.length > 22 ? `${apLabel.slice(0, 20)}…` : apLabel
+  const fit = (text: string, max = 22) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
   const labelProps = {
     y: labelY,
     textAnchor: 'middle' as const,
@@ -340,11 +341,12 @@ function LinkHardwareLabelsSvg({ apLabel }: { apLabel: string }) {
   return (
     <g aria-hidden pointerEvents="none">
       <text x={LINK_SCENE_X.cpe} {...labelProps}>
-        CPE · Cliente
+        <title>{cpeLabel}</title>
+        {fit(cpeLabel)}
       </text>
       <text x={LINK_SCENE_X.tower} {...labelProps}>
         <title>{apLabel}</title>
-        {towerText}
+        {fit(apLabel)}
       </text>
     </g>
   )
@@ -492,7 +494,7 @@ function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: 
 }
 
 export default function CpeLinkVisualizer({
-  equipment, siteName, immersive = false, onExpand, onRefresh, refreshing = false,
+  equipment, clientName, siteName, immersive = false, onExpand, onRefresh, refreshing = false,
   isStale = false, className = '',
   cpeImageUrl = LINK_VISUAL_ASSETS.cpe,
   towerImageUrl = LINK_VISUAL_ASSETS.tower,
@@ -523,6 +525,8 @@ export default function CpeLinkVisualizer({
   const peerCcq = peer?.wirelessCcq ?? null
   const peerSnr = peer?.wirelessSnr ?? null
   const apLabel = siteName || equipment.siteName || peer?.name || 'Torre sectorial'
+  const cpeOwner = (clientName || '').trim()
+  const cpeLabel = cpeOwner ? `CPE de ${cpeOwner}` : 'CPE del abonado'
   const linkScore = computeLinkScore(online, signal, ccq, snr)
   const theme = linkTheme(linkScore, online, warnings.length > 0)
   const txSpeed = equipment.wirelessTxRate || beamStrength * 1.2
@@ -754,19 +758,17 @@ export default function CpeLinkVisualizer({
 
             {online && (
               <g
-                transform={`translate(${linkBeam.mid.x - 40}, ${linkBeam.viewH - 28})`}
+                transform={`translate(${linkBeam.mid.x}, ${linkBeam.viewH - 28})`}
                 fontFamily="system-ui,sans-serif"
                 fontSize="8"
-                fill="#64748b"
+                textAnchor="middle"
               >
-                <path d="M0 4 L6 0 L6 8 Z" fill="#22d3ee" opacity="0.8" transform="rotate(45 3 4)" />
-                <text x="12" y="7">Subida</text>
-                <path d="M72 4 L78 0 L78 8 Z" fill="#4ade80" opacity="0.8" transform="rotate(-135 75 4)" />
-                <text x="84" y="7">Bajada</text>
+                <text x="-48" y="7" fill="#22d3ee">Subida →</text>
+                <text x="48" y="7" fill="#4ade80">← Bajada</text>
               </g>
             )}
 
-            <LinkHardwareLabelsSvg apLabel={apLabel} />
+            <LinkHardwareLabelsSvg cpeLabel={cpeLabel} apLabel={apLabel} />
           </svg>
         </div>
       </div>
@@ -775,7 +777,7 @@ export default function CpeLinkVisualizer({
       <div className="relative p-4 pt-2 border-t border-white/[0.05]">
         {peer ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {metricSide(`Cliente · ${equipment.displayIp || equipment.ipAddress || equipment.name || 'CPE'}`, {
+            {metricSide(`${cpeLabel}${equipment.displayIp || equipment.ipAddress ? ` · ${equipment.displayIp || equipment.ipAddress}` : ''}`, {
               signal, ccq: ccq ?? null, snr: snr ?? null, quality: linkScore,
             })}
             {metricSide(`Sectorial · ${peer.name || 'AP'}${peer.displayIp || peer.ipAddress ? ` · ${peer.displayIp || peer.ipAddress}` : ''}`, {
