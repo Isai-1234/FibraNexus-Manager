@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from 'react'
 import {
-  ArrowLeft, ChevronRight, Globe2, Server, Cast, Wifi, Home, ZoomIn, ZoomOut,
+  ArrowLeft, ChevronRight, Globe2, Router as RouterIcon, Network, ZoomIn, ZoomOut,
 } from 'lucide-react'
 import { cleanDeviceHost } from '../lib/deviceWeb'
 
@@ -25,7 +25,7 @@ type Props = {
   onOpenClient?: (clientId: number) => void
 }
 
-type GraphKind = 'internet' | 'site' | 'router' | 'ap' | 'station' | 'other'
+type GraphKind = 'internet' | 'site' | 'router' | 'ap' | 'station' | 'homeRouter' | 'other'
 
 type GraphNode = {
   id: string
@@ -57,8 +57,69 @@ const H_GAP = 72
 const V_GAP = 18
 const PAD = 40
 
+const svgProps = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+}
+
+/** Panel sectorial sobre mástil, con lóbulo de radiación. */
+function SectorAntennaIcon({ className }: { className?: string }) {
+  return (
+    <svg {...svgProps} className={className}>
+      <rect x="7" y="3" width="4.5" height="9" rx="1.4" />
+      <path d="M9.25 12v8" />
+      <path d="M6.25 20h6" />
+      <path d="M15 5.6a6.5 6.5 0 0 1 0 6.8" />
+      <path d="M18.2 3.6a10.5 10.5 0 0 1 0 10.8" />
+    </svg>
+  )
+}
+
+/** Antena direccional (plato) del abonado. */
+function CpeDishIcon({ className }: { className?: string }) {
+  return (
+    <svg {...svgProps} className={className}>
+      <path d="M3.5 19.5A11.5 11.5 0 0 1 15 8" />
+      <path d="M3.5 19.5 15 8" />
+      <path d="M9.25 13.75 12.4 16.9" />
+      <circle cx="13.7" cy="18.2" r="1.6" />
+      <path d="M17.6 4.6a10.5 10.5 0 0 1 2.4 2.4" />
+    </svg>
+  )
+}
+
+/** Router WiFi dentro de la casa del abonado. */
+function HomeWifiRouterIcon({ className }: { className?: string }) {
+  return (
+    <svg {...svgProps} className={className}>
+      <rect x="3" y="13.5" width="18" height="7" rx="2.2" />
+      <circle cx="7" cy="17" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="10.2" cy="17" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M8.6 6.1a6.5 6.5 0 0 1 6.8 0" />
+      <path d="M10.4 9.1a3.2 3.2 0 0 1 3.2 0" />
+      <path d="M12 11v2.5" />
+    </svg>
+  )
+}
+
+const ANTENNA_HINT = /nanostation|litebeam|powerbeam|airgrid|rocket|\bloco\b|airmax|airos|iso.?station|sxt|\blhg\b|antena|antenna|sectorial/i
+const HOME_ROUTER_HINT = /mercusys|tp-?link|tplink|tenda|archer|deco|nexxt|totolink|xiaomi|huawei|zte|\bonu\b|\bont\b|\bwifi\b|wi-?fi/i
+
 function isOnline(eq: any) {
   return Boolean(eq?.agentConnected || eq?.status === 'online')
+}
+
+/** Equipo del abonado que es router WiFi doméstico (no antena de enlace). */
+function isHomeRouterEquip(eq: any): boolean {
+  if (!eq) return false
+  const blob = `${eq.brand || ''} ${eq.model || ''} ${eq.name || ''}`
+  if (ANTENNA_HINT.test(blob)) return false
+  if (HOME_ROUTER_HINT.test(blob)) return true
+  return eq.type !== 'cpe'
 }
 
 function isSectorialEquip(eq: any): boolean {
@@ -232,7 +293,9 @@ function buildFocusGraph(site: SiteNode) {
   const eq = site.equipment || []
   const routers = eq.filter((e) => e.type === 'router')
   const sectorials = eq.filter(isSectorialEquip)
-  const stations = eq.filter((e) => e.clientId)
+  const clientEquip = eq.filter((e) => e.clientId)
+  const stations = clientEquip.filter((e) => !isHomeRouterEquip(e))
+  const homeRouters = clientEquip.filter(isHomeRouterEquip)
   const rest = eq.filter((e) => e.type !== 'router' && !isSectorialEquip(e) && !e.clientId)
 
   const nodes: Array<Omit<GraphNode, 'x' | 'y' | 'w' | 'h'>> = [{
@@ -288,8 +351,12 @@ function buildFocusGraph(site: SiteNode) {
   }
 
   const stationParent = apIds[0] || parentForAp
+  const stationIdByClient = new Map<number, string>()
   for (const st of stations) {
     const id = `station-${st.id}`
+    if (st.clientId != null && !stationIdByClient.has(st.clientId)) {
+      stationIdByClient.set(st.clientId, id)
+    }
     nodes.push({
       id,
       kind: 'station',
@@ -307,6 +374,27 @@ function buildFocusGraph(site: SiteNode) {
       toId: id,
       wireless: true,
       quality: linkQuality(st),
+    })
+  }
+
+  // Router WiFi del abonado: cuelga por cable del CPE de su misma casa.
+  for (const hr of homeRouters) {
+    const id = `home-${hr.id}`
+    const parentId = (hr.clientId != null && stationIdByClient.get(hr.clientId)) || stationParent
+    nodes.push({
+      id,
+      kind: 'homeRouter',
+      name: hr.name || 'Router WiFi',
+      sub: cleanDeviceHost(hr.displayIp || hr.ipAddress) || 'router WiFi',
+      online: isOnline(hr),
+      equip: hr,
+      clientId: hr.clientId,
+    })
+    edges.push({
+      fromId: parentId,
+      toId: id,
+      wireless: false,
+      quality: isOnline(hr) ? 'good' : 'down',
     })
   }
 
@@ -328,7 +416,7 @@ function buildFocusGraph(site: SiteNode) {
     })
   }
 
-  if (!routers.length && !sectorials.length && !stations.length && !rest.length) {
+  if (!routers.length && !sectorials.length && !stations.length && !homeRouters.length && !rest.length) {
     nodes.push({
       id: 'empty',
       kind: 'other',
@@ -343,29 +431,30 @@ function buildFocusGraph(site: SiteNode) {
   return layoutHorizontal(nodes, edges)
 }
 
+const KIND_TONE: Record<GraphKind, string> = {
+  internet: 'bg-slate-600 text-white',
+  site: 'bg-slate-500 text-white',
+  router: 'bg-violet-600 text-white',
+  ap: 'bg-teal-600 text-white',
+  station: 'bg-sky-600 text-white',
+  homeRouter: 'bg-indigo-500 text-white',
+  other: 'bg-slate-500 text-white',
+}
+
+function KindGlyph({ kind, className }: { kind: GraphKind; className?: string }) {
+  if (kind === 'ap') return <SectorAntennaIcon className={className} />
+  if (kind === 'station') return <CpeDishIcon className={className} />
+  if (kind === 'homeRouter') return <HomeWifiRouterIcon className={className} />
+  if (kind === 'internet') return <Globe2 className={className} strokeWidth={2.1} />
+  if (kind === 'router') return <RouterIcon className={className} strokeWidth={2.1} />
+  return <Network className={className} strokeWidth={2.1} />
+}
+
 function NodeIcon({ kind, online }: { kind: GraphKind; online: boolean }) {
-  const tone = online
-    ? kind === 'internet'
-      ? 'bg-slate-600 text-white'
-      : kind === 'router'
-        ? 'bg-violet-600 text-white'
-        : kind === 'ap'
-          ? 'bg-teal-600 text-white'
-          : kind === 'station'
-            ? 'bg-sky-600 text-white'
-            : 'bg-slate-500 text-white'
-    : 'bg-red-500 text-white'
-
-  const Icon =
-    kind === 'internet' ? Globe2
-      : kind === 'router' ? Server
-        : kind === 'ap' ? Cast
-          : kind === 'station' ? Wifi
-            : Home
-
+  const tone = online ? KIND_TONE[kind] : 'bg-red-500 text-white'
   return (
     <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone}`}>
-      <Icon className="h-4 w-4" strokeWidth={2.25} />
+      <KindGlyph kind={kind} className="h-[18px] w-[18px]" />
     </span>
   )
 }
@@ -577,6 +666,23 @@ export default function NetworkTopologyMap({
             })}
           </div>
         </div>
+      </div>
+
+      <div className="px-4 py-2 border-t bg-white flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+        <span className="font-medium text-slate-600">Equipos</span>
+        {([
+          ['router', 'router borde'],
+          ['ap', 'sectorial'],
+          ['station', 'CPE abonado'],
+          ['homeRouter', 'router WiFi casa'],
+        ] as Array<[GraphKind, string]>).map(([kind, label]) => (
+          <span key={kind} className="inline-flex items-center gap-1.5">
+            <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full ${KIND_TONE[kind]}`}>
+              <KindGlyph kind={kind} className="h-2.5 w-2.5" />
+            </span>
+            {label}
+          </span>
+        ))}
       </div>
 
       <div className="px-4 py-2 border-t bg-white flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
