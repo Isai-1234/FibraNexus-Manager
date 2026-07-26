@@ -89,6 +89,8 @@ En **Centro del Abonado → Abonado Antena Lab** el panel RADIO ENLACE quedaba e
 
 **Fix producto:** si el CPE no responde SNMP pero tiene MAC, FibraNexus lee la fila de estación del AP Ubiquiti del mismo sitio (`pollMethod: ap-station`) y rellena señal/CCQ/SNR. Validado: cliente online −48 dBm / CCQ 32 / SNR 37.
 
+**Detección de caída rápida (2026-07-25):** al desenchufar el CPE, antes tardaba ~6-9 min en verse offline (3 fallos SNMP consecutivos con polls cada ~2 min). Ahora, si el AP responde y su tabla de estaciones ya no lista la MAC del CPE, es evidencia directa: se marca **offline en el primer poll** (`apConfirmedDown`), se limpia la señal vieja y el panel muestra “El AP ya no reporta esta estación: enlace caído o CPE apagado”. Validado en vivo desenchufando el Loco Cliente Lab (~2 min hasta reflejarse, el tiempo del ciclo de poll).
+
 **Qué configurar en un ISP nuevo para que el panel funcione:**
 1. Sectorial/AP en el mismo **sitio** que el CPE, con SNMP ON + community en FibraNexus.
 2. CPE abonado con **MAC correcta** (sirve para matchear la estación del AP).
