@@ -7,15 +7,19 @@ import { Activity, RefreshCw } from 'lucide-react'
 
 type Sample = { t: number; downMbps: number; upMbps: number }
 
+type RouterOpt = { id: number; name?: string; hostname?: string; status?: string }
+
 type Props = {
   API: string
   routerId: number | null
   routerName?: string
+  routers?: RouterOpt[]
+  onRouterChange?: (id: number) => void
   pollMs?: number
   className?: string
 }
 
-const MAX_SAMPLES = 40 // ~2 min a 3s
+const MAX_SAMPLES = 40
 
 function bytesPerSecToMbps(bps: number) {
   return (Number(bps) || 0) * 8 / 1_000_000
@@ -31,7 +35,6 @@ function pickWanInterfaces(ifaces: any[], wanHint?: string | null) {
     /^(ether1|eth0|eth1|wan|pppoe-out|sfp|combo)/i.test(String(i.iface || '')),
   )
   if (preferred.length) return preferred
-  // Si no hay WAN clara, toma la interfaz con más tráfico (evita sumar LAN+WAN)
   const ranked = [...ifaces].sort((a, b) =>
     ((Number(b.rxBps) || 0) + (Number(b.txBps) || 0))
     - ((Number(a.rxBps) || 0) + (Number(a.txBps) || 0)),
@@ -52,7 +55,7 @@ function formatClock(ts: number) {
 }
 
 export default function LiveBandwidthChart({
-  API, routerId, routerName, pollMs = 3000, className = '',
+  API, routerId, routerName, routers = [], onRouterChange, pollMs = 3000, className = '',
 }: Props) {
   const [samples, setSamples] = useState<Sample[]>([])
   const [ifaceLabel, setIfaceLabel] = useState<string>('')
@@ -68,24 +71,29 @@ export default function LiveBandwidthChart({
     try {
       const res = await axios.get(`${API}/edgeos/${routerId}/bandwidth`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-        timeout: 12000,
+        timeout: 15000,
       })
       const d = res.data
-      if (!d?.connected || !d.interfaces?.length) {
-        setState(d?.error ? 'error' : 'idle')
-        if (d?.error) setErrMsg(d.error)
+      if (!d?.connected) {
+        setState('idle')
+        setErrMsg(d?.error || 'Router sin conexión de gestión')
+        return
+      }
+      if (!d.interfaces?.length) {
+        // Conectado pero sin muestra aún: dibuja 0 para que el gráfico “viva”
+        setSamples((prev) => [...prev.slice(-(MAX_SAMPLES - 1)), {
+          t: Date.now(), downMbps: 0, upMbps: 0,
+        }])
+        setState('live')
+        setSource(d.source || 'none')
+        setErrMsg(d.source === 'none'
+          ? 'API del router aún sin tráfico — reintentando…'
+          : '')
         return
       }
       const picked = pickWanInterfaces(d.interfaces, d.wanInterface || null)
       const rxBps = picked.reduce((s, i) => s + (Number(i.rxBps) || 0), 0)
       const txBps = picked.reduce((s, i) => s + (Number(i.txBps) || 0), 0)
-      // En MikroTik: rx = tráfico entrante al router (bajada clientes desde internet suele ser tx en WAN)
-      // Convención ISP: "Bajada" = hacia abonados = tx en interfaz WAN; "Subida" = desde abonados = rx en WAN
-      // Pero monitor-traffic rx/tx es desde el punto de vista del router. En WAN:
-      //   rx-bits = internet → router (download hacia la red)
-      //   tx-bits = router → internet (upload desde la red)
-      // Eso coincide con bajada/subida del ISP hacia internet. Para el abonado es al revés en LAN.
-      // Usamos convención: Down = rx (tráfico recibido en la iface), Up = tx.
       const downMbps = bytesPerSecToMbps(rxBps)
       const upMbps = bytesPerSecToMbps(txBps)
       setIfaceLabel(picked.map((i) => i.iface).join(', '))
@@ -106,6 +114,7 @@ export default function LiveBandwidthChart({
   useEffect(() => {
     setSamples([])
     setState(routerId ? 'loading' : 'idle')
+    setErrMsg('')
     if (!routerId) return
     void poll()
     const id = setInterval(() => void poll(), pollMs)
@@ -120,9 +129,9 @@ export default function LiveBandwidthChart({
 
   if (!routerId) {
     return (
-      <div className={`rounded-xl border border-line bg-surface-card p-6 ${className}`}>
-        <p className="text-sm font-semibold text-ink">Uso de ancho de banda</p>
-        <p className="text-sm text-ink-muted mt-2">
+      <div className={`rounded-2xl border border-slate-800 bg-[#0f172a] p-6 ${className}`}>
+        <p className="text-sm font-semibold text-slate-100">Uso de ancho de banda</p>
+        <p className="text-sm text-slate-400 mt-2">
           Conecta un MikroTik o EdgeRouter para ver bajada/subida en tiempo real.
         </p>
       </div>
@@ -130,42 +139,56 @@ export default function LiveBandwidthChart({
   }
 
   return (
-    <div className={`rounded-xl border border-line bg-surface-card overflow-hidden ${className}`}>
+    <div className={`rounded-2xl border border-slate-800 bg-[#0f172a] overflow-hidden ${className}`}>
       <div className="px-5 pt-4 pb-2 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-emerald-500 shrink-0" />
-            <h3 className="text-sm font-semibold text-ink">Uso de ancho de banda</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Activity className="h-4 w-4 text-emerald-400 shrink-0" />
+            <h3 className="text-sm font-semibold text-slate-100">Uso de ancho de banda</h3>
             {state === 'live' && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 {source === 'heartbeat' ? 'hb' : 'live'}
               </span>
             )}
           </div>
-          <p className="text-xs text-ink-muted mt-1 truncate">
-            {routerName || `Router #${routerId}`}
-            {ifaceLabel ? ` · ${ifaceLabel}` : ''}
-            {' · Mbps en vivo'}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+            {routers.length > 0 && onRouterChange ? (
+              <select
+                value={routerId}
+                onChange={(e) => onRouterChange(Number(e.target.value))}
+                className="text-xs rounded-lg border border-slate-700 bg-slate-900 text-slate-200 px-2 py-1 max-w-[220px]"
+              >
+                {routers.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name || r.hostname || `Router #${r.id}`}
+                    {r.status === 'online' ? ' · online' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs text-slate-400 truncate">{routerName || `Router #${routerId}`}</p>
+            )}
+            {ifaceLabel && <span className="text-[11px] text-slate-500">{ifaceLabel} · Mbps</span>}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           {last && (
             <>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-sky-600/90 font-medium">Bajada</p>
-                <p className="text-lg font-bold text-sky-700 tabular-nums leading-tight">{formatMbps(last.downMbps)}</p>
+                <p className="text-[10px] uppercase tracking-wide text-emerald-400/90 font-medium">Bajada</p>
+                <p className="text-lg font-bold text-emerald-300 tabular-nums leading-tight">{formatMbps(last.downMbps)}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-violet-600/90 font-medium">Subida</p>
-                <p className="text-lg font-bold text-violet-700 tabular-nums leading-tight">{formatMbps(last.upMbps)}</p>
+                <p className="text-[10px] uppercase tracking-wide text-sky-400/90 font-medium">Subida</p>
+                <p className="text-lg font-bold text-sky-300 tabular-nums leading-tight">{formatMbps(last.upMbps)}</p>
               </div>
             </>
           )}
           <button
             type="button"
             onClick={() => void poll()}
-            className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-raised"
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
             title="Actualizar ahora"
           >
             <RefreshCw className={`h-4 w-4 ${state === 'loading' ? 'animate-spin' : ''}`} />
@@ -173,34 +196,38 @@ export default function LiveBandwidthChart({
         </div>
       </div>
 
-      <div className="px-2 pb-3 h-[220px]">
+      <div className="px-2 pb-3 h-[240px]">
         {state === 'error' ? (
-          <div className="h-full flex items-center justify-center text-sm text-red-600 px-4 text-center">
+          <div className="h-full flex items-center justify-center text-sm text-red-400 px-4 text-center">
             {errMsg || 'No se pudo leer el tráfico del router'}
           </div>
-        ) : state === 'idle' || (state === 'loading' && samples.length === 0) ? (
-          <div className="h-full flex items-center justify-center text-sm text-ink-muted">
-            {state === 'loading' ? 'Consultando MikroTik…' : 'Sin datos de tráfico aún'}
+        ) : state === 'idle' && samples.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-sm text-slate-400 gap-1 px-4 text-center">
+            <p>{errMsg || 'Sin datos de tráfico aún'}</p>
+            <p className="text-xs text-slate-500">Verifica que el router esté online y con API/túnel activo.</p>
+          </div>
+        ) : state === 'loading' && samples.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-sm text-slate-400">
+            Consultando MikroTik…
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={samples} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="bwDown" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.02} />
+                <linearGradient id="bwDownNoc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#34d399" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#34d399" stopOpacity={0.02} />
                 </linearGradient>
-                <linearGradient id="bwUp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
+                <linearGradient id="bwUpNoc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 6" stroke="currentColor" className="text-line opacity-60" vertical={false} />
+              <CartesianGrid strokeDasharray="3 6" stroke="#1e293b" vertical={false} />
               <XAxis
                 dataKey="t"
                 tickFormatter={formatClock}
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                className="text-ink-muted"
+                tick={{ fontSize: 10, fill: '#64748b' }}
                 minTickGap={40}
                 axisLine={false}
                 tickLine={false}
@@ -208,19 +235,18 @@ export default function LiveBandwidthChart({
               <YAxis
                 domain={[0, yMax]}
                 tickFormatter={(v) => (v >= 1 ? `${v}` : v.toFixed(1))}
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                className="text-ink-muted"
-                width={36}
+                tick={{ fontSize: 10, fill: '#64748b' }}
+                width={40}
                 axisLine={false}
                 tickLine={false}
-                unit=""
               />
               <Tooltip
                 contentStyle={{
-                  background: 'var(--surface-card, #fff)',
-                  border: '1px solid var(--line, #e2e8f0)',
+                  background: '#0f172a',
+                  border: '1px solid #334155',
                   borderRadius: 10,
                   fontSize: 12,
+                  color: '#e2e8f0',
                 }}
                 labelFormatter={(v) => formatClock(Number(v))}
                 formatter={(value: number, name: string) => [
@@ -232,9 +258,9 @@ export default function LiveBandwidthChart({
                 type="monotone"
                 dataKey="downMbps"
                 name="downMbps"
-                stroke="#0ea5e9"
-                strokeWidth={2}
-                fill="url(#bwDown)"
+                stroke="#34d399"
+                strokeWidth={2.5}
+                fill="url(#bwDownNoc)"
                 isAnimationActive={false}
                 dot={false}
               />
@@ -242,9 +268,9 @@ export default function LiveBandwidthChart({
                 type="monotone"
                 dataKey="upMbps"
                 name="upMbps"
-                stroke="#8b5cf6"
+                stroke="#38bdf8"
                 strokeWidth={2}
-                fill="url(#bwUp)"
+                fill="url(#bwUpNoc)"
                 isAnimationActive={false}
                 dot={false}
               />
@@ -253,12 +279,16 @@ export default function LiveBandwidthChart({
         )}
       </div>
 
-      <div className="px-5 pb-3 flex items-center gap-4 text-[11px] text-ink-muted">
+      {errMsg && state === 'live' && (
+        <p className="px-5 pb-2 text-[11px] text-amber-400/90">{errMsg}</p>
+      )}
+
+      <div className="px-5 pb-3 flex items-center gap-4 text-[11px] text-slate-500">
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2.5 h-0.5 rounded bg-sky-500" /> Bajada (rx)
+          <span className="w-2.5 h-0.5 rounded bg-emerald-400" /> Bajada
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2.5 h-0.5 rounded bg-violet-500" /> Subida (tx)
+          <span className="w-2.5 h-0.5 rounded bg-sky-400" /> Subida
         </span>
       </div>
     </div>

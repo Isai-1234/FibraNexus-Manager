@@ -457,7 +457,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       title: 'Tus abonados',
       hint: 'Personas que contratan internet',
       items: [
-        { id: 'dashboard', label: 'Centro de operaciones', icon: LayoutDashboard },
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'clients', label: 'Abonados', icon: Users },
         { id: 'services', label: 'Auditoría técnica', icon: Wifi, roles: ['admin', 'technician'] },
         { id: 'work-orders', label: 'Órdenes de trabajo', icon: Ticket },
@@ -497,7 +497,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const menuItems = menuSections.flatMap((s) => s.items)
 
   const tabLabels: Record<string, string> = {
-    dashboard: 'Centro de operaciones ISP',
+    dashboard: 'Dashboard de red',
     clients: 'Abonados',
     services: 'Auditoría técnica (IPs y estados)',
     plans: 'Planes comerciales',
@@ -513,7 +513,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   const tabDescriptions: Record<string, string> = {
-    dashboard: 'Alertas, deudas y acceso rápido a cada cuenta de abonado',
+    dashboard: 'Tráfico en vivo, presencia de abonados y alertas operativas',
     clients: 'Lista de abonados — clic en la IP para gestionar la antena',
     services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
     plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
@@ -880,169 +880,93 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="space-y-5">
+              {/* 4 KPIs — estilo dashboard de red */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: 'Abonados', value: stats?.totalClients || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'clients' as const },
                   {
-                    label: 'Instalación',
-                    value: stats?.pendingInstallClients || 0,
-                    icon: MapPin,
-                    color: 'text-violet-600',
-                    bg: 'bg-violet-50',
-                    tab: 'clients' as const,
-                    lifecycleFilter: 'pending_install',
-                    hint: 'Abonados con instalación pendiente',
-                  },
-                  {
-                    label: 'Prospectos',
-                    value: stats?.prospectClients || 0,
+                    label: 'Suscriptores',
+                    value: stats?.totalClients || 0,
+                    hint: (stats?.pendingInstallClients || 0) > 0
+                      ? `${stats.pendingInstallClients} en instalación`
+                      : 'Total abonados',
                     icon: Users,
-                    color: 'text-slate-600',
-                    bg: 'bg-slate-100',
-                    tab: 'clients' as const,
-                    lifecycleFilter: 'prospect',
-                    hint: 'Leads / aún no instalados',
+                    accent: 'text-sky-400',
+                    ring: 'hover:border-sky-500/40',
+                    onClick: () => goToTab('clients'),
                   },
-                  { label: 'Online', value: stats?.onlineClients || 0, icon: Wifi, color: 'text-green-600', bg: 'bg-green-50', tab: 'clients' as const, connFilter: 'online' },
                   {
-                    label: 'Desconectados',
-                    value: Math.max(stats?.offlineClients || 0, alertsForBucket('desconectados').length),
+                    label: 'Links activos',
+                    value: stats?.onlineClients || 0,
+                    hint: `${Math.max(stats?.offlineClients || 0, 0)} offline`,
+                    icon: Wifi,
+                    accent: 'text-emerald-400',
+                    ring: 'hover:border-emerald-500/40',
+                    onClick: () => goToTab('clients', { connFilter: 'online', keepFilters: true }),
+                  },
+                  {
+                    label: 'Requieren atención',
+                    value: Math.max(
+                      stats?.offlineClients || 0,
+                      alertsForBucket('desconectados').length,
+                      clientsWithProblems.length,
+                    ),
+                    hint: alertsForBucket('desconectados').length
+                      ? `${alertsForBucket('desconectados').length} alerta(s)`
+                      : 'CPE / routers sin respuesta',
                     icon: WifiOff,
-                    color: 'text-orange-600',
-                    bg: 'bg-orange-50',
-                    alertBucket: 'desconectados' as const,
-                    tab: 'clients' as const,
-                    hint: 'CPE, routers y agentes sin respuesta',
+                    accent: 'text-red-400',
+                    ring: 'hover:border-red-500/40',
+                    onClick: () => {
+                      const n = alertsForBucket('desconectados').length
+                      if (n) openAlertBucket('desconectados')
+                      else goToTab('clients', { connFilter: 'offline', keepFilters: true })
+                    },
                   },
                   {
-                    label: 'Morosos',
-                    value: Math.max(stats?.delinquentClients || 0, alertsForBucket('morosos').length),
-                    icon: AlertTriangle,
-                    color: 'text-red-600',
-                    bg: 'bg-red-50',
-                    alertBucket: 'morosos' as const,
-                    tab: 'invoices' as const,
-                    hint: 'Facturas vencidas / mora',
-                  },
-                  { label: 'Servicios activos', value: stats?.activeServices || 0, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', tab: 'services' as const },
-                  {
-                    label: 'Suspendidos',
-                    value: Math.max(stats?.suspendedClients || 0, stats?.suspendedServices || 0),
-                    icon: WifiOff,
-                    color: 'text-yellow-600',
-                    bg: 'bg-yellow-50',
-                    tab: 'clients' as const,
-                    lifecycleFilter: 'suspended',
-                    hint: 'Abonados o servicios en suspensión (mismo filtro que en Abonados)',
-                  },
-                  {
-                    label: 'Cortados',
-                    value: stats?.cutClients || 0,
-                    icon: WifiOff,
-                    color: 'text-red-600',
-                    bg: 'bg-red-50',
-                    tab: 'clients' as const,
-                    lifecycleFilter: 'cut',
-                    hint: 'Abonados cortados (CRM o servicio)',
-                  },
-                  {
-                    label: 'Entrada del mes',
+                    label: 'Ingreso mensual',
                     value: '$' + (stats?.monthCollected || 0).toLocaleString('es-CL'),
+                    hint: `${stats?.monthPaymentCount || 0} pago(s) · por cobrar $${(stats?.pendingAmount || 0).toLocaleString('es-CL')}`,
                     icon: TrendingUp,
-                    color: 'text-emerald-600',
-                    bg: 'bg-emerald-50',
-                    tab: 'finance' as const,
-                    hint: `${stats?.monthPaymentCount || 0} pago(s) registrados este mes`,
+                    accent: 'text-amber-400',
+                    ring: 'hover:border-amber-500/40',
+                    onClick: () => goToTab('finance'),
                   },
-                  {
-                    label: 'Por cobrar',
-                    value: '$' + (stats?.pendingAmount || 0).toLocaleString('es-CL'),
-                    icon: DollarSign,
-                    color: 'text-amber-600',
-                    bg: 'bg-amber-50',
-                    alertBucket: alertsForBucket('cobros').length ? ('cobros' as const) : undefined,
-                    tab: 'invoices' as const,
-                    hint: 'Suma de saldos abiertos (misma cifra que en perfiles)',
-                  },
-                  { label: 'Vencidas', value: stats?.overdueCount || 0, icon: DollarSign, color: 'text-red-600', bg: 'bg-red-50', tab: 'invoices' as const },
-                  { label: 'Tickets abiertos', value: stats?.openTickets || 0, icon: Ticket, color: 'text-yellow-600', bg: 'bg-yellow-50', tab: 'tickets' as const },
-                  { label: 'Routers', value: stats?.totalRouters || 0, icon: Router, color: 'text-cyan-600', bg: 'bg-cyan-50', action: () => openRouters() },
-                ].map(s => {
-                  const bucketAlerts = s.alertBucket ? alertsForBucket(s.alertBucket) : []
-                  const hasAlerts = bucketAlerts.length > 0
-                  const isOpen = s.alertBucket && alertPanel === s.alertBucket
-                  return (
-                    <div
-                      key={s.label}
-                      className={`bg-surface-card p-4 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border ${
-                        isOpen ? 'border-orange-400 ring-2 ring-orange-100' : hasAlerts ? 'border-orange-200' : 'border-line'
-                      }`}
-                      onClick={() => {
-                        if (s.alertBucket && hasAlerts) openAlertBucket(s.alertBucket)
-                        else if (s.action) s.action()
-                        else if (s.tab) {
-                          goToTab(s.tab, {
-                            lifecycleFilter: (s as any).lifecycleFilter,
-                            connFilter: (s as any).connFilter,
-                            keepFilters: !!(s as any).lifecycleFilter || !!(s as any).connFilter,
-                          })
-                        }
-                      }}
-                      title={hasAlerts ? s.hint : s.hint}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`p-1.5 rounded-lg ${s.bg}`}><s.icon className={`h-4 w-4 ${s.color}`} /></div>
-                        <p className="text-xs text-ink-muted font-medium leading-tight flex-1">{s.label}</p>
-                        {hasAlerts && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-800">
-                            {bucketAlerts.length}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xl font-bold text-ink">{s.value}</p>
-                      {hasAlerts && (
-                        <p className="text-[10px] text-orange-700 mt-1 font-medium">
-                          {isOpen ? 'Cerrar detalle ↑' : 'Ver alertas →'}
-                        </p>
-                      )}
-                      {!hasAlerts && s.hint && s.label === 'Entrada del mes' && (
-                        <p className="text-[10px] text-ink-muted mt-1">{s.hint}</p>
-                      )}
+                ].map((c) => (
+                  <button
+                    key={c.label}
+                    type="button"
+                    onClick={c.onClick}
+                    className={`text-left rounded-2xl border border-slate-800 bg-[#0f172a] p-4 transition ${c.ring}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">{c.label}</p>
+                      <c.icon className={`h-4 w-4 ${c.accent}`} />
                     </div>
-                  )
-                })}
+                    <p className="text-2xl font-bold tabular-nums text-slate-50">{c.value}</p>
+                    <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">{c.hint}</p>
+                  </button>
+                ))}
               </div>
 
-              {/* Ancho de banda en vivo + estado de suscriptores */}
+              {/* Gráficos */}
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <div className="xl:col-span-2 space-y-2">
-                  {borderRouters.length > 1 && (
-                    <div className="flex items-center gap-2 px-1">
-                      <label className="text-xs text-ink-muted shrink-0">Router de borde</label>
-                      <select
-                        value={bandwidthRouterId ?? ''}
-                        onChange={(e) => setBandwidthRouterId(e.target.value ? Number(e.target.value) : null)}
-                        className="text-sm rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-ink max-w-xs"
-                      >
-                        {borderRouters.map((r: any) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name || r.hostname || `Router #${r.id}`}
-                            {(r.status === 'online' || r.isOnline || r.online) ? ' · online' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <LiveBandwidthChart
-                    API={API}
-                    routerId={bandwidthRouterId}
-                    routerName={
-                      borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.name
-                      || borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.hostname
-                    }
-                  />
-                </div>
+                <LiveBandwidthChart
+                  className="xl:col-span-2"
+                  API={API}
+                  routerId={bandwidthRouterId}
+                  routerName={
+                    borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.name
+                    || borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.hostname
+                  }
+                  routers={borderRouters.map((r: any) => ({
+                    id: Number(r.id),
+                    name: r.name,
+                    hostname: r.hostname,
+                    status: r.status,
+                  }))}
+                  onRouterChange={(id) => setBandwidthRouterId(id)}
+                />
                 <SubscriberStatusDonut
                   online={stats?.onlineClients || 0}
                   offline={stats?.offlineClients || 0}
@@ -1050,125 +974,87 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 />
               </div>
 
-              {/* Entrada del mes — quién pagó */}
-              <div className="bg-surface-card rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center">
-                  <div>
-                    <h2 className="font-semibold text-emerald-900 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5" /> Pagos del mes
-                    </h2>
-                    <p className="text-sm text-emerald-800/80">
-                      ${(stats?.monthCollected || 0).toLocaleString('es-CL')} ingresados · {stats?.monthPaymentCount || 0} pago(s)
-                    </p>
+              {/* Alertas + atención */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-slate-800 bg-[#0f172a] overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-slate-100">Alertas recientes</h2>
+                    <button type="button" onClick={refreshAlerts} className="text-xs text-slate-400 hover:text-slate-200">Actualizar</button>
                   </div>
-                  <button onClick={() => goToTab('finance')} className="text-sm text-emerald-800 hover:underline">Ver finanzas →</button>
+                  {orgAlerts.length === 0 ? (
+                    <p className="px-5 py-10 text-center text-sm text-slate-500">Sin alertas abiertas — red operativa.</p>
+                  ) : (
+                    <ul className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto">
+                      {orgAlerts.slice(0, 8).map((a: any) => (
+                        <li key={a.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-900/60">
+                          <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
+                            a.severity === 'critical' ? 'bg-red-400'
+                              : a.severity === 'info' ? 'bg-sky-400' : 'bg-amber-400'
+                          }`} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-slate-200 truncate">{a.title}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{a.message || ALERT_WHY[a.kind] || ''}</p>
+                          </div>
+                          <button type="button" onClick={() => goFromAlert(a)} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Ir</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                {recentPayments.length === 0 ? (
-                  <p className="p-8 text-center text-ink-muted text-sm">Aún no hay pagos registrados este mes.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-surface text-xs uppercase text-ink-muted">
-                        <tr>
-                          {['Fecha', 'Abonado', 'Boleta', 'Monto', 'Método', ''].map(h => (
-                            <th key={h} className="text-left p-4">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {recentPayments.map((p: any) => (
-                          <tr key={p.id} className="hover:bg-emerald-50/40">
-                            <td className="p-4 text-sm text-ink-muted">
-                              {p.paymentDate ? new Date(p.paymentDate).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                            </td>
-                            <td className="p-4 font-medium text-sm">{p.clientName || '—'}</td>
-                            <td className="p-4 font-mono text-sm text-indigo-600">{p.invoiceNumber || '—'}</td>
-                            <td className="p-4 font-bold text-emerald-700">${Number(p.amount || 0).toLocaleString('es-CL')}</td>
-                            <td className="p-4 text-sm capitalize">{p.method || '—'}</td>
-                            <td className="p-4">
-                              {p.clientId && (
-                                <button onClick={() => openClientProfile(p.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                <div className="rounded-2xl border border-slate-800 bg-[#0f172a] overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-slate-100">Requieren atención</h2>
+                    <button type="button" onClick={() => goToTab('clients')} className="text-xs text-slate-400 hover:text-slate-200">Ver abonados →</button>
                   </div>
-                )}
+                  {clientsWithProblems.length === 0 ? (
+                    <p className="px-5 py-10 text-center text-sm text-slate-500">Ningún abonado con deuda o falla ahora.</p>
+                  ) : (
+                    <ul className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto">
+                      {clientsWithProblems.slice(0, 8).map((c: any) => (
+                        <li key={c.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-900/60">
+                          <div className="min-w-0">
+                            <p className="text-sm text-slate-200 truncate">{c.fullName}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                              {connectionLabel[c.connectionStatus] || c.connectionStatus}
+                              {c.pendingAmount > 0 ? ` · $${c.pendingAmount.toLocaleString('es-CL')}` : ''}
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => openClientProfile(c.id)} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Gestionar</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
 
               {alertPanel && (
-                <div className="bg-surface-card rounded-xl border border-orange-200 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3 bg-orange-50 border-b border-orange-100 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h2 className="font-semibold text-orange-950 text-sm flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-orange-600" />
-                        {alertPanel === 'desconectados' && 'Desconectados — qué está pasando'}
-                        {alertPanel === 'morosos' && 'Morosos — qué está pasando'}
-                        {alertPanel === 'cobros' && 'Cobros — qué está pasando'}
-                      </h2>
-                      <p className="text-xs text-orange-800/80 mt-0.5">
-                        Cada alerta indica el problema detectado y por qué aparece.
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                        <button type="button" onClick={refreshAlerts}
-                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-card border border-orange-200 hover:bg-orange-50 text-orange-900">
-                          Actualizar
-                        </button>
-                      )}
-                      <button type="button" onClick={() => setAlertPanel(null)}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-surface-card border border-line hover:bg-surface-raised text-ink-soft">
-                        Cerrar
-                      </button>
-                    </div>
+                <div className="rounded-2xl border border-amber-500/30 bg-[#0f172a] overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-semibold text-amber-200 text-sm flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      {alertPanel === 'desconectados' && 'Desconectados'}
+                      {alertPanel === 'morosos' && 'Morosos'}
+                      {alertPanel === 'cobros' && 'Cobros'}
+                    </h2>
+                    <button type="button" onClick={() => setAlertPanel(null)} className="text-xs text-slate-400 hover:text-slate-200">Cerrar</button>
                   </div>
                   {alertsForBucket(alertPanel).length === 0 ? (
-                    <p className="px-5 py-8 text-sm text-ink-muted text-center">Sin alertas abiertas en esta categoría.</p>
+                    <p className="px-5 py-8 text-sm text-slate-500 text-center">Sin alertas en esta categoría.</p>
                   ) : (
-                    <ul className="divide-y max-h-96 overflow-y-auto">
+                    <ul className="divide-y divide-slate-800 max-h-80 overflow-y-auto">
                       {alertsForBucket(alertPanel).map((a: any) => (
                         <li key={a.id} className="px-5 py-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1 space-y-1.5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                                  a.severity === 'critical' ? 'bg-red-100 text-red-700'
-                                    : a.severity === 'info' ? 'bg-blue-100 text-blue-700'
-                                      : 'bg-amber-100 text-amber-800'
-                                }`}>{a.severity}</span>
-                                {a.status === 'acked' && (
-                                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-surface-raised text-gray-600">vista</span>
-                                )}
-                                <span className="font-medium text-sm text-ink">{a.title}</span>
-                              </div>
-                              <p className="text-xs text-ink-soft">
-                                <span className="font-semibold text-ink-muted">Qué:</span>{' '}
-                                {a.message || 'Sin detalle adicional.'}
-                              </p>
-                              <p className="text-xs text-gray-600">
-                                <span className="font-semibold text-ink-muted">Por qué:</span>{' '}
-                                {ALERT_WHY[a.kind] || 'Condición operativa detectada por el monitoreo.'}
-                              </p>
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="font-medium text-sm text-slate-100">{a.title}</p>
+                              <p className="text-xs text-slate-400">{a.message || 'Sin detalle.'}</p>
+                              <p className="text-xs text-slate-500">{ALERT_WHY[a.kind] || ''}</p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                              <button type="button" onClick={() => goFromAlert(a)}
-                                className="text-xs px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-800">
-                                Ir
-                              </button>
+                            <div className="flex gap-2 shrink-0">
+                              <button type="button" onClick={() => goFromAlert(a)} className="text-xs px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-300">Ir</button>
                               {a.status === 'open' && (
-                                <button type="button" onClick={() => ackAlert(a.id)}
-                                  className="text-xs px-2.5 py-1 rounded-lg border border-line bg-surface-card hover:bg-surface-raised text-ink-soft">
-                                  Visto
-                                </button>
-                              )}
-                              {(user?.role === 'admin' || user?.role === 'office' || user?.role === 'superadmin') && (
-                                <button type="button" onClick={() => resolveAlert(a.id)}
-                                  className="text-xs px-2.5 py-1 rounded-lg bg-gray-900 text-white hover:bg-gray-800">
-                                  Resolver
-                                </button>
+                                <button type="button" onClick={() => ackAlert(a.id)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300">Visto</button>
                               )}
                             </div>
                           </div>
@@ -1179,172 +1065,22 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                 </div>
               )}
 
-              {clientsWithProblems.length > 0 && (
-                <div className="bg-surface-card rounded-xl border border-red-100 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 bg-red-50 border-b border-red-100 flex justify-between items-center">
-                    <div>
-                      <h2 className="font-semibold text-red-900 flex items-center gap-2"><AlertTriangle className="h-5 w-5" /> Abonados que requieren atención</h2>
-                      <p className="text-sm text-red-700/80">Deuda, servicio suspendido o tickets abiertos</p>
-                    </div>
-                    <button onClick={() => goToTab('clients')} className="text-sm text-red-700 hover:underline">Ver todos →</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-surface text-xs uppercase text-ink-muted">
-                        <tr>
-                          {['Abonado', 'Plan', 'Conexión', 'Deuda', 'Mora', 'Tickets', ''].map(h => (
-                            <th key={h} className="text-left p-4">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {clientsWithProblems.slice(0, 8).map((c: any) => (
-                          <tr key={c.id} className="hover:bg-red-50/30">
-                            <td className="p-4">
-                              <p className="font-medium">{c.fullName}</p>
-                              <p className="text-xs text-gray-400">{c.email}{c.ipAddress ? ` · ${c.ipAddress}` : ''}</p>
-                            </td>
-                            <td className="p-4 text-sm">
-                              {c.planName || '—'}
-                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[c.serviceStatus] || 'bg-surface-raised'}`}>
-                                {statusLabel[c.serviceStatus] || c.serviceStatus}
-                              </span>
-                            </td>
-                            <td className="p-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${connectionColor[c.connectionStatus] || 'bg-surface-raised'}`}>
-                                {connectionLabel[c.connectionStatus] || c.connectionStatus}
-                              </span>
-                            </td>
-                            <td className="p-4 text-sm font-medium text-red-600">{c.pendingAmount > 0 ? '$' + c.pendingAmount.toLocaleString('es-CL') : '—'}</td>
-                            <td className="p-4 text-sm">{c.overdueDays > 0 ? <span className="text-red-600 font-medium">{c.overdueDays} días</span> : '—'}</td>
-                            <td className="p-4 text-sm">{c.openTickets || '—'}</td>
-                            <td className="p-4">
-                              <button onClick={() => openClientProfile(c.id)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
-                                Gestionar cuenta
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {overdueInvoices.length > 0 && (
-                <div className="bg-surface-card rounded-xl border border-amber-100 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex justify-between items-center">
-                    <div>
-                      <h2 className="font-semibold text-amber-900 flex items-center gap-2"><DollarSign className="h-5 w-5" /> Facturas vencidas</h2>
-                      <p className="text-sm text-amber-700/80">${(stats?.overdueAmount || 0).toLocaleString('es-CL')} en mora</p>
-                    </div>
-                    <button onClick={() => goToTab('invoices')} className="text-sm text-amber-800 hover:underline">Ver facturas →</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-surface text-xs uppercase text-ink-muted">
-                        <tr>
-                          {['Factura', 'Abonado', 'Total', 'Vencimiento', 'Atraso', ''].map(h => (
-                            <th key={h} className="text-left p-4">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {overdueInvoices.map((inv: any) => (
-                          <tr key={inv.id} className="hover:bg-amber-50/30">
-                            <td className="p-4 font-mono text-sm text-indigo-600">{inv.invoiceNumber}</td>
-                            <td className="p-4 font-medium">{inv.clientName}</td>
-                            <td className="p-4 font-bold text-red-600">
-                              ${Number(inv.balance != null ? inv.balance : inv.total).toLocaleString('es-CL')}
-                              {inv.balance != null && Number(inv.balance) < Number(inv.total) && (
-                                <p className="text-xs font-normal text-ink-muted mt-0.5">de ${Number(inv.total).toLocaleString('es-CL')}</p>
-                              )}
-                            </td>
-                            <td className="p-4 text-sm">{formatDateCL(inv.dueDate)}</td>
-                            <td className="p-4"><span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{inv.overdueDays} días</span></td>
-                            <td className="p-4">
-                              <button onClick={() => openClientProfile(inv.clientId)} className="text-xs text-blue-600 hover:underline">Ver abonado</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-surface-card rounded-xl border shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b flex justify-between items-center">
-                    <h2 className="font-semibold">Acceso rápido a abonados</h2>
-                    <button onClick={() => goToTab('clients')} className="text-sm text-blue-600 hover:underline">Ver listado completo →</button>
-                  </div>
-                  {clientOverview.length === 0 ? (
-                    <div className="p-10 text-center text-gray-400">
-                      <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Aún no hay abonados registrados.</p>
-                      <button onClick={() => { goToTab('clients'); setShowForm(true) }} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer abonado</button>
-                    </div>
-                  ) : (
-                    <div className="divide-y max-h-96 overflow-y-auto">
-                      {clientOverview.map((c: any) => (
-                        <div key={c.id} className="px-6 py-3 flex items-center justify-between hover:bg-surface-raised gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-medium text-sm truncate">{c.fullName}</p>
-                              {c.connectionStatus === 'online' && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">ONLINE</span>
-                              )}
-                              {c.connectionStatus === 'offline' && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">DESCONECTADO</span>
-                              )}
-                              {c.isDelinquent && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">MORA {c.overdueDays}d</span>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-400 truncate">
-                              {c.planName || 'Sin plan'} · {c.city || 'Sin ciudad'}
-                              {c.pendingAmount > 0 && ` · Saldo $${c.pendingAmount.toLocaleString('es-CL')}`}
-                            </p>
-                            {c.ipAddress && (
-                              <DeviceIpLink
-                                ip={c.ipAddress}
-                                className="mt-1 text-xs font-mono text-blue-600 hover:underline"
-                                showIcon
-                              >
-                                <Router className="h-3 w-3" /> {c.ipAddress}
-                              </DeviceIpLink>
-                            )}
-                          </div>
-                          <button onClick={() => openClientProfile(c.id)} className="text-xs text-blue-600 hover:underline flex-shrink-0">Gestionar</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-surface-card rounded-xl border shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b">
-                    <h2 className="font-semibold">Tickets recientes</h2>
-                  </div>
-                  {recentTickets.length === 0 ? (
-                    <p className="p-8 text-center text-gray-400 text-sm">Sin tickets recientes</p>
-                  ) : (
-                    <div className="divide-y">
-                      {recentTickets.map((t: any) => (
-                        <div key={t.id} className="px-6 py-3 hover:bg-surface-raised">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="text-sm font-medium">{t.subject}</p>
-                              <p className="text-xs text-gray-400">{t.clientName || 'Cliente'} · {new Date(t.createdAt).toLocaleDateString('es-CL')}</p>
-                            </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor[t.priority] || 'bg-surface-raised'}`}>{statusLabel[t.priority] || t.priority}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* Accesos rápidos secundarios */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button type="button" onClick={() => goToTab('invoices')} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                  Por cobrar: ${(stats?.pendingAmount || 0).toLocaleString('es-CL')}
+                </button>
+                <button type="button" onClick={() => goToTab('tickets')} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                  Tickets abiertos: {stats?.openTickets || 0}
+                </button>
+                <button type="button" onClick={() => openRouters()} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                  Routers: {stats?.totalRouters || 0}
+                </button>
+                {(stats?.delinquentClients || 0) > 0 && (
+                  <button type="button" onClick={() => goToTab('invoices')} className="px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300">
+                    Morosos: {stats.delinquentClients}
+                  </button>
+                )}
               </div>
             </div>
           )}

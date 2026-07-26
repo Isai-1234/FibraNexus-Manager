@@ -58,17 +58,25 @@ edgeosRouter.get('/:routerId/bandwidth', requireRole('admin', 'technician'), asy
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
 
     const creds = router.credentials || {};
-    // Conectado si: heartbeat reciente (<2min) O polled recientemente y online
-    const isConnected = creds.lastHeartbeat
-      ? Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000
-      : (router.status === 'online' && router.lastSeen
-          ? Date.now() - new Date(router.lastSeen).getTime() < 120_000
-          : false);
+    const routerType = String(creds.routerType || '');
+    const brandModel = `${router.brand || ''} ${router.model || ''} ${router.name || ''}`;
+    const isMikrotik = routerType.startsWith('mikrotik')
+      || /mikrotik|routeros|l009|rb\d|ccr|crs/i.test(brandModel)
+      || Boolean(creds.routerUser && (creds.apiPort || creds.routerPass));
+    const isEdgeRouter = routerType.startsWith('edgerouter')
+      || (router.brand || '').toLowerCase() === 'ubiquiti'
+      || /edgerouter|edgeos/i.test(brandModel);
+
+    // Conectado si: heartbeat reciente, status online reciente, o MikroTik con API lista para consultar
+    const isConnected = Boolean(
+      (creds.lastHeartbeat && Date.now() - new Date(creds.lastHeartbeat).getTime() < 120_000)
+      || (router.status === 'online' && router.lastSeen
+        && Date.now() - new Date(router.lastSeen).getTime() < 300_000)
+      || (router.status === 'online' && isMikrotik && creds.routerUser && creds.routerPass)
+      || (isEdgeRouter && creds.lastHeartbeat),
+    );
     if (!isConnected) return res.json({ connected: false, interfaces: [] });
 
-    const routerType = creds.routerType || '';
-    const isMikrotik = routerType.startsWith('mikrotik');
-    const isEdgeRouter = routerType.startsWith('edgerouter') || (router.brand || '').toLowerCase() === 'ubiquiti';
     // WAN filtering: solo si está configurada explícitamente en credentials.wanInterface
     const wanIface = creds.wanInterface || null;
 
