@@ -175,12 +175,24 @@ export async function enrichFromApStations(results, devices, router) {
   });
 
   const stationByMac = new Map();
+  // Al menos un AP respondió con su tabla de estaciones → la ausencia de una MAC es evidencia de enlace caído.
+  let apTableConfirmed = false;
   for (const ap of apCandidates) {
     try {
       const community = await resolveCommunity(ap);
       const host = ap.ipAddress?.trim().split('/')[0];
       if (!host) continue;
-      const map = await fetchUbntStationMap(host, community, router);
+      let map = await fetchUbntStationMap(host, community, router);
+      if (map.size) {
+        apTableConfirmed = true;
+      } else {
+        // Tabla vacía puede ser walk fallido: verificar que el AP responde y reintentar una vez.
+        const sys = await snmpWalkViaRouter(router, host, community, '1.3.6.1.2.1.1');
+        if (Object.keys(sys).length) {
+          map = await fetchUbntStationMap(host, community, router);
+          apTableConfirmed = true;
+        }
+      }
       for (const [mac, row] of map) {
         if (!stationByMac.has(mac)) stationByMac.set(mac, { ...row, apHost: host, apName: ap.name });
       }
@@ -189,7 +201,26 @@ export async function enrichFromApStations(results, devices, router) {
     }
   }
 
-  if (!stationByMac.size) return [...byId.values()].length ? results.map((r) => byId.get(r.id) || r) : results;
+  // CPEs que se monitorean vía AP y ya no figuran en la tabla: enlace caído confirmado.
+  if (apTableConfirmed) {
+    for (const device of needMac) {
+      const r = byId.get(device.id);
+      if (r?.online) continue;
+      if (device.credentials?.lastSnmp?.pollMethod !== 'ap-station') continue;
+      const mac = normalizeMac(device.macAddress);
+      if (stationByMac.has(mac)) continue;
+      byId.set(device.id, {
+        ...(r || { id: device.id, name: device.name, polledAt: new Date().toISOString() }),
+        online: false,
+        apConfirmedDown: true,
+        error: 'El AP ya no reporta esta estación: enlace caído o CPE apagado',
+      });
+    }
+  }
+
+  if (!stationByMac.size && !apTableConfirmed) {
+    return [...byId.values()].length ? results.map((r) => byId.get(r.id) || r) : results;
+  }
 
   for (const device of needMac) {
     const mac = normalizeMac(device.macAddress);
@@ -226,7 +257,7 @@ export async function enrichFromApStations(results, devices, router) {
   // Incluir equipos enriquecidos que no estaban en results (p.ej. solo se polleó el AP).
   const out = results.map((r) => byId.get(r.id) || r);
   for (const [id, row] of byId) {
-    if (!out.some((r) => r.id === id) && row.pollMethod === 'ap-station') out.push(row);
+    if (!out.some((r) => r.id === id) && (row.pollMethod === 'ap-station' || row.apConfirmedDown)) out.push(row);
   }
   return out;
 }

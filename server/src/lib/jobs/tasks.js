@@ -58,7 +58,11 @@ export const jobTasks = {
         siteRouter,
       );
       const mine = enriched.find((r) => r.id === eqRow.id);
-      if (mine?.online && mine.wireless) result = mine;
+      if (mine?.online && mine.wireless) {
+        result = mine;
+      } else if (mine?.apConfirmedDown) {
+        result = { ...result, online: false, apConfirmedDown: true, error: mine.error || result.error };
+      }
     }
 
     const { persistPollResult } = await import('../equipmentStatus.js');

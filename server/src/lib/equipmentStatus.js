@@ -82,13 +82,20 @@ function mergeWirelessDisplay(lastSnmpWireless, lastMetrics, pollMethod) {
 
 function mergeFailedPollSnmp(row, result, consecutiveFailures) {
   const prevSnmp = row.credentials?.lastSnmp || {};
-  return {
+  const merged = {
     ...prevSnmp,
     polledAt: new Date().toISOString(),
     pollAttemptFailed: true,
     pollError: result.error || (result.online === false ? 'offline' : null),
     consecutivePollFailures: consecutiveFailures,
   };
+  // Caída confirmada por el AP: no mostrar la última señal como si fuera actual.
+  if (result.apConfirmedDown) {
+    merged.wireless = null;
+    merged.linkDown = true;
+    merged.hint = 'El AP ya no reporta esta estación: enlace caído o CPE apagado.';
+  }
+  return merged;
 }
 
 /** Un timeout de la MIB wireless no debe borrar la última señal conocida del equipo. */
@@ -100,8 +107,10 @@ function carryOverWireless(row, result) {
   return { ...result, wireless: prevWireless, wirelessStale: true };
 }
 
-function resolveStatusAfterPoll(row, failed, consecutiveFailures) {
+function resolveStatusAfterPoll(row, failed, consecutiveFailures, result) {
   if (!failed) return 'online';
+  // El AP respondió y ya no lista la estación: evidencia directa de enlace caído, sin esperar 3 fallos.
+  if (result?.apConfirmedDown) return 'offline';
   if (hasRecentHeartbeatPresence(row)) return row.status === 'online' ? 'online' : row.status;
   if (consecutiveFailures >= OFFLINE_AFTER_FAILURES) return 'offline';
   return row.status;
@@ -138,7 +147,7 @@ export async function persistPollResult(row, result) {
   const prevFailures = row.credentials?.consecutiveFailures || 0;
   const failed = !result.online || Boolean(result.error);
   const consecutiveFailures = failed ? prevFailures + 1 : 0;
-  const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
+  const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, result);
   const lastSnmp = failed
     ? mergeFailedPollSnmp(row, result, consecutiveFailures)
     : carryOverWireless(row, result);
@@ -272,7 +281,7 @@ async function applyPollResults(items, results) {
     const prevFailures = row.credentials?.consecutiveFailures || 0;
     const failed = !r.online || Boolean(r.error);
     const consecutiveFailures = failed ? prevFailures + 1 : 0;
-    const status = resolveStatusAfterPoll(row, failed, consecutiveFailures);
+    const status = resolveStatusAfterPoll(row, failed, consecutiveFailures, r);
     const lastSnmp = failed
       ? mergeFailedPollSnmp(row, r, consecutiveFailures)
       : carryOverWireless(row, r);
@@ -304,6 +313,7 @@ async function applyPollResults(items, results) {
     };
 
     const shouldPersist = !failed
+      || r.apConfirmedDown
       || consecutiveFailures >= OFFLINE_AFTER_FAILURES
       || !keepHeartbeatSeen;
 
