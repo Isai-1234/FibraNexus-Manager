@@ -164,6 +164,9 @@ export async function persistPollResult(row, result) {
   // Corregir IP inventariada cuando el AP reporta otra (ej. .253 → .251).
   if (result.stationRemoteIp && result.stationRemoteIp !== row.ipAddress) {
     patch.ipAddress = result.stationRemoteIp;
+    // Notas / “gestión .xxx” deben seguir la misma IP en todos lados.
+    const syncedNotes = rewriteIpMentions(row.notes, row.ipAddress, result.stationRemoteIp);
+    if (syncedNotes !== row.notes) patch.notes = syncedNotes;
   }
 
   const [updated] = await db.update(equipment).set(patch).where(eq(equipment.id, row.id)).returning();
@@ -242,10 +245,14 @@ function sanitizeDisplay(display) {
 }
 
 export function attachEquipmentDisplay(item) {
-  return {
+  const display = {
     ...attachSnmpDisplay(item),
     isStale: isPollable(item) && isPollStale(item.lastSeen),
   };
+  if (item.linkPeer) {
+    display.linkPeer = attachSnmpDisplay(item.linkPeer);
+  }
+  return display;
 }
 
 async function applyPollResults(items, results) {
@@ -281,7 +288,12 @@ async function applyPollResults(items, results) {
           : {}),
       },
       ...(r.stationRemoteIp && r.stationRemoteIp !== row.ipAddress
-        ? { ipAddress: r.stationRemoteIp }
+        ? {
+          ipAddress: r.stationRemoteIp,
+          ...(rewriteIpMentions(row.notes, row.ipAddress, r.stationRemoteIp) !== row.notes
+            ? { notes: rewriteIpMentions(row.notes, row.ipAddress, r.stationRemoteIp) }
+            : {}),
+        }
         : {}),
     };
 
@@ -312,6 +324,20 @@ function filterPollableFromRender(items, routerBySite) {
 
 function normalizeMac(mac) {
   return String(mac || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+}
+
+/** Reescribe menciones de una IP vieja en notas/textos libres (p.ej. "gestión .253"). */
+export function rewriteIpMentions(text, oldIp, newIp) {
+  if (!text || !oldIp || !newIp || oldIp === newIp) return text || null;
+  const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lastOctet = String(oldIp).split('.').pop();
+  let out = String(text);
+  out = out.replace(new RegExp(esc(oldIp), 'g'), newIp);
+  if (lastOctet) {
+    out = out.replace(new RegExp(`(gesti[oó]n\\s*\\.?\\s*)${esc(lastOctet)}\\b`, 'gi'), `$1${String(newIp).split('.').pop()}`);
+    out = out.replace(new RegExp(`(\\.)${esc(lastOctet)}\\b`, 'g'), `.${String(newIp).split('.').pop()}`);
+  }
+  return out;
 }
 
 /**

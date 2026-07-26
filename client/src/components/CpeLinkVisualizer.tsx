@@ -35,7 +35,7 @@ function boxFromCenter(centerX: number, groundY: number, w: number, h: number) {
 const LINK_LAYOUT = {
   viewW: LINK_SCENE.viewW,
   viewH: LINK_SCENE.viewH,
-  useAssetFiles: true,
+  useAssetFiles: false,
   cpeBox: {
     ...boxFromCenter(LINK_SCENE_X.cpe, LINK_SCENE.groundY, 92, 108),
     align: 'xMidYMax',
@@ -117,8 +117,7 @@ export const LINK_VISUAL_ASSETS = {
 
 type WirelessWarning = { type: string; label: string; severity: string }
 
-interface Props {
-  equipment: {
+interface EquipmentMetrics {
     name?: string
     model?: string
     brand?: string
@@ -139,7 +138,11 @@ interface Props {
     snmpUptime?: string | null
     snmpPollMethod?: string | null
     wirelessDebugHint?: string | null
-  } | null
+    linkPeer?: EquipmentMetrics | null
+  }
+
+interface Props {
+  equipment: EquipmentMetrics | null
   siteName?: string
   immersive?: boolean
   onExpand?: () => void
@@ -514,12 +517,58 @@ export default function CpeLinkVisualizer({
   const ccq = equipment.wirelessCcq
   const snr = equipment.wirelessSnr
   const warnings = equipment.wirelessWarnings || []
-  const apLabel = siteName || equipment.siteName || 'Torre sectorial'
+  const peer = equipment.linkPeer || null
+  const peerOnline = peer?.status === 'online'
+  const peerSignal = peer?.wirelessSignal ?? peer?.wirelessRssi ?? null
+  const peerCcq = peer?.wirelessCcq ?? null
+  const peerSnr = peer?.wirelessSnr ?? null
+  const apLabel = siteName || equipment.siteName || peer?.name || 'Torre sectorial'
   const linkScore = computeLinkScore(online, signal, ccq, snr)
   const theme = linkTheme(linkScore, online, warnings.length > 0)
   const txSpeed = equipment.wirelessTxRate || beamStrength * 1.2
   const rxSpeed = equipment.wirelessRxRate || beamStrength * 1.5
   const linkBeam = useMemo(() => getLinkBeam(), [])
+
+  const metricSide = (
+    label: string,
+    vals: { signal: number | null; ccq: number | null; snr: number | null; quality: number },
+  ) => (
+    <div className="space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-cyan-400/60 font-medium px-1">{label}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          {
+            label: 'Señal', value: vals.signal != null ? `${vals.signal}` : '—', unit: 'dBm',
+            ok: vals.signal != null && vals.signal >= -65, bar: vals.signal != null ? Math.abs(vals.signal) : 0, max: 90, color: theme.primary,
+          },
+          {
+            label: 'CCQ', value: vals.ccq != null ? `${vals.ccq}` : '—', unit: '%',
+            ok: vals.ccq == null || vals.ccq >= 70, bar: vals.ccq ?? 0, max: 100, color: theme.secondary,
+          },
+          {
+            label: 'SNR', value: vals.snr != null ? `${vals.snr}` : '—', unit: 'dB',
+            ok: vals.snr == null || vals.snr >= 15, bar: vals.snr ?? 0, max: 35, color: '#4ade80',
+          },
+          {
+            label: 'Calidad', value: `${vals.quality}`, unit: '/100',
+            ok: vals.quality >= 60, bar: vals.quality, max: 100, color: theme.ring,
+          },
+        ].map((m) => (
+          <div
+            key={`${label}-${m.label}`}
+            className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.06] px-3 py-2.5 hover:bg-surface-card/[0.05] transition-colors"
+          >
+            <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
+            <p className="mt-0.5 flex items-baseline gap-1">
+              <span className={`text-base font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
+              <span className="text-[10px] text-slate-600">{m.unit}</span>
+            </p>
+            {m.bar > 0 && <MetricBar value={m.bar} max={m.max} ok={m.ok} color={m.color} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   return (
     <div className={`relative overflow-hidden rounded-3xl border border-white/[0.08] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] cpe-viz ${immersive ? 'min-h-[70vh] flex flex-col' : ''} ${className}`}>
@@ -722,38 +771,54 @@ export default function CpeLinkVisualizer({
         </div>
       </div>
 
-      {/* métricas glass */}
-      <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 pt-2 border-t border-white/[0.05]">
-        {[
-          {
-            label: 'Señal', value: signal != null ? `${signal}` : '—', unit: 'dBm',
-            ok: signal != null && signal >= -65, bar: signal != null ? Math.abs(signal) : 0, max: 90, color: theme.primary,
-          },
-          {
-            label: 'CCQ', value: ccq != null ? `${ccq}` : '—', unit: '%',
-            ok: ccq == null || ccq >= 70, bar: ccq ?? 0, max: 100, color: theme.secondary,
-          },
-          {
-            label: 'SNR', value: snr != null ? `${snr}` : '—', unit: 'dB',
-            ok: snr == null || snr >= 15, bar: snr ?? 0, max: 35, color: '#4ade80',
-          },
-          {
-            label: 'Calidad', value: `${linkScore}`, unit: '/100',
-            ok: linkScore >= 60, bar: linkScore, max: 100, color: theme.ring,
-          },
-        ].map((m) => (
-          <div
-            key={m.label}
-            className="rounded-2xl bg-surface-card/[0.03] backdrop-blur-sm border border-white/[0.06] px-4 py-3 hover:bg-surface-card/[0.05] transition-colors"
-          >
-            <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
-            <p className="mt-1 flex items-baseline gap-1">
-              <span className={`text-lg font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
-              <span className="text-[10px] text-slate-600">{m.unit}</span>
-            </p>
-            {m.bar > 0 && <MetricBar value={m.bar} max={m.max} ok={m.ok} color={m.color} />}
+      {/* métricas: cliente + sectorial */}
+      <div className="relative p-4 pt-2 border-t border-white/[0.05]">
+        {peer ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {metricSide(`Cliente · ${equipment.displayIp || equipment.ipAddress || equipment.name || 'CPE'}`, {
+              signal, ccq: ccq ?? null, snr: snr ?? null, quality: linkScore,
+            })}
+            {metricSide(`Sectorial · ${peer.name || 'AP'}${peer.displayIp || peer.ipAddress ? ` · ${peer.displayIp || peer.ipAddress}` : ''}`, {
+              signal: peerSignal,
+              ccq: peerCcq,
+              snr: peerSnr,
+              quality: computeLinkScore(Boolean(peerOnline), peerSignal, peerCcq, peerSnr),
+            })}
           </div>
-        ))}
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              {
+                label: 'Señal', value: signal != null ? `${signal}` : '—', unit: 'dBm',
+                ok: signal != null && signal >= -65, bar: signal != null ? Math.abs(signal) : 0, max: 90, color: theme.primary,
+              },
+              {
+                label: 'CCQ', value: ccq != null ? `${ccq}` : '—', unit: '%',
+                ok: ccq == null || ccq >= 70, bar: ccq ?? 0, max: 100, color: theme.secondary,
+              },
+              {
+                label: 'SNR', value: snr != null ? `${snr}` : '—', unit: 'dB',
+                ok: snr == null || snr >= 15, bar: snr ?? 0, max: 35, color: '#4ade80',
+              },
+              {
+                label: 'Calidad', value: `${linkScore}`, unit: '/100',
+                ok: linkScore >= 60, bar: linkScore, max: 100, color: theme.ring,
+              },
+            ].map((m) => (
+              <div
+                key={m.label}
+                className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.06] px-4 py-3 hover:bg-surface-card/[0.05] transition-colors"
+              >
+                <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
+                <p className="mt-1 flex items-baseline gap-1">
+                  <span className={`text-lg font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
+                  <span className="text-[10px] text-slate-600">{m.unit}</span>
+                </p>
+                {m.bar > 0 && <MetricBar value={m.bar} max={m.max} ok={m.ok} color={m.color} />}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {warnings.length > 0 && (

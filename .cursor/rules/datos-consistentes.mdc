@@ -1,0 +1,14 @@
+---
+description: Al corregir un dato (IP, MAC, estado), actualizarlo en todos los lugares donde se muestra o guarda
+alwaysApply: true
+---
+
+# Datos consistentes en toda la plataforma
+
+Cuando se repara o corrige un valor de inventario/red (IP, MAC, hostname, community, estado, etc.):
+
+1. **Persistir la fuente de verdad** (campo canónico en DB, p.ej. `equipment.ipAddress`).
+2. **Actualizar campos derivados** que repiten el mismo dato: `notes`, comentarios MikroTik, `credentials.resolvedIp`, labels en UI, textos “gestión .xxx”, etc.
+3. **No dejar huellas del valor viejo** en pantallas del abonado, listados, visualizador radio, servicios PPPoE ni tips.
+4. Si un poll/AP reporta una IP distinta a la inventariada, sincronizar inventario **y** reescribir notas/comentarios que mencionen la IP anterior.
+5. Tras el fix, verificar al menos: card del equipo, panel RADIO ENLACE, notas del inventario y cualquier badge/IP link visible.

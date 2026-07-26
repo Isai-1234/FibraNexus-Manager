@@ -114,21 +114,28 @@ clientsRouter.post('/:id/equipment/refresh', requireRole('admin', 'technician'),
     const clientId = parseInt(req.params.id, 10);
     let items = await listClientEquipment(clientId, orgId);
     const pollable = items.filter(isPollable);
+    const peerRows = items
+      .map((i) => i.linkPeer)
+      .filter((p) => p && isPollable(p));
     const needsLan = items.some((e) => e.type !== 'router' && e.ipAddress && !e.snmpCommunity?.trim());
+    const toRefresh = [
+      ...items,
+      ...peerRows.filter((p) => !items.some((i) => i.id === p.id)),
+    ];
 
     res.status(202).json({
       ok: true,
-      polling: pollable.length,
-      message: pollable.length || needsLan
+      polling: pollable.length + peerRows.length,
+      message: pollable.length || peerRows.length || needsLan
         ? 'Actualización de equipos iniciada'
         : 'Sin equipos con IP para actualizar',
     });
 
-    if (!pollable.length && !needsLan) return;
+    if (!pollable.length && !peerRows.length && !needsLan) return;
 
     setImmediate(async () => {
       try {
-        await forceRefreshEquipmentStatus(items, orgId, { maxPoll: Math.max(pollable.length, 1) });
+        await forceRefreshEquipmentStatus(toRefresh, orgId, { maxPoll: Math.max(toRefresh.length, 1) });
       } catch (err) {
         console.error('[equipment-refresh] client=%s error=%s', clientId, err.message);
       }

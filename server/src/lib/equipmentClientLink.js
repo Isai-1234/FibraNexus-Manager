@@ -121,7 +121,51 @@ export async function listClientEquipment(clientId, orgId) {
     .where(and(eq(equipment.clientId, clientId), orgFilter(equipment, orgId)))
     .orderBy(equipment.createdAt);
 
-  return rows;
+  return attachSiteLinkPeers(rows, orgId);
+}
+
+/** Adjunta la sectorial/AP del mismo sitio (métricas del otro extremo del enlace). */
+export async function attachSiteLinkPeers(items, orgId) {
+  const siteIds = [...new Set(items.map((e) => e.siteId).filter(Boolean))];
+  if (!siteIds.length) return items.map((i) => ({ ...i, linkPeer: null }));
+
+  const siteGear = await db.select({
+    id: equipment.id,
+    name: equipment.name,
+    type: equipment.type,
+    brand: equipment.brand,
+    model: equipment.model,
+    ipAddress: equipment.ipAddress,
+    macAddress: equipment.macAddress,
+    snmpCommunity: equipment.snmpCommunity,
+    status: equipment.status,
+    siteId: equipment.siteId,
+    clientId: equipment.clientId,
+    notes: equipment.notes,
+    lastSeen: equipment.lastSeen,
+    credentials: equipment.credentials,
+  })
+    .from(equipment)
+    .where(and(
+      inArray(equipment.siteId, siteIds),
+      eq(equipment.type, 'cpe'),
+      orgFilter(equipment, orgId),
+    ));
+
+  const bySite = new Map();
+  for (const g of siteGear) {
+    if (!bySite.has(g.siteId)) bySite.set(g.siteId, []);
+    bySite.get(g.siteId).push(g);
+  }
+
+  const isSectorial = (g) => /sector|ap\b|base|tower|torre/i.test(`${g.name || ''} ${g.notes || ''}`)
+    || (!g.clientId && g.snmpCommunity);
+
+  return items.map((item) => {
+    const peers = (bySite.get(item.siteId) || []).filter((g) => g.id !== item.id);
+    const ap = peers.find(isSectorial) || peers.find((g) => !g.clientId) || null;
+    return { ...item, linkPeer: ap };
+  });
 }
 
 export async function enrichEquipmentWithClients(items, orgId) {
