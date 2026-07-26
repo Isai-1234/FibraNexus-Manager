@@ -8,7 +8,7 @@ import axios from 'axios'
 import ThemeToggle from '../../components/ThemeToggle'
 import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
-import NetworkTopologyMap from '../../components/NetworkTopologyMap'
+import NetworkTopologyMap, { isHomeRouterEquip } from '../../components/NetworkTopologyMap'
 import DetectedDevices from './DetectedDevices'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
@@ -743,10 +743,15 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 const sectorial = selectedEquip && isSectorialEquip(selectedEquip)
                   ? selectedEquip
                   : siteEquip.find((e: any) => isSectorialEquip(e)) || null
-                const stations = siteEquip
-                  .filter((e: any) => e.clientId && e.id !== sectorial?.id)
+                const clientEquip = siteEquip.filter((e: any) => e.clientId && e.id !== sectorial?.id)
+                const stations = clientEquip
+                  .filter((e: any) => !isHomeRouterEquip(e))
                   .sort((a: any, b: any) => Number(b.status === 'online') - Number(a.status === 'online')
                     || String(a.clientName || a.name).localeCompare(String(b.clientName || b.name)))
+                const homeRouterByClient = new Map<number, any>()
+                for (const hr of clientEquip.filter(isHomeRouterEquip)) {
+                  if (!homeRouterByClient.has(hr.clientId)) homeRouterByClient.set(hr.clientId, hr)
+                }
                 const onlineCount = stations.filter((e: any) => e.status === 'online').length
                 const showingSelected = selectedEquip && isSectorialEquip(selectedEquip)
                 return (
@@ -787,6 +792,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                       <ul className="divide-y max-h-[320px] overflow-auto">
                         {stations.map((st: any) => {
                           const online = st.status === 'online'
+                          const homeRouter = st.clientId ? homeRouterByClient.get(st.clientId) : null
                           return (
                             <li key={st.id} className="px-4 py-3 flex items-center gap-3 hover:bg-surface-raised/60">
                               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${online ? 'bg-emerald-500' : 'bg-red-500'}`} />
@@ -797,6 +803,14 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                                   {st.wirelessSignal != null ? ` · ${st.wirelessSignal} dBm` : ''}
                                   {st.wirelessCcq != null ? ` · CCQ ${st.wirelessCcq}%` : ''}
                                 </p>
+                                {homeRouter && (
+                                  <p className="text-[11px] text-ink-muted truncate mt-0.5">
+                                    router WiFi: {homeRouter.name}
+                                    {homeRouter.displayIp || homeRouter.ipAddress
+                                      ? ` · ${homeRouter.displayIp || homeRouter.ipAddress}`
+                                      : ''}
+                                  </p>
+                                )}
                               </div>
                               <span className={`text-[10px] font-semibold uppercase ${online ? 'text-emerald-600' : 'text-red-600'}`}>
                                 {online ? 'online' : 'offline'}

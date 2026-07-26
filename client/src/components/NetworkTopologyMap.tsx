@@ -114,7 +114,7 @@ function isOnline(eq: any) {
 }
 
 /** Equipo del abonado que es router WiFi doméstico (no antena de enlace). */
-function isHomeRouterEquip(eq: any): boolean {
+export function isHomeRouterEquip(eq: any): boolean {
   if (!eq) return false
   const blob = `${eq.brand || ''} ${eq.model || ''} ${eq.name || ''}`
   if (ANTENNA_HINT.test(blob)) return false
