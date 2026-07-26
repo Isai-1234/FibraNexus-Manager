@@ -249,6 +249,29 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
   useEffect(() => { loadAll() }, [clientId])
 
+  // Vista en vivo estilo UISP: mientras miras el abonado, refresca presencia del enlace ~cada 30s
+  useEffect(() => {
+    const hasRadio = clientEquipment.some((e: any) =>
+      e?.type === 'cpe' && (e.snmpCommunitySet || e.hasSnmpCommunity || e.macAddress))
+    if (!hasRadio) return
+    let cancelled = false
+    const tick = async () => {
+      if (cancelled || document.visibilityState === 'hidden') return
+      try {
+        await api().post(`/clients/${clientId}/equipment/refresh`)
+        if (cancelled) return
+        await loadClientEquipment({ quick: true })
+      } catch {
+        /* silent live poll */
+      }
+    }
+    const timer = window.setInterval(tick, 30000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [clientId, clientEquipment.length])
+
   useEffect(() => {
     const hasPendingNetwork = services.some((s) => {
       const st = s.networkMeta?.suspendState?.status

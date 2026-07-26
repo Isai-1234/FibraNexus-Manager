@@ -223,14 +223,17 @@ export async function enrichFromApStations(results, devices, router) {
     }
   }
 
-  // CPEs que se monitorean vía AP y ya no figuran en la tabla: enlace caído confirmado.
+  // CPEs cliente Ubiquiti: si el AP respondió y la MAC no está, es desconexión (estilo UISP).
   if (apTableConfirmed) {
     for (const device of needMac) {
       const r = byId.get(device.id);
       if (r?.online) continue;
-      if (device.credentials?.lastSnmp?.pollMethod !== 'ap-station') continue;
       const mac = normalizeMac(device.macAddress);
-      if (stationByMac.has(mac)) continue;
+      if (!mac || stationByMac.has(mac)) continue;
+      const watchedClient = Boolean(device.clientId) && isUbiquitiEquipment(device);
+      const wasApMonitored = device.credentials?.lastSnmp?.pollMethod === 'ap-station'
+        || Boolean(device.credentials?.lastSnmp?.linkDown);
+      if (!watchedClient && !wasApMonitored) continue;
       byId.set(device.id, {
         ...(r || { id: device.id, name: device.name, polledAt: new Date().toISOString() }),
         online: false,

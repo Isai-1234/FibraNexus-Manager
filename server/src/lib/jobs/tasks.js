@@ -78,6 +78,11 @@ export const jobTasks = {
     return pollAllSnmpForOrg(orgId);
   },
 
+  'ap-station-sync-org': async ({ orgId }) => {
+    const { syncApStationPresenceForOrg } = await import('../equipmentStatus.js');
+    return syncApStationPresenceForOrg(orgId);
+  },
+
   'billing-org': async ({ orgId }) => runBillingJobsForOrg(orgId),
 
   'router-poll-org': async ({ orgId }) => {

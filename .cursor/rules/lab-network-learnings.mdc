@@ -28,6 +28,7 @@ alwaysApply: true
 - **2026-07-25:** CPE cliente puede tener internet (PPPoE) y enlace airMAX **sin** responder SNMP en su IP de gestión. El panel del abonado lee entonces la tabla de estaciones del AP (`ubntStaTable`, OID `…41112.1.4.7.1`) por MAC → `pollMethod: ap-station`. Lab: MAC `6c:63:f8:d8:78:18`, IP remota `.251`, señal −48 dBm vía sectorial `.254`.
 - Requisitos panel RADIO ENLACE: AP del sitio con SNMP + CPE con MAC correcta (IP de gestión del CPE es opcional si el AP reporta la estación).
 - **Detección de caída (2026-07-25):** si el AP responde SNMP y su `ubntStaTable` ya no lista la MAC del CPE (`pollMethod: ap-station`), se marca offline en el **primer** poll (`apConfirmedDown`) y se limpia la señal vieja — sin esperar los 3 fallos consecutivos (~6-9 min). Validado desenchufando el Loco Cliente Lab.
+- **Presencia estilo UISP (2026-07-25):** job `ap-station-sync-org` cada 45s (solo tabla de estaciones) + refresh vivo 30s en ficha del abonado.
 
 ## Flujo ISP primerizo (objetivo)
 1. MikroTik con WAN/NAT e internet.

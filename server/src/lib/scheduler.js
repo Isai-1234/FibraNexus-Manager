@@ -58,8 +58,12 @@ export function startScheduler() {
     }
   }, 6 * 60 * 60 * 1000);
 
-  // SNMP: antenas/CPE — cada 3 minutos, fire-and-forget para no bloquear el event loop
+  // SNMP: antenas/CPE — cada 3 minutos (poll completo: system + wireless MIB)
   setInterval(() => triggerSnmpRound('scheduled'), 3 * 60 * 1000);
+
+  // Presencia airMAX estilo UISP: solo tabla de estaciones del AP, cada 45s
+  setTimeout(() => triggerApStationSync('initial'), 20000);
+  setInterval(() => triggerApStationSync('scheduled'), 45 * 1000);
 
   // Heartbeat stale check: marcar offline routers con agentToken sin heartbeat reciente
   setTimeout(() => markStaleHeartbeatRouters(), 30_000);
@@ -213,5 +217,23 @@ async function triggerSnmpRound(label) {
     console.log('[scheduler:%s] SNMP + router dispatched for %d org(s)', label, orgs.length);
   } catch (err) {
     console.error('[scheduler:%s] error: %s', label, err.message);
+  }
+}
+
+async function triggerApStationSync(label) {
+  try {
+    const { db } = await import('../db/index.js');
+    const { organizations } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const { dispatch, JobNames } = await import('./jobs/queue.js');
+    const orgs = await db.select({ id: organizations.id }).from(organizations)
+      .where(eq(organizations.isActive, true));
+    for (const org of orgs) {
+      dispatch(JobNames.AP_STATION_SYNC_ORG, { orgId: org.id })
+        .catch((err) => console.error('AP station sync org %d error: %s', org.id, err.message));
+    }
+    console.log('[scheduler:%s] AP station sync dispatched for %d org(s)', label, orgs.length);
+  } catch (err) {
+    console.error('[scheduler:ap-station:%s] error: %s', label, err.message);
   }
 }

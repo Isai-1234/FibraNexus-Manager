@@ -5,7 +5,7 @@ import { orgFilter } from './tenant.js';
 import { pollEquipmentList } from './snmpPoller.js';
 import { listDhcpLeases, listIpArp } from './mikrotikNetwork.js';
 
-const STALE_MS = 2 * 60 * 1000;
+const STALE_MS = 45 * 1000;
 /** Heartbeat ~30s; métricas del agente válidas un poco más que un ciclo. */
 const METRICS_FRESH_MS = 90 * 1000;
 const OFFLINE_AFTER_FAILURES = 3;
@@ -509,4 +509,59 @@ export async function pollAllSnmpForOrg(orgId) {
   }
 
   return { polled: pollable.length, online, offline };
+}
+
+/**
+ * Sync ligero estilo UISP: solo lee la tabla de estaciones de cada AP del sitio
+ * y marca CPEs cliente online/offline por MAC. Mucho más barato que un poll SNMP completo.
+ */
+export async function syncApStationPresenceForOrg(orgId) {
+  const items = await db.select().from(equipment)
+    .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')));
+  if (!items.length) return { sites: 0, updated: 0, online: 0, offline: 0 };
+
+  const routerBySite = await buildRouterBySiteMap(items, orgId);
+  const bySite = new Map();
+  for (const item of items) {
+    if (!item.siteId) continue;
+    if (!bySite.has(item.siteId)) bySite.set(item.siteId, []);
+    bySite.get(item.siteId).push(item);
+  }
+
+  const { enrichFromApStations } = await import('./snmpPoller.js');
+  let updated = 0;
+  let online = 0;
+  let offline = 0;
+  let sites = 0;
+
+  for (const [siteId, siteItems] of bySite) {
+    const router = routerBySite.get(siteId);
+    if (!router || isEdgeRouterAgent(router)) continue;
+
+    const clientCpes = siteItems.filter((d) => d.clientId && d.macAddress);
+    if (!clientCpes.length) continue;
+    sites++;
+
+    const seed = clientCpes.map((d) => ({
+      id: d.id,
+      name: d.name,
+      online: false,
+      error: 'station-sync',
+      polledAt: new Date().toISOString(),
+    }));
+
+    const enriched = await enrichFromApStations(seed, siteItems, router);
+    for (const r of enriched) {
+      const row = clientCpes.find((d) => d.id === r.id);
+      if (!row) continue;
+      // Solo persistir si hay evidencia clara (estación vista o AP confirmó caída).
+      if (!r.online && !r.apConfirmedDown) continue;
+      await persistPollResult(row, r);
+      updated++;
+      if (r.online) online++;
+      else offline++;
+    }
+  }
+
+  return { sites, updated, online, offline };
 }
