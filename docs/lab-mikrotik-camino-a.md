@@ -143,3 +143,12 @@ Offline pinta el círculo en rojo para todos; el rol se sigue leyendo por la for
 - No documentar contraseñas en este archivo.
 - Usuario API en router: `fibranexus` (group full en lab; endurecer group en producto).
 - VPS FibraNexus: `134.209.43.175`.
+
+## Dashboard — Mbps en vivo (2026-07-26)
+
+En **Centro de operaciones** el gráfico «Uso de ancho de banda» consulta
+`GET /api/edgeos/:routerId/bandwidth` cada ~3 s (MikroTik `monitor-traffic` o heartbeat).
+
+- Muestra **Bajada (rx)** y **Subida (tx)** en Mbps de la interfaz WAN del router online.
+- Si hay varios routers, selector «Router de borde».
+- Lab: L009 Torre Pangui / Camino A debería alimentar el gráfico cuando está `online`.

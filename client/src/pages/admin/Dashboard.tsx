@@ -14,6 +14,8 @@ import ThemeToggle from '../../components/ThemeToggle'
 import { formatDateCL, formatBillingPeriod } from '../../lib/formatDate'
 import EquipmentInventory from './EquipmentInventory'
 import DeviceIpLink from '../../components/DeviceIpLink'
+import LiveBandwidthChart from '../../components/LiveBandwidthChart'
+import SubscriberStatusDonut from '../../components/SubscriberStatusDonut'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState(user?.role === 'technician' ? 'work-orders' : 'dashboard')
@@ -47,6 +49,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [generatingInvoices, setGeneratingInvoices] = useState(false)
   const [generateInvoicesMsg, setGenerateInvoicesMsg] = useState('')
   const [listHydrated, setListHydrated] = useState(false)
+  const [borderRouters, setBorderRouters] = useState<any[]>([])
+  const [bandwidthRouterId, setBandwidthRouterId] = useState<number | null>(null)
 
   /** Agrupa alertas en la tarjeta del dashboard que corresponde. */
   const ALERT_BUCKETS: Record<string, 'desconectados' | 'morosos' | 'cobros'> = {
@@ -82,6 +86,36 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
     api().get('/clients').then(r => setClients(Array.isArray(r.data) ? r.data : [])).catch(() => {})
     api().get('/plans').then(r => setPlans(Array.isArray(r.data) ? r.data : [])).catch(() => {})
   }, [])
+
+  // Routers de borde / MikroTik para el gráfico de Mbps en vivo
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return
+    let cancelled = false
+    api().get('/routers').then((r) => {
+      if (cancelled) return
+      const list = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.items) ? r.data.items : [])
+      const usable = list.filter((x: any) =>
+        x && (x.status === 'online' || x.isOnline || x.online || x.connectionStatus === 'online'
+          || x.type === 'mikrotik' || x.vendor === 'mikrotik' || x.os === 'RouterOS'
+          || x.type === 'edgeos' || x.vendor === 'ubiquiti'),
+      )
+      const preferred = (usable.length ? usable : list).slice().sort((a: any, b: any) => {
+        const onlineScore = (x: any) => (x.status === 'online' || x.isOnline || x.online ? 0 : 1)
+        return onlineScore(a) - onlineScore(b)
+      })
+      setBorderRouters(preferred)
+      setBandwidthRouterId((prev) => {
+        if (prev && preferred.some((x: any) => Number(x.id) === prev)) return prev
+        return preferred[0] ? Number(preferred[0].id) : null
+      })
+    }).catch(() => {
+      if (!cancelled) {
+        setBorderRouters([])
+        setBandwidthRouterId(null)
+      }
+    })
+    return () => { cancelled = true }
+  }, [activeTab])
 
   async function loadData() {
     if (activeTab === 'finance' || activeTab === 'staff' || activeTab === 'work-orders' || activeTab === 'detected-devices') {
@@ -977,6 +1011,42 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Ancho de banda en vivo + estado de suscriptores */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="xl:col-span-2 space-y-2">
+                  {borderRouters.length > 1 && (
+                    <div className="flex items-center gap-2 px-1">
+                      <label className="text-xs text-ink-muted shrink-0">Router de borde</label>
+                      <select
+                        value={bandwidthRouterId ?? ''}
+                        onChange={(e) => setBandwidthRouterId(e.target.value ? Number(e.target.value) : null)}
+                        className="text-sm rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-ink max-w-xs"
+                      >
+                        {borderRouters.map((r: any) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name || r.hostname || `Router #${r.id}`}
+                            {(r.status === 'online' || r.isOnline || r.online) ? ' · online' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <LiveBandwidthChart
+                    API={API}
+                    routerId={bandwidthRouterId}
+                    routerName={
+                      borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.name
+                      || borderRouters.find((r: any) => Number(r.id) === bandwidthRouterId)?.hostname
+                    }
+                  />
+                </div>
+                <SubscriberStatusDonut
+                  online={stats?.onlineClients || 0}
+                  offline={stats?.offlineClients || 0}
+                  suspended={Math.max(stats?.suspendedClients || 0, stats?.suspendedServices || 0)}
+                />
               </div>
 
               {/* Entrada del mes — quién pagó */}
