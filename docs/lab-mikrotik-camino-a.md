@@ -78,6 +78,23 @@ Sin IP pública → túnel Cloudflare / agente saliente (no es este camino).
 - Botón grande **“Pagar ahora”** en mora → crear checkout Flow/pasarela **sin login** (identificar abonado por IP suspendida o token) + link secundario “Ya tengo cuenta” → `/portal/{slug}`.
 - Requiere endpoint público tipo `/api/public/pay/:slug` + factura pendiente + `createCheckout` + webhook de reactivación (ya existe post-pago).
 
+### Señales / antenas — resuelto 2026-07-25
+En **Centro del Abonado → Abonado Antena Lab** el panel RADIO ENLACE quedaba en **Sin enlace** aunque el abonado tenía internet (PPPoE `fn83s83` activo).
+
+**Causa (lab):**
+1. El panel lee el CPE vinculado al abonado (`Loco Cliente Lab`), no el sectorial.
+2. IP inventariada `.253` **no responde SNMP** desde el L009 (sin lease/ARP; timeout vía `/tool/snmp-get`).
+3. El enlace airMAX **sí existía**: en el AP `Loco Sectorial Lab` (`.254`) la tabla de estaciones Ubiquiti (`1.3.6.1.4.1.41112.1.4.7.1`) tenía MAC `6c:63:f8:d8:78:18`, señal **−48 dBm**, IP remota **`.251`** (misma que PPPoE).
+4. Internet ≠ gestión SNMP: el router WiFi Mercusys (`.252`) sin community no aporta radio; no es un fallo de WAN.
+
+**Fix producto:** si el CPE no responde SNMP pero tiene MAC, FibraNexus lee la fila de estación del AP Ubiquiti del mismo sitio (`pollMethod: ap-station`) y rellena señal/CCQ/SNR. Validado: cliente online −48 dBm / CCQ 32 / SNR 37.
+
+**Qué configurar en un ISP nuevo para que el panel funcione:**
+1. Sectorial/AP en el mismo **sitio** que el CPE, con SNMP ON + community en FibraNexus.
+2. CPE abonado con **MAC correcta** (sirve para matchear la estación del AP).
+3. Ideal: CPE también con SNMP + IP de gestión alcanzable desde el MikroTik (si no, el fallback AP cubre la señal).
+4. No confundir IP de gestión CPE / IP remota airMAX / IP PPPoE.
+
 ### URLs lab
 | Qué | URL |
 |-----|-----|

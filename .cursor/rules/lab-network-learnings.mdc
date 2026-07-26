@@ -25,6 +25,8 @@ alwaysApply: true
 - Poll Camino A: VPS → API L009 (`/tool/snmp-get`) → IP privada del CPE. El CPE **debe** compartir sitio o `parentId` con el MikroTik; si no, timeout desde el VPS.
 - Validado 2026-07-24: CPE `172.16.11.254` online vía router; wireless 0 = sin enlace airMAX (cable a ether3).
 - Sin community/SNMP activo solo se ve online básico; dBm/CCQ reales requieren MIB Ubiquiti **y** enlace al AP.
+- **2026-07-25:** CPE cliente puede tener internet (PPPoE) y enlace airMAX **sin** responder SNMP en su IP de gestión. El panel del abonado lee entonces la tabla de estaciones del AP (`ubntStaTable`, OID `…41112.1.4.7.1`) por MAC → `pollMethod: ap-station`. Lab: MAC `6c:63:f8:d8:78:18`, IP remota `.251`, señal −48 dBm vía sectorial `.254`.
+- Requisitos panel RADIO ENLACE: AP del sitio con SNMP + CPE con MAC correcta (IP de gestión del CPE es opcional si el AP reporta la estación).
 
 ## Flujo ISP primerizo (objetivo)
 1. MikroTik con WAN/NAT e internet.
