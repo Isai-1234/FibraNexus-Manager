@@ -123,3 +123,12 @@ multi-tenant y notificación al abonado.
 El MW330HP del laboratorio puede seguir inventariado como router no administrado.
 No se expondrá su panel web a Internet ni se automatizará mediante scraping:
 sería inseguro, dependiente del firmware y difícil de mantener.
+
+## Estado (2026-07-25)
+
+**Diferido.** No hay un router TR-069 barato y fácil de conseguir para el lab.
+Se retoma cuando haya un modelo homologado a buen precio. Mientras tanto:
+
+- Mantener la bóveda de SSID/clave solo como inventario para el operador.
+- No implementar GenieACS ni “Mi WiFi” en el portal del abonado.
+- No prometter gestión remota de routers de consumo no homologados.
