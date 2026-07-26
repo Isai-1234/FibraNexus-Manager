@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import {
   ArrowLeft, Plus, RefreshCw, X, MapPin, Radio, Router, Server,
-  ChevronRight, ChevronDown, Wifi, CheckCircle, AlertTriangle, Eye,
-  Layers, Antenna, Network, Search, Pencil, User, Radar, Trash2
+  Wifi, CheckCircle, AlertTriangle, Eye,
+  Antenna, Network, Search, Pencil, User, Radar, Trash2
 } from 'lucide-react'
 import axios from 'axios'
 import ThemeToggle from '../../components/ThemeToggle'
@@ -10,6 +10,7 @@ import SubscriberQueueCard from '../../components/SubscriberQueueCard'
 import RouterNetworkConfig from '../../components/RouterNetworkConfig'
 import NetworkTopologyMap, { isHomeRouterEquip } from '../../components/NetworkTopologyMap'
 import DetectedDevices from './DetectedDevices'
+import NetworksIpPools from './NetworksIpPools'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
 interface Props {
@@ -25,11 +26,11 @@ const SITE_TYPES = [
   { value: 'office', label: 'Oficina' },
 ]
 
-type NetworkView = 'topology' | 'tree' | 'detected'
+type NetworkView = 'topology' | 'pools' | 'detected'
 
 const NETWORK_VIEWS: { id: NetworkView; label: string; icon: typeof MapPin }[] = [
   { id: 'topology', label: 'Topología', icon: Network },
-  { id: 'tree', label: 'Árbol', icon: Layers },
+  { id: 'pools', label: 'Redes & Pools de IPs', icon: Server },
   { id: 'detected', label: 'Detectados', icon: Radar },
 ]
 
@@ -103,59 +104,12 @@ function sortLinkableRouters(linkable: any[], site: any | null): any[] {
   })
 }
 
-function SiteNode({ site, depth, selectedId, onSelect, onEdit, expanded, onToggle }: any) {
-  const isOpen = expanded.has(site.id)
-  const hasChildren = site.children?.length > 0
-  return (
-    <div className="group/node">
-      <div
-        className={`flex items-center gap-0.5 rounded-lg ${selectedId === site.id ? 'bg-blue-100' : 'hover:bg-surface-raised'}`}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-      >
-        <button
-          type="button"
-          onClick={() => onSelect(site)}
-          className={`flex-1 flex items-center gap-2 px-2 py-2 text-left text-sm min-w-0 ${selectedId === site.id ? 'text-blue-800' : 'text-ink-soft'}`}
-        >
-          {hasChildren ? (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); onToggle(site.id) }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(site.id) } }}
-              className="p-0.5"
-            >
-              {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            </span>
-          ) : <span className="w-4" />}
-          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
-          <span className="truncate font-medium">{site.name}</span>
-          <span className="ml-auto text-xs text-gray-400 flex-shrink-0">{site.equipment?.length || 0}</span>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onEdit(site) }}
-          className="p-1.5 mr-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover/node:opacity-100 transition flex-shrink-0"
-          title="Editar nodo"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {isOpen && site.children?.map((child: any) => (
-        <SiteNode key={child.id} site={child} depth={depth + 1} selectedId={selectedId}
-          onSelect={onSelect} onEdit={onEdit} expanded={expanded} onToggle={onToggle} />
-      ))}
-    </div>
-  )
-}
-
 export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [tree, setTree] = useState<any[]>([])
   const [unassigned, setUnassigned] = useState<any[]>([])
   const [stats, setStats] = useState<any>({})
   const [loading, setLoading] = useState(true)
   const [selectedSite, setSelectedSite] = useState<any>(null)
-  const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [showSiteForm, setShowSiteForm] = useState(false)
   const [siteFormMode, setSiteFormMode] = useState<'create' | 'edit'>('create')
   const [editingSiteId, setEditingSiteId] = useState<number | null>(null)
@@ -241,14 +195,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     return () => window.clearInterval(timer)
   }, [networkView])
 
-  function toggleExpand(id: number) {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function selectSite(site: any) {
     setSelectedSite(site)
@@ -256,7 +202,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
     setRouterNetwork(null)
     setRouterPanelTab('subscribers')
     setSelectedEquip(null)
-    setExpanded(prev => new Set(prev).add(site.id))
     setTopologyFocusId(site.id)
   }
 
@@ -605,8 +550,15 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
           <h1 className="text-xl font-bold text-ink flex items-center gap-2">
             <Network className="h-5 w-5 text-blue-600" /> Red ISP
           </h1>
-          <p className="text-sm text-ink-muted">Jerarquía de nodos, routers y antenas — desde aquí ves toda la red</p>
+          <p className="text-sm text-ink-muted">Nodos, topología, pools de IPs y dispositivos detectados</p>
         </div>
+        <button
+          type="button"
+          onClick={openCreateSite}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-line text-sm text-ink-soft hover:bg-surface-raised"
+        >
+          <Plus className="h-4 w-4" /> Nuevo nodo
+        </button>
         <ThemeToggle />
       </header>
 
@@ -650,51 +602,12 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
         <div className="flex-1 px-6 pb-6 overflow-auto min-h-0">
           <DetectedDevices API={API} onOpenClient={onOpenClient ? (id) => onOpenClient(id, 'overview') : undefined} />
         </div>
+      ) : networkView === 'pools' ? (
+        <div className="flex-1 px-6 pb-6 overflow-auto min-h-0">
+          <NetworksIpPools API={API} />
+        </div>
       ) : (
       <div className="flex-1 flex gap-4 px-6 pb-6 min-h-0">
-        {networkView === 'tree' && (
-        <aside className="w-72 flex-shrink-0 bg-surface-card rounded-xl border flex flex-col overflow-hidden">
-          <div className="p-3 border-b flex justify-between items-center">
-            <span className="text-sm font-semibold text-ink-soft">Jerarquía de red</span>
-            <button onClick={openCreateSite} className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            {tree.length === 0 && !loading && (
-              <div className="text-center py-8 text-gray-400 text-sm px-4">
-                <Layers className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p>Sin sitios. Crea tu primer nodo (ej: Torre Panguipulli)</p>
-              </div>
-            )}
-            {tree.map(site => (
-              <SiteNode key={site.id} site={site} depth={0} selectedId={selectedSite?.id}
-                onSelect={selectSite} onEdit={openEditSite} expanded={expanded} onToggle={toggleExpand} />
-            ))}
-          </div>
-          {unassigned.length > 0 && (
-            <div className="border-t p-2 bg-amber-50 max-h-40 overflow-y-auto">
-              <p className="text-xs font-medium text-amber-700 px-2 mb-1">Sin asignar ({unassigned.length})</p>
-              {unassigned.map((eq: any) => (
-                <div key={eq.id} className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-600">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot(eq)}`} />
-                  <span className="truncate flex-1" title={eq.name}>{eq.name}</span>
-                  {selectedSite && (
-                    <button
-                      onClick={() => assignToSite(eq.id, selectedSite.id)}
-                      className="text-blue-600 hover:text-blue-800 font-medium flex-shrink-0"
-                      title={`Asignar a ${selectedSite.name}`}
-                    >
-                      →
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
-        )}
-
         {networkView === 'topology' && (
           <div className="flex-1 min-w-0 min-h-[480px] flex flex-col">
             <NetworkTopologyMap
@@ -728,31 +641,25 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
           </div>
         )}
 
-        <main className={`flex flex-col gap-4 min-w-0 ${networkView === 'topology' ? 'w-[min(100%,560px)] flex-shrink-0' : 'flex-1'}`}>
+        <main className="flex flex-col gap-4 min-w-0 w-[min(100%,560px)] flex-shrink-0">
           {!selectedSite ? (
             <div className="flex-1 bg-surface-card rounded-xl border flex items-center justify-center text-gray-400">
               <div className="text-center">
                 <Radio className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                <p className="font-medium">
-                  {networkView === 'topology' ? 'Selecciona un nodo en el mapa' : 'Selecciona un sitio o crea uno nuevo'}
-                </p>
+                <p className="font-medium">Selecciona un nodo en el mapa</p>
                 <p className="text-sm mt-1">
-                  {networkView === 'topology'
-                    ? 'Clic en un equipo del mapa para ver solo ese dispositivo y sus configuraciones'
-                    : 'Desde aquí agregas routers, switches y antenas del nodo'}
+                  Clic en un equipo del mapa para ver solo ese dispositivo y sus configuraciones
                 </p>
-                {networkView === 'topology' && (
-                  <button
-                    type="button"
-                    onClick={() => setNetworkView('tree')}
-                    className="mt-4 text-sm text-blue-600 hover:underline"
-                  >
-                    Ver jerarquía en Árbol →
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={openCreateSite}
+                  className="mt-4 text-sm text-blue-600 hover:underline"
+                >
+                  + Crear nodo
+                </button>
               </div>
             </div>
-          ) : networkView === 'topology' ? (
+          ) : (
             (() => {
               const eq = selectedEquip
               if (!eq) {
@@ -1131,389 +1038,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                 </div>
               )
             })()
-          ) : (
-            <>
-              <div className="bg-surface-card rounded-xl border p-5 space-y-4">
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-ink flex items-center gap-2">
-                      {selectedSite.name}
-                      <button
-                        type="button"
-                        onClick={() => openEditSite(selectedSite)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                        title="Editar nodo"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    </h2>
-                    <p className="text-sm text-ink-muted mt-0.5">
-                      {selectedSite.city || selectedSite.address || SITE_TYPES.find(t => t.value === selectedSite.type)?.label}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    <button onClick={openRouterModal}
-                      className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 flex items-center gap-1.5">
-                      <Router className="h-4 w-4" /> Router
-                    </button>
-                    <button onClick={() => {
-                      const routers = (selectedSite?.equipment || []).filter((e: any) => e.type === 'router')
-                      setEquipForm({
-                        ...equipForm,
-                        siteId: selectedSite.id,
-                        type: 'cpe',
-                        brand: 'Ubiquiti',
-                        parentId: routers.length === 1 ? routers[0].id : '',
-                      })
-                      setIpSuggestHint('')
-                      setShowEquipForm(true)
-                    }}
-                      className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-200 flex items-center gap-1.5">
-                      <Antenna className="h-4 w-4" /> Antena CPE
-                    </button>
-                    <button onClick={() => { setEquipForm({ ...equipForm, siteId: selectedSite.id, type: 'switch' }); setShowEquipForm(true) }}
-                      className="px-3 py-2 bg-surface-raised text-ink-soft rounded-lg text-sm font-medium hover:bg-gray-200 flex items-center gap-1.5">
-                      <Server className="h-4 w-4" /> Switch
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 flex-1 min-h-0 grid-cols-1 xl:grid-cols-2">
-                {/* Equipos del sitio */}
-                <div className="bg-surface-card rounded-xl border flex flex-col overflow-hidden">
-                  <div className="px-4 py-3 border-b bg-surface">
-                    <h3 className="font-semibold text-gray-800 text-sm">Equipos en este nodo</h3>
-                    <p className="text-xs text-ink-muted mt-0.5">Routers, antenas y switches instalados aquí</p>
-                  </div>
-                  {siteRouters.length === 0 && linkableRouters.length > 0 && (
-                    <div className="p-4 border-b bg-amber-50 space-y-3">
-                      <p className="text-sm text-amber-900 font-medium">
-                        Este nodo no tiene router asignado
-                        {siteCpe.length > 0 ? ` (${siteCpe.length} antena(s) sin router local)` : ''}
-                      </p>
-                      <p className="text-xs text-amber-800">
-                        Si el EdgeRouter o MikroTik de este sector está registrado en otro nodo (ej. torre padre), muévelo aquí.
-                        Las antenas CPE se vincularán automáticamente.
-                      </p>
-                      <div className="space-y-2">
-                        {linkableRouters.slice(0, 4).map((r: any) => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => quickLinkRouter(r.id)}
-                            className="w-full flex items-center gap-2 p-2.5 bg-surface-card border border-amber-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 text-left text-sm transition"
-                          >
-                            <Router className="h-4 w-4 text-purple-600 flex-shrink-0" />
-                            <span className="flex-1 min-w-0">
-                              <span className="font-medium block truncate">{r.name}</span>
-                              <span className="text-xs text-ink-muted">
-                                {routerTypeLabel(r)} · {siteNameById(tree, r.siteId)}
-                                {r.credentials?.tunnelHostname || r.ipAddress
-                                  ? ` · ${r.credentials?.tunnelHostname || r.ipAddress}` : ''}
-                              </span>
-                            </span>
-                            <span className="text-xs font-medium text-purple-700 flex-shrink-0">Mover aquí →</span>
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={openRouterModal}
-                        className="text-xs text-purple-700 hover:underline font-medium"
-                      >
-                        Ver todos los routers disponibles…
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex-1 overflow-y-auto divide-y">
-                    {siteEquipment.length === 0 ? (
-                      <div className="p-6 text-center text-gray-400 text-sm space-y-3">
-                        <p>Sin equipos en este nodo</p>
-                        {linkableRouters.length > 0 && (
-                          <button onClick={openRouterModal}
-                            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
-                            Vincular router existente ({linkableRouters.length})
-                          </button>
-                        )}
-                        {unassignedRouters.length > 0 && !linkableRouters.length && (
-                          <p className="text-xs text-amber-600">Hay routers sin nodo en la barra lateral →</p>
-                        )}
-                      </div>
-                    ) : siteEquipment.map((eq: any) => (
-                      <div key={eq.id} className="p-4 hover:bg-surface-raised/80 transition-colors">
-                        <div className="flex gap-3">
-                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${statusDot(eq)}`} title={eq.status === 'online' ? 'Online' : 'Offline'} />
-                          <div className="flex-1 min-w-0 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="font-semibold text-ink leading-snug">{eq.name}</p>
-                              {eq.type === 'cpe' && (
-                                <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-surface-raised text-ink-muted'}`}>
-                                  {eq.status === 'online' ? 'Online' : 'Offline'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-[11px] px-2 py-0.5 rounded-md bg-surface-raised text-ink-soft font-medium">
-                                {eq.type === 'router' ? routerTypeLabel(eq) : (EQUIP_TYPES.find((t) => t.value === eq.type)?.label || eq.type)}
-                              </span>
-                              {(eq.brand || eq.model) && (
-                                <span className="text-xs text-ink-muted">{[eq.brand, eq.model].filter(Boolean).join(' ')}</span>
-                              )}
-                            </div>
-                            {eq.ipAddress ? (
-                              <p className="text-xs flex flex-wrap items-center gap-1.5">
-                                <span className="text-gray-400">IP</span>
-                                <DeviceIpLink
-                                  ip={eq.ipAddress}
-                                  className="font-mono text-blue-600 hover:underline break-all"
-                                  showIcon
-                                />
-                              </p>
-                            ) : (
-                              <p className="text-xs text-amber-600">Sin IP asignada</p>
-                            )}
-                            {eq.type === 'cpe' && eq.clientName && eq.clientId && onOpenClient && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenClient(eq.clientId, 'overview')}
-                                className="text-xs text-blue-600 flex items-center gap-1 hover:underline"
-                              >
-                                <User className="h-3 w-3 shrink-0" /> Abonado: {eq.clientName}
-                              </button>
-                            )}
-                            {eq.type === 'cpe' && eq.clientName && !onOpenClient && (
-                              <p className="text-xs text-blue-600 flex items-center gap-1">
-                                <User className="h-3 w-3 shrink-0" /> Abonado: {eq.clientName}
-                              </p>
-                            )}
-                            {eq.type === 'cpe' && !eq.clientName && (
-                              <p className="text-xs text-amber-600">Sin abonado asignado</p>
-                            )}
-                            {eq.type === 'cpe' && (() => {
-                              const rid = eq.parentId || eq.credentials?.routerId
-                              const r = rid ? siteRouters.find((x: any) => x.id === rid) : null
-                              return r ? (
-                                <p className="text-xs text-ink-muted flex items-center gap-1">
-                                  <Router className="h-3 w-3 shrink-0" /> Conectado a {r.name}
-                                </p>
-                              ) : siteRouters.length > 1 ? (
-                                <p className="text-xs text-amber-600">Sin router padre asignado</p>
-                              ) : null
-                            })()}
-                          </div>
-                        </div>
-                        {eq.type === 'router' && (
-                          <div className="mt-3 ml-5 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditRouter(eq)}
-                              className="px-3 py-1.5 text-xs border border-line text-ink-soft rounded-lg hover:bg-surface-raised flex items-center gap-1.5"
-                            >
-                              <Pencil className="h-3.5 w-3.5" /> Editar
-                            </button>
-                            <button
-                              onClick={() => loadRouterNetwork(eq, 'subscribers')}
-                              className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5"
-                            >
-                              <Eye className="h-3.5 w-3.5" /> Abonados
-                            </button>
-                            <button
-                              onClick={() => loadRouterNetwork(eq, 'infra')}
-                              className="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex items-center gap-1.5"
-                            >
-                              <Server className="h-3.5 w-3.5" /> DHCP / Infra
-                            </button>
-                          </div>
-                        )}
-                        {eq.type === 'cpe' && (
-                          <div className="mt-3 ml-5">
-                            <button
-                              onClick={() => openEditCpe(eq)}
-                              className="px-3 py-1.5 text-xs border border-line text-ink-soft rounded-lg hover:bg-surface-raised flex items-center gap-1.5"
-                              title="Editar antena / abonado"
-                            >
-                              <Pencil className="h-3.5 w-3.5" /> Editar antena
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-surface-card rounded-xl border flex flex-col overflow-hidden min-h-[280px]">
-                  <div className="px-4 py-3 border-b bg-surface flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
-                        <Wifi className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="truncate">{selectedRouter ? selectedRouter.name : 'Router del nodo'}</span>
-                      </h3>
-                      {selectedRouter ? (
-                        <p className="text-xs text-ink-muted mt-0.5">
-                          {routerTypeLabel(selectedRouter)}
-                          {routerPanelTab === 'subscribers' ? ' · Colas y PPPoE' : ' · DHCP y SNMP'}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-ink-muted mt-0.5">
-                          {siteRouters.length === 0
-                            ? 'Vincula un MikroTik o EdgeRouter a este nodo'
-                            : 'Elige un router para ver abonados y configuración'}
-                        </p>
-                      )}
-                    </div>
-                    {selectedRouter && (
-                      <div className="flex gap-1 bg-surface-raised rounded-lg p-0.5">
-                        <button onClick={() => loadRouterNetwork(selectedRouter, 'subscribers')}
-                          className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'subscribers' ? 'bg-surface-card shadow font-medium' : 'text-ink-muted'}`}>
-                          Abonados
-                        </button>
-                        <button onClick={() => loadRouterNetwork(selectedRouter, 'infra')}
-                          className={`text-xs px-2 py-1 rounded-md ${routerPanelTab === 'infra' ? 'bg-surface-card shadow font-medium' : 'text-ink-muted'}`}>
-                          Infra
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 min-h-0">
-                    {!selectedRouter ? (
-                      <div className="text-center py-8 text-gray-400 text-sm space-y-3">
-                        {siteRouters.length === 0 ? (
-                          <>
-                            <p>No hay router en este nodo</p>
-                            <p className="text-xs text-ink-muted max-w-xs mx-auto">
-                              Vincula un EdgeRouter o MikroTik ya registrado, o créalo en <strong>Routers y agentes</strong> y asígnalo aquí.
-                            </p>
-                            {linkableRouters.length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={openRouterModal}
-                                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
-                              >
-                                Vincular router ({linkableRouters.length})
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={openRouterModal}
-                                className="px-4 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-50"
-                              >
-                                + Agregar router
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-ink-muted">Selecciona un router</p>
-                            <p className="text-xs text-gray-400 max-w-xs mx-auto">
-                              Abre colas PPPoE, abonados conectados y DHCP del equipo que atiende este nodo.
-                            </p>
-                          </>
-                        )}
-                        {siteRouters.length > 0 && (
-                          <div className="mt-4 space-y-2 text-left">
-                            {siteRouters.map((r: any) => (
-                              <button
-                                key={r.id}
-                                onClick={() => loadRouterNetwork(r)}
-                                className="w-full p-4 border rounded-xl hover:border-blue-300 hover:bg-blue-50/50 text-left transition"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${statusDot(r)}`} />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="font-semibold text-ink">{r.name}</p>
-                                    <p className="text-xs text-ink-muted mt-0.5">{routerTypeLabel(r)}</p>
-                                    {r.credentials?.tunnelHostname || r.ipAddress ? (
-                                      <p className="text-xs font-mono text-blue-600 mt-1 truncate">
-                                        {r.credentials?.tunnelHostname || r.ipAddress}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : routerPanelTab === 'infra' ? (
-                      <RouterNetworkConfig
-                        API={API}
-                        routerId={selectedRouter.id}
-                        routerName={selectedRouter.name}
-                        siteEquipment={siteEquipment}
-                      />
-                    ) : routerNetwork?.error ? (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 flex gap-2">
-                        <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                        {routerNetwork.error}
-                      </div>
-                    ) : !routerNetwork ? (
-                      <div className="text-center py-8"><RefreshCw className="h-6 w-6 animate-spin mx-auto text-blue-500" /></div>
-                    ) : (
-                      <div className="space-y-5">
-                        {(routerNetwork.simpleQueues || []).length > 0 ? (
-                          <div>
-                            <p className="text-xs font-semibold text-ink-muted uppercase mb-3 tracking-wide">
-                              Simple Queues ({routerNetwork.simpleQueues.length})
-                            </p>
-                            <div className="space-y-3">
-                              {(routerNetwork.simpleQueues || []).map((q: any) => (
-                                <SubscriberQueueCard
-                                  key={q['.id'] || q.name}
-                                  name={q.name}
-                                  target={q.target}
-                                  maxLimit={q['max-limit']}
-                                  comment={q.comment}
-                                  disabled={q.disabled === 'true'}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-400 text-center py-4">Sin colas configuradas</p>
-                        )}
-
-                        <div className="border-t pt-4">
-                          <p className="text-xs font-semibold text-ink-muted uppercase mb-2 tracking-wide">
-                            PPPoE conectados ({routerNetwork.pppoeActive?.filter((a: any) => a.name)?.length || 0})
-                          </p>
-                          <div className="space-y-1">
-                            {(routerNetwork.pppoeActive || []).filter((a: any) => a.name).map((a: any) => (
-                              <div key={a['.id'] || a.name} className="flex items-center gap-2 text-sm bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-                                <CheckCircle className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
-                                <span className="font-medium truncate">{a.name}</span>
-                                <span className="text-xs text-ink-muted font-mono ml-auto">{a.address}</span>
-                              </div>
-                            ))}
-                            {!(routerNetwork.pppoeActive || []).some((a: any) => a.name) && (
-                              <p className="text-xs text-gray-400 py-2">Nadie conectado por PPPoE ahora</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {(routerNetwork.pppoeSecrets || []).length > 0 && (
-                          <div className="border-t pt-4">
-                            <p className="text-xs font-semibold text-ink-muted uppercase mb-2 tracking-wide">
-                              Usuarios PPPoE ({routerNetwork.pppoeSecrets.length})
-                            </p>
-                            <div className="space-y-1 max-h-32 overflow-y-auto">
-                              {(routerNetwork.pppoeSecrets || []).slice(0, 15).map((s: any) => (
-                                <div key={s['.id']} className="flex items-center gap-2 text-xs border rounded-lg px-3 py-2 bg-surface">
-                                  <span className={`w-2 h-2 rounded-full ${s.disabled === 'true' ? 'bg-red-400' : 'bg-green-400'}`} />
-                                  <span className="font-medium">{s.name}</span>
-                                  <span className="text-gray-400 ml-auto">{s.profile}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
           )}
         </main>
       </div>

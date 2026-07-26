@@ -28,7 +28,7 @@ Pendiente validación lab: T008–T009, T025–T027. Enhancement: T031 (edge cas
 ## Convenciones
 - Diffs mínimos; no mezclar refactors no relacionados
 - IPs de antenas/routers → `DeviceIpLink` / `openDeviceWeb` (no perfil abonado)
-- Menú Red ISP: Topología | Árbol | Detectados en `NetworkManager.tsx`
+- Menú Red ISP: Topología | Redes & Pools de IPs | Detectados en `NetworkManager.tsx`
 - Topología: `NetworkTopologyMap.tsx`
 - Commit/push solo cuando el usuario lo pida explícitamente
 

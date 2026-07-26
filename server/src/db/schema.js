@@ -324,6 +324,26 @@ export const ipAddresses = pgTable('ip_addresses', {
   uniqOrgAddress: unique('uq_ip_addresses_org_address').on(table.organizationId, table.address),
 }));
 
+/** Pools / subredes del ISP (ocupación de IPs). */
+export const networkPools = pgTable('network_pools', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  subnet: varchar('subnet', { length: 45 }).notNull(),
+  gateway: varchar('gateway', { length: 45 }),
+  dns: varchar('dns', { length: 255 }),
+  vlan: integer('vlan'),
+  poolType: varchar('pool_type', { length: 32 }).notNull().default('residential'),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  siteId: integer('site_id').references(() => sites.id, { onDelete: 'set null' }),
+  routerId: integer('router_id').references(() => equipment.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqOrgSubnet: unique('uq_network_pools_org_subnet').on(table.organizationId, table.subnet),
+}));
+
 export const detectedDevices = pgTable('detected_devices', {
   id: serial('id').primaryKey(),
   organizationId: integer('organization_id').references(() => organizations.id),
