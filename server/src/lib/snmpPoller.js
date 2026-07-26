@@ -37,6 +37,200 @@ const UBNT_COLS = {
   rxRate: 10,
 };
 
+/** Tabla de estaciones del AP airMAX — señal del CPE aunque su IP de gestión no responda SNMP. */
+const UBNT_STA = '1.3.6.1.4.1.41112.1.4.7.1';
+const UBNT_STA_COLS = {
+  name: 2,
+  signal: 3,
+  noiseFloor: 4,
+  remoteIp: 10,
+  txRate: 11,
+  rxRate: 12,
+  ccq: 16,
+};
+
+function normalizeMac(mac) {
+  return String(mac || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+}
+
+function isUbiquitiEquipment(eq, sysDescr = '') {
+  return /ubiquiti|litebeam|nanostation|powerbeam|airmax|airos|loco/i.test(
+    `${eq?.brand || ''} ${eq?.model || ''} ${eq?.name || ''} ${sysDescr}`,
+  );
+}
+
+function wirelessFromRaw(merged, attempts) {
+  const rawNums = ['signal', 'rssi', 'ccq', 'noiseFloor', 'txRate', 'rxRate']
+    .map((k) => Number(merged[k]))
+    .filter((n) => !Number.isNaN(n));
+  if (rawNums.length > 0 && rawNums.every((n) => n === 0)) {
+    return {
+      wireless: null,
+      wirelessDebug: {
+        attempts,
+        raw: merged,
+        hint: 'SNMP OK; sin enlace airMAX (valores wireless en 0). Normal si la antena está solo cableada al router.',
+      },
+    };
+  }
+
+  const signal = normalizeDbm(merged.signal ?? merged.rssi);
+  const rssi = normalizeDbm(merged.rssi ?? merged.signal);
+  const ccq = normalizeCcq(merged.ccq);
+  const noiseFloor = normalizeDbm(merged.noiseFloor);
+  const snr = signal != null && noiseFloor != null ? Math.round(signal - noiseFloor) : null;
+
+  const warnings = [];
+  if (signal != null && signal < -72) {
+    warnings.push({ type: 'alignment', label: 'Señal débil — posible desalineación', severity: 'high' });
+  } else if (signal != null && signal < -65) {
+    warnings.push({ type: 'alignment', label: 'Señal moderada — revisar apuntamiento', severity: 'medium' });
+  }
+  if (ccq != null && ccq < 50) {
+    warnings.push({ type: 'ccq', label: `CCQ bajo (${ccq}%) — interferencia o mala alineación`, severity: 'high' });
+  }
+  if (snr != null && snr < 15) {
+    warnings.push({ type: 'noise', label: `SNR bajo (${snr} dB) — ruido elevado`, severity: 'medium' });
+  }
+
+  return {
+    wireless: {
+      signalDbm: signal,
+      rssiDbm: rssi,
+      ccqPercent: ccq,
+      noiseFloorDbm: noiseFloor,
+      snrDb: snr,
+      txRateMbps: merged.txRate ? Number(merged.txRate) : null,
+      rxRateMbps: merged.rxRate ? Number(merged.rxRate) : null,
+      warnings,
+      linkQuality: ccq ?? (signal != null ? Math.min(100, Math.max(0, 100 + signal)) : null),
+    },
+    wirelessDebug: { attempts, raw: merged },
+  };
+}
+
+/** Parsea ubntStaTable indexada por MAC (últimos 6 octetos del OID). */
+export function parseUbntStationTable(walkData) {
+  const byMac = new Map();
+  for (const [oid, raw] of Object.entries(walkData || {})) {
+    if (!oid.startsWith(`${UBNT_STA}.`)) continue;
+    const parts = oid.slice(UBNT_STA.length + 1).split('.');
+    if (parts.length < 8) continue;
+    const col = Number(parts[0]);
+    const macBytes = parts.slice(-6).map((n) => Number(n));
+    if (macBytes.some((n) => Number.isNaN(n) || n < 0 || n > 255)) continue;
+    const mac = macBytes.map((n) => n.toString(16).padStart(2, '0')).join('');
+    if (!byMac.has(mac)) byMac.set(mac, {});
+    const row = byMac.get(mac);
+    for (const [key, colNum] of Object.entries(UBNT_STA_COLS)) {
+      if (col === colNum) row[key] = raw;
+    }
+  }
+  return byMac;
+}
+
+async function fetchUbntStationMap(host, community, router) {
+  let walkData = {};
+  if (router) {
+    walkData = await snmpWalkViaRouter(router, host, community, UBNT_STA);
+  }
+  if (!Object.keys(walkData).length) {
+    try {
+      walkData = await snmpWalk(host, community, UBNT_STA);
+    } catch {
+      walkData = {};
+    }
+  }
+  return parseUbntStationTable(walkData);
+}
+
+async function resolveCommunity(eq) {
+  const { decryptSecret } = await import('./secrets.js');
+  let community = eq.snmpCommunity?.trim() || 'public';
+  try {
+    community = decryptSecret(community) || community;
+  } catch {
+    /* legacy plaintext */
+  }
+  return community;
+}
+
+/**
+ * Si el CPE no responde SNMP pero está enlazado a un AP Ubiquiti del mismo sitio,
+ * usa la fila de estación (MAC) del AP: señal, ruido, tasas e IP remota.
+ */
+export async function enrichFromApStations(results, devices, router) {
+  const byId = new Map(results.map((r) => [r.id, { ...r }]));
+  const needMac = devices.filter((d) => {
+    const r = byId.get(d.id);
+    const needs = !r || !r.online || !r.wireless;
+    return d.macAddress && needs;
+  });
+  if (!needMac.length || !router) return results;
+
+  const apCandidates = devices.filter((d) => {
+    if (!isUbiquitiEquipment(d) || !d.snmpCommunity || !d.ipAddress) return false;
+    const r = byId.get(d.id);
+    return Boolean(r?.online) || d.status === 'online';
+  });
+
+  const stationByMac = new Map();
+  for (const ap of apCandidates) {
+    try {
+      const community = await resolveCommunity(ap);
+      const host = ap.ipAddress?.trim().split('/')[0];
+      if (!host) continue;
+      const map = await fetchUbntStationMap(host, community, router);
+      for (const [mac, row] of map) {
+        if (!stationByMac.has(mac)) stationByMac.set(mac, { ...row, apHost: host, apName: ap.name });
+      }
+    } catch {
+      /* AP sin tabla de estaciones */
+    }
+  }
+
+  if (!stationByMac.size) return [...byId.values()].length ? results.map((r) => byId.get(r.id) || r) : results;
+
+  for (const device of needMac) {
+    const mac = normalizeMac(device.macAddress);
+    const sta = stationByMac.get(mac);
+    if (!sta?.signal) continue;
+    const built = wirelessFromRaw({
+      signal: sta.signal,
+      noiseFloor: sta.noiseFloor,
+      ccq: sta.ccq,
+      txRate: sta.txRate,
+      rxRate: sta.rxRate,
+    }, ['ap-station']);
+    if (!built.wireless) continue;
+    byId.set(device.id, {
+      id: device.id,
+      name: device.name,
+      online: true,
+      sysName: sta.name || device.name,
+      wireless: built.wireless,
+      wirelessDebug: {
+        ...built.wirelessDebug,
+        apHost: sta.apHost,
+        apName: sta.apName,
+        hint: `Señal leída desde el AP ${sta.apName || sta.apHost} (el CPE no responde SNMP directo).`,
+      },
+      polledAt: new Date().toISOString(),
+      host: sta.remoteIp || device.ipAddress,
+      stationRemoteIp: sta.remoteIp || null,
+      pollMethod: 'ap-station',
+      community: '***',
+    });
+  }
+
+  // Incluir equipos enriquecidos que no estaban en results (p.ej. solo se polleó el AP).
+  const out = results.map((r) => byId.get(r.id) || r);
+  for (const [id, row] of byId) {
+    if (!out.some((r) => r.id === id) && row.pollMethod === 'ap-station') out.push(row);
+  }
+  return out;
+}
+
 function formatUptime(timeticks) {
   const ms = Math.floor(Number(timeticks) / 100);
   const s = Math.floor(ms / 1000);
@@ -218,60 +412,17 @@ async function fetchUbntWireless(host, community, router, pollMethod) {
   }
 
   console.log(`[SNMP-DEBUG] host=${host} raw_merged=${JSON.stringify(merged)} attempts=${JSON.stringify(attempts)}`);
-
-  // airOS a veces responde MIB wireless con ceros cuando no hay enlace (CPE solo por cable).
-  const rawNums = ['signal', 'rssi', 'ccq', 'noiseFloor', 'txRate', 'rxRate']
-    .map((k) => Number(merged[k]))
-    .filter((n) => !Number.isNaN(n));
-  if (rawNums.length > 0 && rawNums.every((n) => n === 0)) {
-    return {
-      wireless: null,
-      wirelessDebug: {
-        attempts,
-        raw: merged,
-        hint: 'SNMP OK; sin enlace airMAX (valores wireless en 0). Normal si la antena está solo cableada al router.',
-      },
-    };
+  const built = wirelessFromRaw(merged, attempts);
+  if (built.wireless) {
+    console.log(`[SNMP-DEBUG] computed signal=${built.wireless.signalDbm} ccq=${built.wireless.ccqPercent} snr=${built.wireless.snrDb}`);
   }
-
-  const signal = normalizeDbm(merged.signal ?? merged.rssi);
-  const rssi = normalizeDbm(merged.rssi ?? merged.signal);
-  const ccq = normalizeCcq(merged.ccq);
-  const noiseFloor = normalizeDbm(merged.noiseFloor);
-  const snr = signal != null && noiseFloor != null ? Math.round(signal - noiseFloor) : null;
-
-  console.log(`[SNMP-DEBUG] computed signal=${signal} rssi=${rssi} ccq=${ccq} noiseFloor=${noiseFloor} snr=${snr}`);
-
-  const warnings = [];
-  if (signal != null && signal < -72) {
-    warnings.push({ type: 'alignment', label: 'Señal débil — posible desalineación', severity: 'high' });
-  } else if (signal != null && signal < -65) {
-    warnings.push({ type: 'alignment', label: 'Señal moderada — revisar apuntamiento', severity: 'medium' });
-  }
-  if (ccq != null && ccq < 50) {
-    warnings.push({ type: 'ccq', label: `CCQ bajo (${ccq}%) — interferencia o mala alineación`, severity: 'high' });
-  }
-  if (snr != null && snr < 15) {
-    warnings.push({ type: 'noise', label: `SNR bajo (${snr} dB) — ruido elevado`, severity: 'medium' });
-  }
-
-  return {
-    wireless: {
-      signalDbm: signal,
-      rssiDbm: rssi,
-      ccqPercent: ccq,
-      noiseFloorDbm: noiseFloor,
-      snrDb: snr,
-      txRateMbps: merged.txRate ? Number(merged.txRate) : null,
-      rxRateMbps: merged.rxRate ? Number(merged.rxRate) : null,
-      warnings,
-      linkQuality: ccq ?? (signal != null ? Math.min(100, Math.max(0, 100 + signal)) : null),
-    },
-    wirelessDebug: { attempts, raw: merged },
-  };
+  return built;
 }
 
-export async function pollDeviceSnmp(equipment, router = null, { deadlineAt = Date.now() + POLL_BUDGET_MS } = {}) {
+export async function pollDeviceSnmp(equipment, router = null, {
+  deadlineAt = Date.now() + POLL_BUDGET_MS,
+  sitePeers = [],
+} = {}) {
   const { getEffectiveHost } = await import('./ipResolver.js');
   const { decryptSecret } = await import('./secrets.js');
   const host = getEffectiveHost(equipment);
@@ -381,12 +532,19 @@ async function pollOneDevice(eq, router, budgetMs) {
   }
 }
 
-/** Menos fallos acumulados primero: un CPE caído no debe gastarse el ciclo. */
+/** Menos fallos acumulados primero: un CPE caído no debe gastarse el ciclo.
+ *  Los AP/sectoriales primero ayudan a enriquecer estaciones airMAX. */
 function healthiestFirst(a, b) {
-  return (a.credentials?.consecutiveFailures || 0) - (b.credentials?.consecutiveFailures || 0);
+  const apScore = (eq) => (/sector|ap\b|base|tower|torre/i.test(eq.name || '') ? 0 : 1);
+  const failA = a.credentials?.consecutiveFailures || 0;
+  const failB = b.credentials?.consecutiveFailures || 0;
+  return (apScore(a) - apScore(b)) || (failA - failB);
 }
 
-export async function pollEquipmentList(items, routerBySiteId = new Map(), { routerBudgetMs = ROUTER_BUDGET_MS } = {}) {
+export async function pollEquipmentList(items, routerBySiteId = new Map(), {
+  routerBudgetMs = ROUTER_BUDGET_MS,
+  siteDevices = null,
+} = {}) {
   const groups = new Map();
   const direct = [];
   for (const eq of items) {
@@ -415,7 +573,8 @@ export async function pollEquipmentList(items, routerBySiteId = new Map(), { rou
         }
         out.push(await pollOneDevice(eq, router, Math.min(POLL_BUDGET_MS, Math.max(remaining, MIN_DEVICE_BUDGET_MS))));
       }
-      return out;
+      const peers = (siteDevices || items).filter((d) => d.siteId && list.some((x) => x.siteId === d.siteId));
+      return enrichFromApStations(out, peers.length ? peers : list, router);
     }),
   ]);
 

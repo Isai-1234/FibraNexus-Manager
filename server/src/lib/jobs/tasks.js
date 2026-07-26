@@ -3,7 +3,7 @@ import { pollDeviceSnmp, pollEquipmentList } from '../snmpPoller.js';
 import { runBillingJobsForOrg } from '../billingScheduler.js';
 import { db } from '../../db/index.js';
 import { equipment } from '../../db/schema.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { orgFilter } from '../tenant.js';
 
 /** Registro de tareas — misma función desde API inline o worker Redis. */
@@ -40,9 +40,27 @@ export const jobTasks = {
     try {
       result = await pollDeviceSnmp(eqRow, siteRouter);
     } catch (err) {
-      // Timeout o fallo de red = offline confirmado; persistir para que el dashboard sea correcto
       result = { online: false, error: err.message, polledAt: new Date().toISOString() };
     }
+
+    // Fallback airMAX: si el CPE no responde, leer señal desde el AP del mismo sitio.
+    if ((!result.online || !result.wireless) && eqRow.siteId && eqRow.macAddress && siteRouter) {
+      const sitePeers = await db.select().from(equipment)
+        .where(and(
+          eq(equipment.siteId, eqRow.siteId),
+          ne(equipment.type, 'router'),
+          orgFilter(equipment, orgId),
+        ));
+      const { enrichFromApStations } = await import('../snmpPoller.js');
+      const enriched = await enrichFromApStations(
+        [{ id: eqRow.id, name: eqRow.name, ...result }],
+        sitePeers,
+        siteRouter,
+      );
+      const mine = enriched.find((r) => r.id === eqRow.id);
+      if (mine?.online && mine.wireless) result = mine;
+    }
+
     const { persistPollResult } = await import('../equipmentStatus.js');
     await persistPollResult(eqRow, result);
     return result;

@@ -323,7 +323,7 @@ networkRouter.post('/equipment/snmp/poll-all', requireRole('admin', 'technician'
       .where(and(orgFilter(equipment, orgId), ne(equipment.type, 'router')));
     const pollable = items.filter((e) => e.ipAddress && e.snmpCommunity);
     const routerBySite = await buildRouterBySiteMap(pollable, orgId);
-    const results = await pollEquipmentList(pollable, routerBySite);
+    const results = await pollEquipmentList(pollable, routerBySite, { siteDevices: items });
 
     for (const r of results) {
       if (r.skipped) continue;
