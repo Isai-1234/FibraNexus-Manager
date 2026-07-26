@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
-import cpeArt from '../assets/link/Gemini_Generated_Image_uepoonuepoonuepo-removebg-preview.png'
-import towerArt from '../assets/link/Gemini_Generated_Image_tc60kttc60kttc60-removebg-preview.png'
+import cpeArt from '../assets/link/cpe-dish@3x.png'
+import towerArt from '../assets/link/tower-sector@3x.png'
 
 /** Layout responsivo: viewBox 580×280; centros en % del ancho (hardware + etiquetas) */
 type ImgBox = {
