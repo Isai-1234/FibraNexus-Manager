@@ -1775,11 +1775,11 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 <p className="text-cyan-500/70 text-xs mt-1 flex items-center gap-1">
                   <MapPin className="h-3 w-3 shrink-0" />
                   Nodo {primaryAntenna.siteName}
-                  {primaryAntenna.ipAddress && (
+                  {(primaryAntenna.displayIp || primaryAntenna.ipAddress) && (
                     <>
                       {' · '}
                       <DeviceIpLink
-                        ip={primaryAntenna.ipAddress}
+                        ip={primaryAntenna.displayIp || primaryAntenna.ipAddress}
                         className="text-cyan-400/90 font-mono hover:underline"
                         title="Abrir interfaz web de la antena"
                       />
@@ -2071,13 +2071,13 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   </div>
                 ) : clientEquipment.slice(0, 3).map((eq) => (
                   <div key={eq.id} className="flex items-center gap-3 py-2 border-b border-white/[0.05] last:border-0">
-                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-red-400'}`} />
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'bg-red-400' : 'bg-amber-400'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">{eq.name}</p>
-                      <p className="text-xs text-ink-muted">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.ipAddress || 'sin IP'}</p>
+                      <p className="text-xs text-ink-muted">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.displayIp || eq.ipAddress || 'sin IP'}</p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-surface-card/[0.05] text-ink-muted'}`}>
-                      {eq.status === 'online' ? 'Online' : 'Offline'}
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${eq.status === 'online' ? 'bg-emerald-500/15 text-emerald-300' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'bg-surface-card/[0.05] text-ink-muted' : 'bg-amber-500/15 text-amber-300'}`}>
+                      {eq.statusLabel || (eq.status === 'online' ? 'Online' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'Offline' : 'Sin monitoreo')}
                     </span>
                   </div>
                 ))}
@@ -2154,30 +2154,32 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 {clientEquipment.map((eq) => (
                   <div key={eq.id} className="bg-surface-card rounded-xl border p-5 hover:shadow-sm transition">
                     <div className="flex items-start gap-3">
-                      <span className={`w-3 h-3 rounded-full mt-1.5 flex-shrink-0 ${eq.status === 'online' ? 'bg-green-500' : eq.status === 'offline' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                      <span className={`w-3 h-3 rounded-full mt-1.5 flex-shrink-0 ${eq.status === 'online' ? 'bg-green-500' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'bg-red-500' : 'bg-amber-400'}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start gap-2">
                           <div>
                             <p className="font-semibold text-ink">{eq.name}</p>
                             <p className="text-xs text-ink-muted">{EQUIP_TYPE_LABEL[eq.type] || eq.type} · {eq.brand} {eq.model}</p>
                           </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-surface-raised text-gray-600'}`}>
-                            {eq.status === 'online' ? 'Online' : 'Offline'}
+                          <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${eq.status === 'online' ? 'bg-green-100 text-green-700' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'bg-surface-raised text-gray-600' : 'bg-amber-50 text-amber-800'}`}>
+                            {eq.statusLabel || (eq.status === 'online' ? 'Online' : (eq.hasSnmpCommunity || eq.snmpCommunitySet) ? 'Offline' : 'Sin monitoreo')}
                           </span>
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
                           <div>
                             <span className="text-gray-400">IP:</span>{' '}
-                            {eq.ipAddress ? (
+                            {(eq.displayIp || eq.ipAddress) ? (
                               <DeviceIpLink
-                                ip={eq.ipAddress}
+                                ip={eq.displayIp || eq.ipAddress}
                                 className="font-mono text-blue-600 hover:underline"
                                 title="Abrir interfaz web del equipo"
                               />
                             ) : (
                               <span className="font-mono">—</span>
                             )}
-                            {eq.credentials?.resolvedIp && eq.credentials.connectionMode !== 'static' && (
+                            {eq.credentials?.resolvedIp
+                              && eq.credentials.resolvedIp !== (eq.displayIp || eq.ipAddress)
+                              && eq.credentials.connectionMode !== 'static' && (
                               <>
                                 {' '}
                                 <DeviceIpLink
@@ -2201,6 +2203,11 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                             </div>
                           )}
                           {eq.notes && <div className="col-span-2 text-xs text-ink-muted">{eq.notes}</div>}
+                          {eq.statusLabel === 'Sin monitoreo' && (
+                            <div className="col-span-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5">
+                              Internet del abonado puede estar OK. Este equipo no tiene SNMP y no se ve desde el nodo (típico del WiFi detrás del CPE).
+                            </div>
+                          )}
                           {eq.credentials?.lastMetrics && (
                             <div className="col-span-2">
                               <SignalBadge metrics={eq.credentials.lastMetrics} />

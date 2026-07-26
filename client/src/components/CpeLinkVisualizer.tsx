@@ -123,7 +123,9 @@ interface Props {
     model?: string
     brand?: string
     ipAddress?: string
+    displayIp?: string
     status?: string
+    statusLabel?: string
     siteName?: string
     wirelessSignal?: number | null
     wirelessRssi?: number | null
@@ -569,7 +571,7 @@ export default function CpeLinkVisualizer({
             <p className="text-sm text-ink-muted mt-0.5">
               {equipment.brand || 'Ubiquiti'} {equipment.model || 'LiteBeam M5'}
             </p>
-            <p className="text-xs font-mono text-slate-600 mt-1">{equipment.ipAddress || 'sin IP'}</p>
+            <p className="text-xs font-mono text-slate-600 mt-1">{equipment.displayIp || equipment.ipAddress || 'sin IP'}</p>
           </div>
         </div>
 

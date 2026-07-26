@@ -114,20 +114,21 @@ clientsRouter.post('/:id/equipment/refresh', requireRole('admin', 'technician'),
     const clientId = parseInt(req.params.id, 10);
     let items = await listClientEquipment(clientId, orgId);
     const pollable = items.filter(isPollable);
+    const needsLan = items.some((e) => e.type !== 'router' && e.ipAddress && !e.snmpCommunity?.trim());
 
     res.status(202).json({
       ok: true,
       polling: pollable.length,
-      message: pollable.length
-        ? 'Actualización SNMP iniciada'
-        : 'Sin equipos con IP y community SNMP',
+      message: pollable.length || needsLan
+        ? 'Actualización de equipos iniciada'
+        : 'Sin equipos con IP para actualizar',
     });
 
-    if (!pollable.length) return;
+    if (!pollable.length && !needsLan) return;
 
     setImmediate(async () => {
       try {
-        await forceRefreshEquipmentStatus(items, orgId, { maxPoll: pollable.length });
+        await forceRefreshEquipmentStatus(items, orgId, { maxPoll: Math.max(pollable.length, 1) });
       } catch (err) {
         console.error('[equipment-refresh] client=%s error=%s', clientId, err.message);
       }

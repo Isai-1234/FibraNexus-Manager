@@ -27,6 +27,10 @@ export async function listDhcpLeases(router) {
   return asList(await mikrotikRequest(router, 'GET', '/ip/dhcp-server/lease'));
 }
 
+export async function listIpArp(router) {
+  return asList(await mikrotikRequest(router, 'GET', '/ip/arp'));
+}
+
 export async function createDhcpNetwork(router, { address, gateway, 'dns-server': dnsServer, comment = '' }) {
   const body = { address, gateway, comment };
   if (dnsServer) body['dns-server'] = dnsServer;

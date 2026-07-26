@@ -3,6 +3,7 @@ import { equipment } from '../db/schema.js';
 import { and, eq, ne } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { pollEquipmentList } from './snmpPoller.js';
+import { listDhcpLeases, listIpArp } from './mikrotikNetwork.js';
 
 const STALE_MS = 2 * 60 * 1000;
 /** Heartbeat ~30s; métricas del agente válidas un poco más que un ciclo. */
@@ -154,12 +155,18 @@ export async function persistPollResult(row, result) {
     nextCreds.connectionMode = nextCreds.connectionMode || 'static';
   }
 
-  const [updated] = await db.update(equipment).set({
+  const patch = {
     status,
     lastSeen: failed && hasRecentHeartbeatPresence(row) ? row.lastSeen : new Date(),
     credentials: nextCreds,
     updatedAt: new Date(),
-  }).where(eq(equipment.id, row.id)).returning();
+  };
+  // Corregir IP inventariada cuando el AP reporta otra (ej. .253 → .251).
+  if (result.stationRemoteIp && result.stationRemoteIp !== row.ipAddress) {
+    patch.ipAddress = result.stationRemoteIp;
+  }
+
+  const [updated] = await db.update(equipment).set(patch).where(eq(equipment.id, row.id)).returning();
   return updated;
 }
 
@@ -171,12 +178,20 @@ export function attachSnmpDisplay(item) {
   const metricsFromHeartbeat = isMetricsFresh(lastMetrics)
     && Boolean(lastMetrics?.signal)
     && (!lastSnmp?.wireless?.signalDbm || (lastSnmp?.pollMethod === 'edgerouter-arp'));
+  const resolvedIp = item.credentials?.resolvedIp || null;
+  const displayIp = resolvedIp
+    || (pollMethod === 'ap-station' && lastSnmp?.host)
+    || item.ipAddress
+    || null;
+  const hasSnmp = Boolean(item.snmpCommunity?.trim());
+  const unmonitored = !hasSnmp || pollMethod === 'unmonitored';
   const display = {
     ...item,
+    displayIp,
     snmpOnline: item.status === 'online',
     snmpUptime: lastSnmp?.uptime || null,
     snmpPolledAt: lastSnmp?.polledAt || lastMetrics?.ts || item.lastSeen || null,
-    snmpError: lastSnmp?.error || null,
+    snmpError: lastSnmp?.error || lastSnmp?.hint || null,
     snmpPollMethod: metricsFromHeartbeat ? 'heartbeat' : (lastSnmp?.pollMethod || null),
     snmpSysDescr: lastSnmp?.sysDescr || null,
     wirelessSignal: wireless?.signalDbm ?? null,
@@ -186,8 +201,12 @@ export function attachSnmpDisplay(item) {
     wirelessTxRate: wireless?.txRateMbps ?? null,
     wirelessRxRate: wireless?.rxRateMbps ?? null,
     wirelessWarnings: wireless?.warnings || [],
-    wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || null,
+    wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || lastSnmp?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
+    // Sin SNMP no es “apagado”: es equipo de cliente sin monitoreo de gestión.
+    statusLabel: item.status === 'online'
+      ? 'Online'
+      : (unmonitored ? 'Sin monitoreo' : 'Offline'),
   };
   // Sanitizar secretos al final (mantiene flags hasSnmpCommunity / hasRouterPass)
   return sanitizeDisplay(display);
@@ -261,6 +280,9 @@ async function applyPollResults(items, results) {
           }
           : {}),
       },
+      ...(r.stationRemoteIp && r.stationRemoteIp !== row.ipAddress
+        ? { ipAddress: r.stationRemoteIp }
+        : {}),
     };
 
     const shouldPersist = !failed
@@ -288,34 +310,115 @@ function filterPollableFromRender(items, routerBySite) {
   });
 }
 
+function normalizeMac(mac) {
+  return String(mac || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+}
+
+/**
+ * Equipos sin SNMP (router WiFi del cliente, etc.): presencia por ARP/DHCP del MikroTik.
+ * Si no aparecen, quedan en "Sin monitoreo" — no significa que estén apagados
+ * (suelen vivir detrás del CPE / NAT del abonado).
+ */
+export async function refreshLanPresence(items, orgId) {
+  const nonSnmp = items.filter((e) => e.type !== 'router' && e.ipAddress && !e.snmpCommunity?.trim());
+  if (!nonSnmp.length) return items;
+
+  const routerBySite = await buildRouterBySiteMap(nonSnmp, orgId);
+  const byId = new Map(items.map((e) => [e.id, e]));
+  const cache = new Map(); // siteId → { arp, leases }
+
+  for (const device of nonSnmp) {
+    const router = device.siteId ? routerBySite.get(device.siteId) : null;
+    if (!router || isEdgeRouterAgent(router)) continue;
+
+    if (!cache.has(device.siteId)) {
+      const [arp, leases] = await Promise.all([
+        listIpArp(router).catch(() => []),
+        listDhcpLeases(router).catch(() => []),
+      ]);
+      cache.set(device.siteId, { arp, leases });
+    }
+    const { arp, leases } = cache.get(device.siteId);
+    const mac = normalizeMac(device.macAddress);
+    const ip = device.ipAddress?.trim().split('/')[0];
+
+    const arpHit = arp.find((a) => {
+      const aIp = String(a.address || '').split('/')[0];
+      const aMac = normalizeMac(a['mac-address']);
+      return (mac && aMac === mac) || (ip && aIp === ip);
+    });
+    const leaseHit = leases.find((l) => {
+      const lIp = String(l['active-address'] || l.address || '').split('/')[0];
+      const lMac = normalizeMac(l['mac-address'] || l['active-mac-address']);
+      const bound = l.status === 'bound' || l['active-address'];
+      return bound && ((mac && lMac === mac) || (ip && lIp === ip));
+    });
+
+    const seen = Boolean(arpHit || leaseHit);
+    const seenIp = leaseHit?.['active-address'] || leaseHit?.address || arpHit?.address || ip;
+    const prev = byId.get(device.id) || device;
+    const nextStatus = seen ? 'online' : (prev.status === 'online' ? 'offline' : (prev.status || 'unknown'));
+    const lastSnmp = {
+      ...(prev.credentials?.lastSnmp || {}),
+      polledAt: new Date().toISOString(),
+      pollMethod: seen ? 'mikrotik-arp' : 'unmonitored',
+      online: seen,
+      host: seenIp,
+      hint: seen
+        ? 'Visible en ARP/DHCP del router del nodo.'
+        : 'Sin SNMP y no aparece en ARP/DHCP del nodo. Normal si el WiFi del cliente está detrás del CPE (NAT). Internet del abonado no depende de este estado.',
+    };
+
+    const patch = {
+      status: nextStatus,
+      lastSeen: seen ? new Date() : prev.lastSeen,
+      credentials: {
+        ...(prev.credentials || {}),
+        lastSnmp,
+        consecutiveFailures: seen ? 0 : (prev.credentials?.consecutiveFailures || 0),
+      },
+      updatedAt: new Date(),
+    };
+    await db.update(equipment).set(patch).where(eq(equipment.id, device.id));
+    byId.set(device.id, { ...prev, ...patch });
+  }
+
+  return items.map((e) => attachEquipmentDisplay(byId.get(e.id) || e));
+}
+
 /** Poll stale CPE/AP devices and update DB (max N per request to avoid timeouts). */
 export async function refreshStaleEquipmentStatus(items, orgId, { maxPoll = 15 } = {}) {
   const routerBySite = await buildRouterBySiteMap(items, orgId);
   const stale = filterPollableFromRender(items, routerBySite)
     .filter((e) => isPollStale(e.lastSeen) && !isInFailureBackoff(e));
-  if (!stale.length) return items.map(attachEquipmentDisplay);
 
-  const toPoll = stale.slice(0, maxPoll);
-  // Va en la ruta de la petición: presupuesto corto, el resto sigue con su último estado.
-  const results = await pollEquipmentList(toPoll, routerBySite, {
-    routerBudgetMs: 6000,
-    siteDevices: items,
-  });
-  return applyPollResults(items, results);
+  let next = items;
+  if (stale.length) {
+    const toPoll = stale.slice(0, maxPoll);
+    const results = await pollEquipmentList(toPoll, routerBySite, {
+      routerBudgetMs: 6000,
+      siteDevices: items,
+    });
+    next = await applyPollResults(items, results);
+  }
+
+  return refreshLanPresence(next, orgId);
 }
 
 /** Fuerza poll SNMP de equipos alcanzables desde Render (no sitios EdgeRouter-agent). */
 export async function forceRefreshEquipmentStatus(items, orgId, { maxPoll = 15 } = {}) {
   const routerBySite = await buildRouterBySiteMap(items, orgId);
   const pollable = filterPollableFromRender(items, routerBySite);
-  if (!pollable.length) return items.map(attachEquipmentDisplay);
-
-  const toPoll = pollable.slice(0, maxPoll);
-  const results = await pollEquipmentList(toPoll, routerBySite, {
-    routerBudgetMs: 20000,
-    siteDevices: items,
-  });
-  return applyPollResults(items, results);
+  let next = items;
+  if (pollable.length) {
+    const toPoll = pollable.slice(0, maxPoll);
+    const results = await pollEquipmentList(toPoll, routerBySite, {
+      routerBudgetMs: 20000,
+      siteDevices: items,
+    });
+    next = await applyPollResults(items, results);
+  }
+  return refreshLanPresence(next, orgId);
 }
 
 export async function pollAllSnmpForOrg(orgId) {
