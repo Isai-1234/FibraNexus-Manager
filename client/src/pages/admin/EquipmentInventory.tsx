@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import {
-  AlertTriangle, CheckCircle, RefreshCw, Router, Server,
-  Trash2, Wifi, XCircle, Antenna, Network,
+  RefreshCw, Router, Server, Trash2, Wifi, Antenna, Network, Search,
 } from 'lucide-react'
 import DeviceIpLink from '../../components/DeviceIpLink'
 
@@ -12,82 +11,48 @@ type Props = {
   onOpenClient?: (clientId: number) => void
 }
 
-type FilterId = 'all' | 'router' | 'ap' | 'cpe' | 'switch' | 'olt' | 'other'
-
-const TYPE_LABEL: Record<string, string> = {
-  router: 'Router',
-  switch: 'Switch',
-  olt: 'OLT',
-  ont: 'ONT',
-  ap: 'Access Point',
-  cpe: 'CPE / Antena',
-  server: 'Servidor',
-  other: 'Otro',
-  station: 'CPE abonado',
-}
+type FilterId = 'all' | 'router' | 'ap' | 'cpe' | 'switch' | 'olt'
 
 function TypeIcon({ role }: { role?: string }) {
-  if (role === 'router') return <Router className="h-3.5 w-3.5 text-violet-600" />
-  if (role === 'ap') return <Antenna className="h-3.5 w-3.5 text-teal-600" />
-  if (role === 'station' || role === 'cpe') return <Wifi className="h-3.5 w-3.5 text-sky-600" />
-  if (role === 'switch' || role === 'olt') return <Server className="h-3.5 w-3.5 text-slate-600" />
-  return <Network className="h-3.5 w-3.5 text-slate-500" />
+  const cls = 'h-4 w-4'
+  if (role === 'router') return <Router className={`${cls} text-violet-500`} />
+  if (role === 'ap') return <Antenna className={`${cls} text-teal-500`} />
+  if (role === 'station' || role === 'cpe') return <Wifi className={`${cls} text-sky-500`} />
+  if (role === 'switch' || role === 'olt') return <Server className={`${cls} text-slate-500`} />
+  return <Network className={`${cls} text-slate-400`} />
 }
 
-function Meter({ value, tone }: { value: number | null; tone: 'cpu' | 'ram' }) {
-  if (value == null || !Number.isFinite(value)) {
-    return <span className="text-ink-muted text-xs">—</span>
+function statusMeta(item: any): { dot: string; label: string; title?: string } {
+  if (item.alertKind === 'link' || item.alertKind === 'down') {
+    return { dot: 'bg-red-500', label: 'Offline', title: item.snmpError || 'Offline' }
   }
+  if (item.alertKind === 'cpu' || item.alertKind === 'warn') {
+    return { dot: 'bg-amber-400', label: 'Alerta', title: 'Requiere atención' }
+  }
+  if (item.inventoryOnline) {
+    return { dot: 'bg-emerald-500', label: 'Online' }
+  }
+  return { dot: 'bg-slate-300', label: 'Sin mon.', title: 'Sin SNMP / sin monitoreo' }
+}
+
+function Meter({ value }: { value: number | null }) {
+  if (value == null || !Number.isFinite(value)) return null
   const clamped = Math.max(0, Math.min(100, value))
-  const color = clamped >= 85
-    ? 'bg-red-500'
-    : clamped >= 65
-      ? (tone === 'cpu' ? 'bg-orange-500' : 'bg-amber-500')
-      : (tone === 'cpu' ? 'bg-blue-500' : 'bg-emerald-500')
+  const bar = clamped >= 85 ? 'bg-red-400' : clamped >= 65 ? 'bg-amber-400' : 'bg-slate-400'
   return (
-    <div className="min-w-[72px]">
-      <div className="flex items-center justify-between text-[10px] text-ink-muted mb-0.5">
-        <span>{clamped}%</span>
+    <div className="flex items-center gap-2 min-w-[88px]">
+      <div className="flex-1 h-1 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+        <div className={`h-full rounded-full ${bar}`} style={{ width: `${clamped}%` }} />
       </div>
-      <div className="h-1.5 rounded-full bg-surface-raised overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${clamped}%` }} />
-      </div>
+      <span className="text-[11px] tabular-nums text-ink-muted w-7 text-right">{clamped}%</span>
     </div>
   )
 }
 
-function StatusCell({ item }: { item: any }) {
-  const online = Boolean(item.inventoryOnline)
-  if (item.alertKind === 'link' || item.alertKind === 'down') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-red-600" title={item.snmpError || 'Offline'}>
-        <XCircle className="h-4 w-4" />
-        <span className="text-xs font-medium">Offline</span>
-      </span>
-    )
-  }
-  if (item.alertKind === 'cpu' || item.alertKind === 'warn') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-amber-600" title="Requiere atención">
-        <AlertTriangle className="h-4 w-4" />
-        <span className="text-xs font-medium">Alerta</span>
-      </span>
-    )
-  }
-  if (online) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-emerald-600">
-        <CheckCircle className="h-4 w-4" />
-        <span className="text-xs font-medium">Online</span>
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-ink-muted" title="Sin SNMP / sin monitoreo">
-      <span className="w-2 h-2 rounded-full bg-slate-400" />
-      <span className="text-xs font-medium">Sin mon.</span>
-    </span>
-  )
+function signalClass(dbm: number) {
+  if (dbm >= -60) return 'text-emerald-600'
+  if (dbm >= -70) return 'text-amber-600'
+  return 'text-orange-600'
 }
 
 export default function EquipmentInventory({ API, onOpenRedIsp, onOpenClient }: Props) {
@@ -157,13 +122,9 @@ export default function EquipmentInventory({ API, onOpenRedIsp, onOpenClient }: 
       const role = item.roleHint || item.type
       if (filter === 'router' && item.type !== 'router') return false
       if (filter === 'ap' && role !== 'ap') return false
-      if (filter === 'cpe' && !(item.type === 'cpe' || role === 'station')) return false
+      if (filter === 'cpe' && !(role === 'station' || (item.type === 'cpe' && role !== 'ap'))) return false
       if (filter === 'switch' && item.type !== 'switch') return false
       if (filter === 'olt' && item.type !== 'olt') return false
-      if (filter === 'other' && ['router', 'cpe', 'ap', 'switch', 'olt'].includes(item.type) && role !== 'other') {
-        if (role === 'ap' || role === 'station') return false
-        if (item.type !== 'other' && item.type !== 'server' && item.type !== 'ont') return false
-      }
       if (!q) return true
       const blob = [
         item.name, item.brand, item.model, item.ipAddress, item.displayIp,
@@ -176,206 +137,204 @@ export default function EquipmentInventory({ API, onOpenRedIsp, onOpenClient }: 
   const chips: { id: FilterId; label: string; count: number }[] = [
     { id: 'all', label: 'Todos', count: stats?.total ?? items.length },
     { id: 'router', label: 'Routers', count: stats?.byType?.router ?? 0 },
-    { id: 'ap', label: 'APs / sectoriales', count: stats?.byType?.ap ?? 0 },
+    { id: 'ap', label: 'Sectoriales', count: stats?.byType?.ap ?? 0 },
     { id: 'cpe', label: 'CPE', count: stats?.byType?.cpe ?? 0 },
     { id: 'switch', label: 'Switches', count: stats?.byType?.switch ?? 0 },
     { id: 'olt', label: 'OLTs', count: stats?.byType?.olt ?? 0 },
-  ]
+  ].filter((c) => c.id === 'all' || c.count > 0)
 
   return (
-    <div className="space-y-4">
-      <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-sm text-blue-900 flex flex-wrap items-center justify-between gap-2">
-        <span>
-          <strong>Inventario operativo</strong> — listado plano de toda la red.
-          La jerarquía torre → sectorial → casa está en <strong>Red ISP</strong>.
-        </span>
-        {onOpenRedIsp && (
-          <button
-            type="button"
-            onClick={onOpenRedIsp}
-            className="px-3 py-1.5 bg-surface-card border border-blue-200 rounded-lg text-blue-700 text-xs font-medium hover:bg-blue-50"
-          >
-            Ir a Red ISP →
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-ink">
-            <span className="font-semibold tabular-nums">{stats?.total ?? items.length}</span> dispositivos
-            {(stats?.offline ?? 0) > 0 && (
-              <> — <span className="text-red-600 font-medium tabular-nums">{stats.offline} offline</span></>
-            )}
-            {(stats?.alerts ?? 0) > 0 && (
-              <> — <span className="text-amber-600 font-medium tabular-nums">{stats.alerts} alertas</span></>
-            )}
+    <div className="space-y-5">
+      {/* Cabecera quieta */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <p className="text-sm text-ink-muted">
+            <span className="text-ink font-semibold tabular-nums">{stats?.total ?? items.length}</span>
+            {' '}equipos
           </p>
+          {(stats?.offline ?? 0) > 0 && (
+            <span className="text-sm text-red-600/90 tabular-nums">{stats.offline} offline</span>
+          )}
+          {(stats?.alerts ?? 0) > 0 && (
+            <span className="text-sm text-amber-600/90 tabular-nums">{stats.alerts} alertas</span>
+          )}
+          {onOpenRedIsp && (
+            <button
+              type="button"
+              onClick={onOpenRedIsp}
+              className="text-sm text-ink-muted hover:text-teal-700 transition"
+            >
+              Ver topología →
+            </button>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="px-3 py-2 border border-line rounded-lg text-sm hover:bg-surface-raised flex items-center gap-1.5 text-ink"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Actualizar
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-raised transition"
+          title="Actualizar"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
+      {/* Filtros tipo pestaña + búsqueda */}
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-line">
         {chips.map((c) => (
           <button
             key={c.id}
             type="button"
             onClick={() => setFilter(c.id)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+            className={`px-3 py-2 text-sm transition border-b-2 -mb-px ${
               filter === c.id
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-surface-card text-ink-soft border-line hover:bg-surface-raised'
+                ? 'border-teal-600 text-ink font-medium'
+                : 'border-transparent text-ink-muted hover:text-ink'
             }`}
           >
-            {c.label}: {c.count}
+            {c.label}
+            <span className={`ml-1.5 tabular-nums text-xs ${filter === c.id ? 'text-teal-700' : 'text-ink-muted/70'}`}>
+              {c.count}
+            </span>
           </button>
         ))}
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar nombre, IP, nodo, abonado…"
-          className="ml-auto min-w-[220px] flex-1 max-w-sm px-3 py-1.5 text-sm border border-line rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-        />
+        <div className="ml-auto relative mb-1.5">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-muted" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar…"
+            className="w-44 sm:w-56 pl-8 pr-3 py-1.5 text-sm rounded-lg border-0 bg-surface-raised/60 text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-teal-500/40"
+          />
+        </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
+        <div className="text-sm text-red-600 bg-red-50/80 rounded-lg px-3 py-2">{error}</div>
       )}
 
-      <div className="bg-surface-card rounded-xl shadow-sm border border-line overflow-hidden">
+      <div className="rounded-xl border border-line/80 bg-surface-card overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600/70" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Server className="h-12 w-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium text-ink-muted">Sin equipos en este filtro</p>
-            <p className="text-sm mt-1">Agrégalos desde Red ISP (por nodo) o Routers y agentes.</p>
+          <div className="text-center py-20 text-ink-muted">
+            <Server className="h-10 w-10 mx-auto mb-3 opacity-25" />
+            <p className="text-sm">Sin equipos en este filtro</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px]">
-              <thead className="bg-surface border-b">
-                <tr>
-                  {['Estado', 'Equipo', 'Tipo', 'Modelo', 'IP', 'Uptime', 'CPU', 'RAM', 'Señal', 'Clientes', 'Acciones'].map((h) => (
-                    <th key={h} className="text-left px-3 py-3 text-[11px] font-semibold text-ink-muted uppercase tracking-wider whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
+            <table className="w-full min-w-[820px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-ink-muted/80">
+                  <th className="pl-4 pr-2 py-2.5 font-medium w-8" />
+                  <th className="px-2 py-2.5 font-medium">Equipo</th>
+                  <th className="px-2 py-2.5 font-medium">IP</th>
+                  <th className="px-2 py-2.5 font-medium hidden lg:table-cell">Uptime</th>
+                  <th className="px-2 py-2.5 font-medium">Carga</th>
+                  <th className="px-2 py-2.5 font-medium">Señal</th>
+                  <th className="px-2 py-2.5 font-medium">Clientes</th>
+                  <th className="pl-2 pr-4 py-2.5 font-medium w-20" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody>
                 {filtered.map((item) => {
                   const role = item.roleHint || item.type
+                  const st = statusMeta(item)
                   const showRadio = role === 'ap' || role === 'station' || item.type === 'cpe'
                   const showClients = role === 'ap' && item.stationCount != null
                   const showCpuRam = item.type === 'router'
+                  const model = [item.brand, item.model].filter(Boolean).join(' ')
                   return (
-                    <tr key={item.id} className="hover:bg-blue-50/30 transition">
-                      <td className="px-3 py-3"><StatusCell item={item} /></td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-start gap-2 min-w-0">
-                          <span className="mt-0.5 shrink-0"><TypeIcon role={role} /></span>
+                    <tr
+                      key={item.id}
+                      className="group border-t border-line/50 hover:bg-surface-raised/40 transition-colors"
+                    >
+                      <td className="pl-4 pr-1 py-3 align-middle">
+                        <span
+                          className={`inline-block w-2 h-2 rounded-full ${st.dot}`}
+                          title={st.title || st.label}
+                        />
+                      </td>
+                      <td className="px-2 py-3 align-middle">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="shrink-0 opacity-80"><TypeIcon role={role} /></span>
                           <div className="min-w-0">
-                            <p className="font-medium text-ink text-sm truncate">{item.name}</p>
-                            <p className="text-[11px] text-ink-muted truncate">
+                            <p className="text-sm font-medium text-ink truncate leading-snug">{item.name}</p>
+                            <p className="text-[11px] text-ink-muted truncate mt-0.5">
                               {item.siteName || 'Sin nodo'}
+                              {model ? ` · ${model}` : ''}
                               {item.clientName ? ` · ${item.clientName}` : ''}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3">
-                        <span className="px-2 py-0.5 rounded-md bg-surface-raised text-ink-soft text-[11px] font-medium">
-                          {TYPE_LABEL[role] || TYPE_LABEL[item.type] || item.type}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-ink-muted">
-                        {[item.brand, item.model].filter(Boolean).join(' ') || '—'}
-                      </td>
-                      <td className="px-3 py-3 text-xs">
+                      <td className="px-2 py-3 align-middle text-sm">
                         {(item.displayIp || item.ipAddress) ? (
                           <DeviceIpLink
                             ip={item.displayIp || item.ipAddress}
-                            className="font-mono text-blue-600 hover:underline"
-                            showIcon
+                            className="font-mono text-[13px] text-ink-soft hover:text-teal-700"
                           />
                         ) : (
-                          <span className="text-ink-muted">—</span>
+                          <span className="text-ink-muted/40">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-xs text-ink-muted font-mono whitespace-nowrap">
-                        {item.snmpUptime || item.credentials?.lastRouterInfo?.uptime || '—'}
+                      <td className="px-2 py-3 align-middle text-[12px] font-mono text-ink-muted hidden lg:table-cell whitespace-nowrap">
+                        {item.snmpUptime || item.credentials?.lastRouterInfo?.uptime || (
+                          <span className="text-ink-muted/40">—</span>
+                        )}
                       </td>
-                      <td className="px-3 py-3">
-                        {showCpuRam ? <Meter value={item.cpuLoad} tone="cpu" /> : <span className="text-ink-muted text-xs">—</span>}
+                      <td className="px-2 py-3 align-middle">
+                        {showCpuRam ? (
+                          <div className="space-y-1.5">
+                            <Meter value={item.cpuLoad} />
+                            <Meter value={item.ramPercent} />
+                          </div>
+                        ) : (
+                          <span className="text-ink-muted/40 text-xs">—</span>
+                        )}
                       </td>
-                      <td className="px-3 py-3">
-                        {showCpuRam ? <Meter value={item.ramPercent} tone="ram" /> : <span className="text-ink-muted text-xs">—</span>}
-                      </td>
-                      <td className="px-3 py-3 text-xs whitespace-nowrap">
+                      <td className="px-2 py-3 align-middle text-sm tabular-nums whitespace-nowrap">
                         {showRadio && item.wirelessSignal != null ? (
-                          <span className={
-                            item.wirelessSignal >= -60 ? 'text-emerald-600 font-medium'
-                              : item.wirelessSignal >= -70 ? 'text-amber-600 font-medium'
-                                : 'text-orange-600 font-medium'
-                          }>
-                            {item.wirelessSignal} dBm
+                          <span className={`font-medium ${signalClass(item.wirelessSignal)}`}>
+                            {item.wirelessSignal}
+                            <span className="text-ink-muted font-normal text-[11px] ml-0.5">dBm</span>
                           </span>
                         ) : (
-                          <span className="text-ink-muted">—</span>
+                          <span className="text-ink-muted/40">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-xs tabular-nums">
+                      <td className="px-2 py-3 align-middle text-sm">
                         {showClients ? (
-                          <span className="font-medium text-ink">{item.stationCount}</span>
+                          <span className="tabular-nums text-ink">{item.stationCount}</span>
                         ) : item.clientId && onOpenClient ? (
                           <button
                             type="button"
                             onClick={() => onOpenClient(item.clientId)}
-                            className="text-blue-600 hover:underline"
+                            className="text-ink-muted hover:text-teal-700 text-[13px] transition"
                           >
-                            Ver
+                            Abonado
                           </button>
                         ) : (
-                          <span className="text-ink-muted">—</span>
+                          <span className="text-ink-muted/40">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-0.5">
+                      <td className="pl-2 pr-3 py-3 align-middle">
+                        <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             type="button"
-                            title="Actualizar estado"
+                            title="Actualizar"
                             onClick={() => void refreshOne(item.id)}
-                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                            className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-raised"
                           >
                             <RefreshCw className={`h-3.5 w-3.5 ${refreshingId === item.id ? 'animate-spin' : ''}`} />
                           </button>
-                          {item.clientId && onOpenClient && (
-                            <button
-                              type="button"
-                              title="Ver abonado"
-                              onClick={() => onOpenClient(item.clientId)}
-                              className="p-1.5 text-gray-400 hover:text-sky-600 hover:bg-sky-50 rounded transition text-[11px] font-medium px-2"
-                            >
-                              Abonado
-                            </button>
-                          )}
                           <button
                             type="button"
                             title="Eliminar"
                             onClick={() => void removeOne(item.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                            className="p-1.5 rounded-md text-ink-muted hover:text-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -389,11 +348,6 @@ export default function EquipmentInventory({ API, onOpenRedIsp, onOpenClient }: 
           </div>
         )}
       </div>
-
-      <p className="text-[11px] text-ink-muted">
-        CPU/RAM solo en routers MikroTik con heartbeat. Señal en antenas con SNMP o tabla de estaciones del AP.
-        Para crear o editar equipos por nodo, usa Red ISP.
-      </p>
     </div>
   )
 }
