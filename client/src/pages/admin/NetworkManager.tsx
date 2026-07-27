@@ -120,6 +120,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   const [siteForm, setSiteForm] = useState<any>({ type: 'node' })
   const [equipForm, setEquipForm] = useState<any>({ type: 'cpe', brand: 'Ubiquiti' })
   const [routerNetwork, setRouterNetwork] = useState<any>(null)
+  const [routerNetworkLoading, setRouterNetworkLoading] = useState(false)
   const [selectedRouter, setSelectedRouter] = useState<any>(null)
   const [routerPanelTab, setRouterPanelTab] = useState<'subscribers' | 'infra'>('subscribers')
   const [routers, setRouters] = useState<any[]>([])
@@ -519,13 +520,19 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
   async function loadRouterNetwork(router: any, tab: 'subscribers' | 'infra' = 'subscribers') {
     setSelectedRouter(router)
     setRouterPanelTab(tab)
+    if (tab === 'infra') {
+      setRouterNetworkLoading(false)
+      return
+    }
+    setRouterNetworkLoading(true)
     setRouterNetwork(null)
-    if (tab === 'infra') return
     try {
       const res = await api().get(`/sites/router/${router.id}/network`)
       setRouterNetwork(res.data)
     } catch (e: any) {
       setRouterNetwork({ error: e.response?.data?.error || e.message })
+    } finally {
+      setRouterNetworkLoading(false)
     }
   }
 
@@ -628,12 +635,11 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
               onSelectEquip={(eq) => {
                 setSelectedEquip(eq)
                 if (eq?.type === 'router') {
-                  setSelectedRouter(eq)
-                  setRouterPanelTab('subscribers')
-                  setRouterNetwork(null)
+                  void loadRouterNetwork(eq, 'subscribers')
                 } else {
                   setSelectedRouter(null)
                   setRouterNetwork(null)
+                  setRouterNetworkLoading(false)
                 }
               }}
               onOpenClient={onOpenClient ? (id) => onOpenClient(id, 'overview') : undefined}
@@ -914,16 +920,10 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                             {routerNetwork.error}
                           </div>
-                        ) : !routerNetwork ? (
-                          <div className="text-center py-10 space-y-3">
-                            <p className="text-sm text-ink-muted">Carga las colas y sesiones PPPoE de este router.</p>
-                            <button
-                              type="button"
-                              onClick={() => loadRouterNetwork(eq, 'subscribers')}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                            >
-                              Cargar abonados
-                            </button>
+                        ) : routerNetworkLoading || !routerNetwork ? (
+                          <div className="flex flex-col items-center justify-center py-12 gap-2 text-ink-muted">
+                            <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-sky-600" />
+                            <p className="text-sm">Cargando colas y PPPoE…</p>
                           </div>
                         ) : (
                           <div className="space-y-5">
