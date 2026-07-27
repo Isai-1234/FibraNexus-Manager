@@ -144,7 +144,13 @@ Offline pinta el círculo en rojo para todos; el rol se sigue leyendo por la for
 - Usuario API en router: `fibranexus` (group full en lab; endurecer group en producto).
 - VPS FibraNexus: `134.209.43.175`.
 
-## Dashboard — Mbps en vivo (2026-07-26)
+## Aislamiento multi-tenant — colas MikroTik (2026-07-26)
+
+El L009 de lab puede tener Simple Queues de **varios ISP** (mismo router físico).
+`GET /api/sites/router/:id/network` ahora **filtra** colas/PPPoE a servicios de la org
+actual (IP, `queueName`, usuario PPPoE). Lo ajeno solo cuenta en `foreignOnRouter`
+(sin nombres). No mostrar PII de otro ISP en el panel lateral.
+
 
 En **Centro de operaciones** el gráfico «Uso de ancho de banda» consulta
 `GET /api/edgeos/:routerId/bandwidth` cada ~3 s (MikroTik `monitor-traffic` o heartbeat).

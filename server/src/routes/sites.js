@@ -7,6 +7,7 @@ import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { connectedAgents } from './routers.js';
 import { inferConnectionMethod } from '../lib/tenant.js';
 import { listPppoeActive, listPppoeSecrets, listSimpleQueues } from '../lib/mikrotikClient.js';
+import { filterRouterNetworkForOrg, loadOrgSubscriberKeys } from '../lib/tenantNetworkFilter.js';
 import { loadRouter } from '../lib/networkProvision.js';
 import { assignEquipmentToClient, enrichEquipmentWithClients, syncEquipmentToClientService } from '../lib/equipmentClientLink.js';
 import { attachSnmpDisplay, isPollStale, isPollable } from '../lib/equipmentStatus.js';
@@ -441,17 +442,28 @@ sitesRouter.get('/router/:id/network', requireRole('admin', 'technician'), async
     const router = await loadRouter(routerId, orgId);
     if (!router) return res.status(404).json({ error: 'Router no encontrado' });
 
-    const [secrets, queues, active] = await Promise.all([
+    const [secrets, queues, active, orgKeys] = await Promise.all([
       listPppoeSecrets(router).catch(() => []),
       listSimpleQueues(router).catch(() => []),
       listPppoeActive(router).catch(() => []),
+      loadOrgSubscriberKeys(orgId, { routerId }),
     ]);
+
+    // Crítico multi-tenant: el MikroTik físico puede tener colas de otro ISP (lab compartido).
+    // Solo devolvemos abonados de ESTA organización.
+    const filtered = filterRouterNetworkForOrg({
+      pppoeSecrets: secrets,
+      simpleQueues: queues,
+      pppoeActive: active,
+    }, orgKeys);
 
     res.json({
       router: { id: router.id, name: router.name, status: router.status },
-      pppoeSecrets: Array.isArray(secrets) ? secrets : [secrets],
-      simpleQueues: Array.isArray(queues) ? queues : [queues],
-      pppoeActive: Array.isArray(active) ? active : [active],
+      pppoeSecrets: filtered.pppoeSecrets,
+      simpleQueues: filtered.simpleQueues,
+      pppoeActive: filtered.pppoeActive,
+      foreignOnRouter: filtered.foreignOnRouter,
+      orgServiceCount: orgKeys.serviceCount,
     });
   } catch (error) {
     res.status(503).json({ error: 'No se pudo leer red del router: ' + error.message });
