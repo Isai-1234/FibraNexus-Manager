@@ -588,17 +588,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   const statusColor: Record<string, string> = {
-    active: 'bg-green-100 text-green-700', suspended: 'bg-yellow-100 text-yellow-700',
-    cancelled: 'bg-red-100 text-red-700', pending: 'bg-blue-100 text-blue-700', cut: 'bg-red-100 text-red-700',
-    paid: 'bg-green-100 text-green-700', overdue: 'bg-red-100 text-red-700',
-    open: 'bg-yellow-100 text-yellow-700', in_progress: 'bg-blue-100 text-blue-700',
-    resolved: 'bg-green-100 text-green-700', closed: 'bg-surface-raised text-gray-600',
-    online: 'bg-green-100 text-green-700', offline: 'bg-surface-raised text-gray-600',
-    maintenance: 'bg-yellow-100 text-yellow-700', error: 'bg-red-100 text-red-700',
-    critical: 'bg-red-100 text-red-700', high: 'bg-orange-100 text-orange-700',
-    medium: 'bg-blue-100 text-blue-700', low: 'bg-surface-raised text-gray-600',
-    individual: 'bg-blue-100 text-blue-700', business: 'bg-purple-100 text-purple-700',
-    prospect: 'bg-slate-100 text-slate-700', pending_install: 'bg-sky-100 text-sky-800',
+    active: 'fn-badge-ok', suspended: 'fn-badge-warn',
+    cancelled: 'fn-badge-danger', pending: 'fn-badge-info', cut: 'fn-badge-danger',
+    paid: 'fn-badge-ok', overdue: 'fn-badge-danger',
+    open: 'fn-badge-warn', in_progress: 'fn-badge-info',
+    resolved: 'fn-badge-ok', closed: 'fn-badge-muted',
+    online: 'fn-badge-ok', offline: 'fn-badge-muted',
+    maintenance: 'fn-badge-warn', error: 'fn-badge-danger',
+    critical: 'fn-badge-danger', high: 'fn-badge-warn',
+    medium: 'fn-badge-info', low: 'fn-badge-muted',
+    individual: 'fn-badge-info', business: 'fn-badge-info',
+    prospect: 'fn-badge-muted', pending_install: 'fn-badge-info',
   }
 
   const statusLabel: Record<string, string> = {
@@ -625,12 +625,12 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   const connectionColor: Record<string, string> = {
-    online: 'bg-green-100 text-green-700',
-    offline: 'bg-orange-100 text-orange-700',
-    suspended: 'bg-yellow-100 text-yellow-700',
-    static: 'bg-blue-100 text-blue-700',
-    none: 'bg-surface-raised text-ink-muted',
-    unknown: 'bg-surface-raised text-ink-muted',
+    online: 'fn-badge-ok',
+    offline: 'fn-badge-warn',
+    suspended: 'fn-badge-warn',
+    static: 'fn-badge-info',
+    none: 'fn-badge-muted',
+    unknown: 'fn-badge-muted',
   }
 
   const logout = () => { localStorage.removeItem('token'); window.location.href = '/login' }
@@ -1146,12 +1146,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     />
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-[11px] uppercase tracking-wide text-ink-muted font-medium">Estado CRM</span>
+                    <span className="text-[11px] uppercase tracking-wide text-ink-muted font-medium">CRM</span>
                     {[
                       { id: 'all', label: 'Todos' },
                       { id: 'active', label: 'Activos' },
                       { id: 'pending_install', label: 'Instalación' },
-                      { id: 'prospect', label: 'Prospectos' },
                       { id: 'suspended', label: 'Suspendidos' },
                       { id: 'cut', label: 'Cortados' },
                       { id: 'cancelled', label: 'Baja' },
@@ -1162,14 +1161,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         onClick={() => setClientLifecycleFilter(f.id)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
                           clientLifecycleFilter === f.id
-                            ? 'bg-blue-600 text-white border-blue-600'
+                            ? 'bg-sky-600 text-white border-sky-600'
                             : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
                         }`}
                       >
                         {f.label}
                       </button>
                     ))}
-                    <span className="text-ink-muted mx-1">|</span>
+                    <span className="text-ink-muted/40 mx-1">|</span>
                     {[
                       { id: 'all', label: 'Red: todas' },
                       { id: 'online', label: 'Online' },
@@ -1256,97 +1255,87 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   </button>
                 </div>
               ) : activeTab === 'clients' ? (
-                <div className="divide-y">
-                  {filteredClients.map((item: any) => (
-                    <div key={item.id} className="p-5 hover:bg-slate-50/80 transition flex flex-col lg:flex-row lg:items-center gap-4">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
-                          {(item.fullName || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-semibold text-ink truncate">{item.fullName || 'Sin nombre'}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${statusColor[item.lifecycleStatus] || 'bg-surface-raised text-ink-muted'}`}>
-                              {statusLabel[item.lifecycleStatus] || item.lifecycleStatus || 'Prospecto'}
-                            </span>
+                <div className="divide-y divide-line/70">
+                  {filteredClients.map((item: any) => {
+                    const life = item.lifecycleStatus || 'prospect'
+                    const showLife = life !== 'active'
+                    const conn = item.connectionStatus || 'unknown'
+                    const highAlerts = (item.alerts || []).filter((a: any) => a.severity === 'high')
+                    const debt = Number(item.pendingAmount || 0) > 0
+                    return (
+                      <div
+                        key={item.id}
+                        className="px-4 py-3.5 sm:px-5 hover:bg-surface-raised/50 transition flex flex-col sm:flex-row sm:items-center gap-3"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-sky-500/15 text-sky-700 dark:text-sky-400 flex items-center justify-center font-semibold text-sm shrink-0">
+                            {(item.fullName || '?').charAt(0).toUpperCase()}
                           </div>
-                          <p className="text-sm text-ink-muted truncate">{item.email}{item.city ? ` · ${item.city}` : ''}</p>
-                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            {item.siteName && (
-                              <span className="text-xs text-ink-muted inline-flex items-center gap-1">
-                                <MapPin className="h-3 w-3" /> {item.siteName}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-ink truncate">{item.fullName || 'Sin nombre'}</p>
+                              {showLife && (
+                                <span className={statusColor[life] || 'fn-badge-muted'}>
+                                  {statusLabel[life] || life}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-ink-muted truncate mt-0.5">
+                              {item.email}
+                              {item.city ? ` · ${item.city}` : ''}
+                              {item.siteName ? ` · ${item.siteName}` : ''}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                              <span className="text-ink-soft truncate max-w-[180px]">
+                                {item.planName || 'Sin plan'}
                               </span>
-                            )}
-                            {item.ipAddress ? (
-                              <DeviceIpLink
-                                ip={item.ipAddress}
-                                className="text-xs font-mono text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition"
-                                showIcon
-                              >
-                                <Router className="h-3 w-3 shrink-0" />
-                                {item.ipAddress}
-                              </DeviceIpLink>
-                            ) : (
-                              <span className="text-xs text-gray-400">Sin IP asignada</span>
-                            )}
+                              {item.ipAddress ? (
+                                <DeviceIpLink
+                                  ip={item.ipAddress}
+                                  className="font-mono text-sky-700 dark:text-sky-400 hover:underline"
+                                  showIcon
+                                >
+                                  <Router className="h-3 w-3 shrink-0 opacity-70" />
+                                  {item.ipAddress}
+                                </DeviceIpLink>
+                              ) : (
+                                <span className="text-ink-muted/50">Sin IP</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 lg:max-w-md">
-                        {item.planName ? (
-                          <span className="text-sm text-ink-soft bg-surface border px-2.5 py-1 rounded-lg">
-                            {item.planName}
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium ${
-                              (item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : (item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')
-                                  ? 'bg-red-100 text-red-700'
-                                  : (statusColor[item.serviceStatus] || 'bg-surface-raised')
-                            }`}>
-                              {(item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')
-                                ? 'Suspendido'
-                                : (item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')
-                                  ? 'Cortado'
-                                  : (statusLabel[item.serviceStatus] || item.serviceStatus)}
+
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end shrink-0">
+                          <span className={connectionColor[conn] || 'fn-badge-muted'} title={item.connectionDetail || ''}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              conn === 'online' ? 'bg-emerald-500' : conn === 'offline' ? 'bg-amber-500' : 'bg-slate-400'
+                            }`} />
+                            {connectionLabel[conn] || conn}
+                          </span>
+                          {debt ? (
+                            <span className="fn-badge-danger tabular-nums">
+                              ${Number(item.pendingAmount).toLocaleString('es-CL')}
                             </span>
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-400">Sin plan</span>
-                        )}
-                        <span
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${connectionColor[item.connectionStatus] || 'bg-surface-raised'}`}
-                          title={item.connectionDetail || ''}
-                        >
-                          {connectionLabel[item.connectionStatus] || item.connectionStatus}
-                        </span>
-                        {item.pendingAmount > 0 && (
-                          <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded-lg">
-                            ${item.pendingAmount.toLocaleString('es-CL')}
-                          </span>
-                        )}
-                        {item.openTickets > 0 && (
-                          <span className="text-xs font-medium text-amber-800 bg-amber-50 px-2 py-1 rounded-lg">
-                            {item.openTickets} ticket{item.openTickets > 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {!item.alerts?.length ? (
-                          <span className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded-lg font-medium">Al día</span>
-                        ) : item.alerts.map((a: any) => (
-                          <span key={a.type + a.label} className={`text-xs px-2 py-1 rounded-lg font-medium ${
-                            a.severity === 'high' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'
-                          }`}>
-                            {a.label}
-                          </span>
-                        ))}
+                          ) : (
+                            <span className="fn-badge-ok">Al día</span>
+                          )}
+                          {item.openTickets > 0 && (
+                            <span className="fn-badge-warn">{item.openTickets} ticket{item.openTickets > 1 ? 's' : ''}</span>
+                          )}
+                          {highAlerts.slice(0, 1).map((a: any) => (
+                            <span key={a.type + a.label} className="fn-badge-danger">{a.label}</span>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => openClientProfile(item.id)}
+                            className="ml-1 px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-medium hover:bg-sky-700"
+                          >
+                            Abrir
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => openClientProfile(item.id)}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">
-                          Abrir perfil
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="overflow-x-auto">

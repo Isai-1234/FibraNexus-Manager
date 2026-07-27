@@ -2,26 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tema oscuro por defecto — valores RGB para opacidades Tailwind */
+/*
+  Tokens de superficie / tipografía.
+  Oscuro: estilo dashboard de red (slate).
+  Día: papel cálido (no blanco puro).
+*/
 :root {
-  --bg-primary: 17 24 39;       /* gray-900 #111827 */
-  --bg-secondary: 31 41 55;     /* gray-800 #1f2937 */
-  --bg-tertiary: 55 65 81;      /* gray-700 #374151 */
-  --text-primary: 255 255 255;
-  --text-secondary: 209 213 219; /* gray-300 */
-  --text-muted: 156 163 175;     /* gray-400 */
-  --border: 55 65 81;            /* gray-700 */
+  --bg-primary: 15 23 42;        /* slate-900 */
+  --bg-secondary: 30 41 59;      /* slate-800 */
+  --bg-tertiary: 51 65 85;       /* slate-700 */
+  --text-primary: 248 250 252;   /* slate-50 */
+  --text-secondary: 203 213 225; /* slate-300 */
+  --text-muted: 148 163 184;     /* slate-400 */
+  --border: 51 65 85;            /* slate-700 */
+  --accent: 56 189 248;          /* sky-400 */
   color-scheme: dark;
 }
 
 :root.light {
-  --bg-primary: 249 250 251;     /* gray-50 */
-  --bg-secondary: 255 255 255;
-  --bg-tertiary: 243 244 246;    /* gray-100 */
-  --text-primary: 17 24 39;      /* gray-900 */
-  --text-secondary: 55 65 81;    /* gray-700 */
-  --text-muted: 107 114 128;     /* gray-500 */
-  --border: 229 231 235;         /* gray-200 */
+  /* Día cálido — piedra / papel, sin blanco clínico */
+  --bg-primary: 244 239 232;     /* #f4efe8 */
+  --bg-secondary: 251 247 241;   /* #fbf7f1 */
+  --bg-tertiary: 235 227 216;    /* #ebe3d8 */
+  --text-primary: 40 35 30;      /* #28231e */
+  --text-secondary: 84 74 64;    /* #544a40 */
+  --text-muted: 122 110 96;      /* #7a6e60 */
+  --border: 216 205 190;         /* #d8cdbe */
+  --accent: 2 132 199;           /* sky-600 */
   color-scheme: light;
 }
 
@@ -59,9 +66,25 @@ option {
   }
   .fn-input {
     @apply w-full border border-line rounded-lg px-3 py-2 bg-surface-card text-ink
-      placeholder:text-ink-muted focus:ring-2 focus:ring-blue-500 focus:outline-none;
+      placeholder:text-ink-muted focus:ring-2 focus:ring-sky-500/40 focus:outline-none;
   }
   .fn-btn-ghost {
     @apply px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium text-ink transition;
+  }
+  /* Badges que leen bien en día cálido y en oscuro */
+  .fn-badge-ok {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400;
+  }
+  .fn-badge-warn {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-500/15 text-amber-800 dark:text-amber-400;
+  }
+  .fn-badge-danger {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-500/15 text-red-700 dark:text-red-400;
+  }
+  .fn-badge-info {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-sky-500/15 text-sky-800 dark:text-sky-400;
+  }
+  .fn-badge-muted {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-raised text-ink-muted;
   }
 }
