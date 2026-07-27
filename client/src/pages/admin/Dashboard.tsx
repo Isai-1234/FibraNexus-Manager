@@ -1112,24 +1112,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {/* TABLAS GENERALES */}
           {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
             <div className="space-y-4">
-              {activeTab === 'plans' && (
-                <div className="bg-purple-50 border border-purple-100 rounded-xl px-5 py-3 text-sm text-purple-900">
-                  <strong>Catálogo comercial</strong> — Aquí defines los planes que vendes (ej. 20 Mbps, 100 Mbps).
-                  Los <strong>abonados</strong> están en otra pestaña; aquí solo creas productos.
-                </div>
-              )}
-              {activeTab === 'services' && (
-                <div className="bg-blue-50 border border-blue-100 rounded-xl px-5 py-4 text-sm text-blue-900 space-y-2">
-                  <p><strong>Auditoría técnica</strong> — Lista global para detectar IPs duplicadas o servicios suspendidos.</p>
-                  <p>Para crear servicios, asignar antenas, configurar DHCP/estática y ver facturas, entra al <strong>perfil del abonado</strong>:</p>
-                  <button onClick={() => goToTab('clients')} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                    Ir a Abonados → Gestionar
-                  </button>
-                  {Object.values(duplicateServiceIps).some((n) => n > 1) && (
-                    <p className="mt-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      ⚠️ Hay IPs duplicadas. Corrígelo desde el perfil del abonado afectado.
-                    </p>
-                  )}
+              {activeTab === 'services' && Object.values(duplicateServiceIps).some((n) => n > 1) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-sm text-amber-900">
+                  Hay IPs duplicadas entre servicios. Revísalas desde el perfil del abonado.
                 </div>
               )}
             <div className="bg-surface-card rounded-xl shadow-sm border border-line">

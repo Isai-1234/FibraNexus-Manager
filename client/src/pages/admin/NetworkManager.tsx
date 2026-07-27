@@ -927,12 +927,6 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                           </div>
                         ) : (
                           <div className="space-y-5">
-                            {routerNetwork.foreignOnRouter?.total > 0 && (
-                              <p className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                                Este MikroTik tiene {routerNetwork.foreignOnRouter.total} cola(s)/PPPoE que no pertenecen a tu ISP
-                                (se ocultan). En lab compartido es normal; en producción cada ISP debe usar su propio router.
-                              </p>
-                            )}
                             {(routerNetwork.simpleQueues || []).length > 0 ? (
                               <div>
                                 <p className="text-xs font-semibold text-ink-muted uppercase mb-3 tracking-wide">
@@ -952,7 +946,7 @@ export default function NetworkManager({ API, onBack, onOpenClient }: Props) {
                                 </div>
                               </div>
                             ) : (
-                              <p className="text-sm text-gray-400 text-center py-4">Sin colas de tu ISP en este router</p>
+                              <p className="text-sm text-gray-400 text-center py-4">Sin colas configuradas</p>
                             )}
                             <div className="border-t pt-4">
                               <p className="text-xs font-semibold text-ink-muted uppercase mb-2 tracking-wide">
