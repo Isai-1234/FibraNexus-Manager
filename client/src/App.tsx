@@ -56,14 +56,22 @@ function App() {
     setUser(res.data.user)
   }
 
-  if (loading) return (
-    <div className="flex h-screen items-center justify-center bg-gradient-to-br from-blue-600 to-purple-700">
-      <div className="text-white text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-        <p className="text-xl">Cargando FibraNexus Manager...</p>
+  if (loading) {
+    const onPortalPath = typeof window !== 'undefined'
+      && /^\/(portal|mora)\//.test(window.location.pathname)
+    return (
+      <div className={`flex h-screen items-center justify-center ${
+        onPortalPath ? 'bg-[#f3eee6]' : 'bg-gradient-to-br from-blue-600 to-indigo-800'
+      }`}>
+        <div className={`text-center ${onPortalPath ? 'text-slate-600' : 'text-white'}`}>
+          <div className={`animate-spin rounded-full h-10 w-10 border-2 mx-auto mb-3 ${
+            onPortalPath ? 'border-slate-300 border-b-slate-700' : 'border-white/40 border-b-white'
+          }`} />
+          <p className="text-sm font-medium">{onPortalPath ? 'Cargando tu cuenta…' : 'Cargando…'}</p>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <BrowserRouter>

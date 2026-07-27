@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { AlertTriangle, CreditCard, ArrowRight } from 'lucide-react'
+import { AlertTriangle, CreditCard, ArrowRight, LogIn } from 'lucide-react'
+import { getStoredTheme, applyTheme } from '../../lib/theme'
 
 const API = import.meta.env.VITE_API_URL || '/api'
 const DEFAULT_LOGIN = 'https://app.fibranexus.cl/login'
@@ -22,6 +23,13 @@ export default function SuspendedNotice() {
   const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
+    const root = document.documentElement
+    root.classList.remove('dark')
+    root.classList.add('light')
+    return () => { applyTheme(getStoredTheme()) }
+  }, [])
+
+  useEffect(() => {
     if (!slug) return
     let cancelled = false
     fetch(`${API}/public/mora/${encodeURIComponent(slug)}`)
@@ -39,13 +47,21 @@ export default function SuspendedNotice() {
   }, [slug])
 
   const orgName = brand?.orgName || null
-  const title = brand?.portalTitle || orgName || 'Servicio suspendido'
+  const title = orgName || 'Servicio limitado'
   const primary = brand?.primaryColor || '#2563eb'
-  const payUrl = brand?.payUrl || DEFAULT_LOGIN
+  const payUrl = brand?.payUrl || (slug ? `/portal/${slug}` : DEFAULT_LOGIN)
+
+  useEffect(() => {
+    document.title = orgName ? `${orgName} · Mora` : 'Servicio limitado'
+    return () => { document.title = 'FibraNexus Manager' }
+  }, [orgName])
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
-      <div className="max-w-lg w-full bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+    <div
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{ background: 'linear-gradient(180deg, #f7f2ea 0%, #efe6da 100%)' }}
+    >
+      <div className="max-w-lg w-full bg-[#fbf7f1] rounded-2xl shadow-xl overflow-hidden border border-[#e5d9c8]">
         <div className="px-8 py-6 flex items-center gap-4" style={{ backgroundColor: primary }}>
           {brand?.logoUrl ? (
             <img src={brand.logoUrl} alt={orgName || 'ISP'} className="h-12 w-12 rounded-lg bg-white object-contain p-1" />
@@ -64,15 +80,15 @@ export default function SuspendedNotice() {
         </div>
 
         <div className="px-8 py-8 space-y-5">
-          <p className="text-gray-700 leading-relaxed">
+          <p className="text-slate-700 leading-relaxed">
             {orgName
-              ? `${orgName} limitó tu acceso por falta de pago. Desde aquí puedes entrar al portal y pagar.`
+              ? `${orgName} limitó tu acceso por falta de pago. Entra a tu cuenta para pagar y reactivar el servicio.`
               : 'Por falta de pago el acceso está limitado. Entra al portal para regularizar.'}
           </p>
 
           {loadError && slug && (
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              No se pudo cargar la marca del ISP. Puedes pagar igual desde el portal.
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              No se pudo cargar la marca del ISP. Puedes continuar al portal de pago.
             </p>
           )}
 
@@ -86,9 +102,18 @@ export default function SuspendedNotice() {
             <ArrowRight className="h-5 w-5 opacity-80" />
           </a>
 
-          <p className="text-sm text-center text-gray-500">
-            Pulsa el botón para continuar en esta misma ventana. Al confirmarse el pago,
-            el servicio se reactiva automáticamente.
+          {slug && (
+            <a
+              href={`/portal/${slug}`}
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium rounded-xl border border-[#e5d9c8] bg-white text-slate-700 hover:bg-[#f3eee6]"
+            >
+              <LogIn className="h-4 w-4" />
+              Ya tengo cuenta
+            </a>
+          )}
+
+          <p className="text-sm text-center text-slate-500">
+            Al confirmarse el pago, el servicio se reactiva automáticamente.
           </p>
         </div>
       </div>

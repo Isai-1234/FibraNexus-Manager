@@ -12,7 +12,33 @@ import {
 import { mergeOrgSettings } from '../lib/orgSettings.js';
 import { sumPaymentsForInvoice } from '../lib/paymentService.js';
 import { writeAuditLog, clientIp } from '../lib/auditLog.js';
+import { listClientEquipment } from '../lib/equipmentClientLink.js';
+import { attachSnmpDisplay } from '../lib/equipmentStatus.js';
 export const portalRouter = Router();
+
+/** Vista segura del enlace radio para el abonado (sin secretos SNMP/credenciales). */
+function publicLinkStatus(rows) {
+  return (rows || []).map((raw) => {
+    const g = attachSnmpDisplay(raw);
+    return {
+      id: g.id,
+      name: g.name,
+      model: [g.brand, g.model].filter(Boolean).join(' ').trim() || null,
+      macAddress: g.macAddress || null,
+      status: g.status,
+      statusLabel: g.status === 'online' && !g.linkDown
+        ? 'En línea'
+        : (g.statusLabel === 'Sin monitoreo' ? 'Sin monitoreo de radio' : 'Sin señal'),
+      online: g.status === 'online' && !g.linkDown,
+      signalDbm: g.wirelessSignal ?? null,
+      ccqPercent: g.wirelessCcq ?? null,
+      snrDb: g.wirelessSnr ?? null,
+      linkQuality: g.linkQuality ?? null,
+      displayIp: g.displayIp || null,
+      lastSeen: g.lastSeen || g.snmpPolledAt || null,
+    };
+  });
+}
 
 async function getClientAccount(userId) {
   return db.query.clients.findFirst({ where: eq(clients.userId, userId) });
@@ -93,21 +119,60 @@ portalRouter.get('/dashboard', async (req, res) => {
 
     const [org] = await db.select({
       name: organizations.name,
+      slug: organizations.slug,
+      email: organizations.email,
       settings: organizations.settings,
     }).from(organizations).where(eq(organizations.id, client.organizationId)).limit(1);
     const settings = mergeOrgSettings(org?.settings);
     const branding = {
       orgName: org?.name || 'Mi ISP',
+      slug: org?.slug || null,
+      supportEmail: org?.email || null,
       logoUrl: settings.brandLogoUrl || '',
       primaryColor: settings.brandPrimaryColor,
       accentColor: settings.brandAccentColor,
-      portalTitle: settings.brandPortalTitle || 'Portal Cliente',
+      portalTitle: settings.brandPortalTitle || 'Mi cuenta',
     };
+
+    let linkStatus = [];
+    try {
+      const gear = await listClientEquipment(client.id, client.organizationId);
+      linkStatus = publicLinkStatus(gear);
+    } catch (err) {
+      console.warn('Portal linkStatus:', err.message);
+    }
+
+    const servicesWithLink = servicesOut.map((s) => {
+      const mac = String(s.macAddress || '').toLowerCase();
+      const byMac = mac
+        ? linkStatus.find((g) => String(g.macAddress || '').toLowerCase() === mac)
+        : null;
+      const link = byMac || linkStatus[0] || null;
+      return {
+        ...s,
+        link: link ? {
+          online: link.online,
+          statusLabel: link.statusLabel,
+          signalDbm: link.signalDbm,
+          ccqPercent: link.ccqPercent,
+          displayIp: link.displayIp || s.ipAddress || null,
+          lastSeen: link.lastSeen,
+        } : {
+          online: null,
+          statusLabel: s.ipAddress ? 'Servicio activo' : 'Sin monitoreo de radio',
+          signalDbm: null,
+          ccqPercent: null,
+          displayIp: s.ipAddress || null,
+          lastSeen: null,
+        },
+      };
+    });
 
     res.json({
       client: { ...client, user: { fullName: user?.fullName, email: user?.email, phone: user?.phone } },
       daysAsClient,
-      services: servicesOut,
+      services: servicesWithLink,
+      linkStatus,
       invoices: clientInvoices,
       tickets: clientTickets,
       documents,

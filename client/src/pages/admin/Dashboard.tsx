@@ -515,17 +515,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const tabDescriptions: Record<string, string> = {
     dashboard: 'Tráfico en vivo, presencia de abonados y alertas operativas',
     clients: 'Lista de abonados — clic en la IP para gestionar la antena',
-    services: 'Vista global de servicios — gestiona cada abonado desde su perfil (Abonados → Gestionar)',
-    plans: 'Catálogo de productos de tu ISP — no son personas, son los planes que ofreces',
-    inventory: 'Sectoriales y CPEs con señal RF — clic en un AP para ver estaciones conectadas.',
-    equipment: 'Sectoriales y CPEs con señal RF — clic en un AP para ver estaciones conectadas.',
-    'detected-devices': 'Dispositivos vía DHCP, ARP y PPPoE activo — adóptalos como abonados con un clic',
+    services: 'IPs y estados de servicio',
+    plans: 'Planes de internet que ofreces',
+    inventory: 'Sectoriales y CPEs con señal RF',
+    equipment: 'Sectoriales y CPEs con señal RF',
+    'detected-devices': 'Dispositivos detectados por DHCP, ARP y PPPoE',
     ips: 'Pools y asignación de direcciones IP',
-    invoices: 'Facturas mensuales de tus abonados',
-    finance: 'Ingresos, egresos y tendencias del ISP',
-    tickets: 'Incidencias reportadas por abonados',
-    staff: 'Administradores, administrativos y técnicos de tu organización',
-    'work-orders': 'Instalaciones, visitas y cierres con checklist',
+    invoices: 'Facturas mensuales',
+    finance: 'Ingresos, egresos y tendencias',
+    tickets: 'Tickets de soporte',
+    staff: 'Personal de tu organización',
+    'work-orders': 'Instalaciones, visitas y cierres',
   }
 
   const formFields: Record<string, any[]> = {
