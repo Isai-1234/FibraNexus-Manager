@@ -34,8 +34,15 @@ const TABS = [
 
 function formatDate(v?: string | null) {
   if (!v) return '—'
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return String(v).slice(0, 10)
+  const raw = String(v)
+  // Fechas date-only (vencimiento/cobro): no usar UTC midnight o Chile ve un día menos.
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw.slice(0, 10)
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
