@@ -125,6 +125,10 @@ export function daysOverdue(dueDate, asOf = new Date()) {
 
 function parseDateOnly(value) {
   if (!value) return null;
+  // pg devuelve columnas `date` como objeto Date; String(Date) no tiene formato YYYY-MM-DD
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
   const s = String(value).split('T')[0];
   const [y, m, d] = s.split('-').map(Number);
   if (!y || !m || !d) return null;

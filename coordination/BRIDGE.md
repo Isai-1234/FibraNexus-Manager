@@ -159,6 +159,17 @@ Config: `coordination/bridge.config.json` → VPS `134.209.43.175`
 
 Legacy `runner.mjs` / `watch.mjs` → reemplazados por `bridge.mjs`.
 
+### VPS — systemd (desde 2026-09-01, sin PM2)
+
+```bash
+systemctl status fibranexus-api fibranexus-worker internetsur-api
+systemctl restart fibranexus-api
+journalctl -u fibranexus-worker -f --since "10 min ago"
+curl -s http://127.0.0.1:3000/api/health
+```
+
+Órdenes bridge: usar estos comandos en `vps_commands`, no `pm2`.
+
 ---
 
 ## Troubleshooting

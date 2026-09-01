@@ -193,7 +193,7 @@ export default function FieldWorkOrders({ API, user }: { API: string; user: any 
           {detail.notes && <p className="text-sm text-gray-600 bg-slate-50 rounded-lg p-3">{detail.notes}</p>}
           {!detail.assignedTo && (
             <button type="button" onClick={claim} disabled={saving}
-              className="w-full py-2.5 rounded-xl bg-surface-card text-white text-sm font-medium disabled:opacity-50">
+              className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
               Tomar esta orden
             </button>
           )}

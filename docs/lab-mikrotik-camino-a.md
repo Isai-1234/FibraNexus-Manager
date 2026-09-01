@@ -122,6 +122,20 @@ Offline pinta el círculo en rojo para todos; el rol se sigue leyendo por la for
 | Captive API | `GET /api/public/captive` |
 | Branding JSON | `GET /api/public/mora/nexus-sur-qa` |
 
+### Lab 2026-09-01 — L009 + Loco AC (hardware real)
+
+Inventario Nexus Sur QA (org 3), sitio **Torre Lab Camino A**:
+
+| Equipo | IP gestión | Rol | Estado monitoreo |
+|--------|------------|-----|------------------|
+| L009 Lab Camino A | WAN + API | Router borde | online, heartbeat 30s |
+| Loco AC AP Lab | 172.16.11.253 | Sectorial/AP | online, SNMP **-45 dBm** vía L009 |
+| Loco AC CPE Lab | 172.16.11.252 | CPE Andrés Prueba | offline hasta enlace airMAX físico |
+
+Tercer Loco AC: conectar a **ether3** (172.16.11.0/24), fijar IP, SNMP `public`, registrar en FibraNexus.
+
+Systemd en VPS: `deploy/systemd/fibranexus-*.service` — `PROCESS_ROLE` forzado por unidad (no confiar solo en `.env`).
+
 ### Pendiente inmediato (lab anterior)
 
 - [x] L009 online vía Camino A (NAT + www-ssl + allowlist VPS).

@@ -4,6 +4,7 @@ import { clients, users, invoices, tickets, clientServices, equipment, detectedD
 import { and, eq, inArray, sql, isNull } from 'drizzle-orm';
 import { parsePaginationQuery, paginationMeta } from '../lib/pagination.js';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, loadOrganization } from '../lib/tenant.js';
 import { buildClientOverview } from '../lib/clientOverview.js';
@@ -252,7 +253,7 @@ clientsRouter.post('/', requireRole('admin', 'office'), async (req, res) => {
 });
 
 function cryptoRandomPassword() {
-  return `Fn${Date.now().toString(36)}A1!`;
+  return `Fn${randomBytes(8).toString('base64url')}A1!`;
 }
 
 clientsRouter.put('/:id', requireRole('admin', 'office'), async (req, res) => {

@@ -1,0 +1,20 @@
+[Unit]
+Description=FibraNexus worker BullMQ (colas de trabajos)
+After=network.target redis-server.service postgresql@16-main.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/app/server
+EnvironmentFile=/root/app/server/.env
+Environment=PROCESS_ROLE=worker
+Environment=USE_JOB_QUEUE=true
+Environment=REDIS_HOST=localhost
+# env wrapper: EnvironmentFile puede traer PROCESS_ROLE=api; forzar worker en el proceso
+ExecStart=/usr/bin/env PROCESS_ROLE=worker /root/.nvm/versions/node/v20.20.2/bin/node src/worker-bullmq.js
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

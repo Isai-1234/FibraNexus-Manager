@@ -1,0 +1,17 @@
+[Unit]
+Description=FibraNexus API (Express, puerto 3000)
+After=network.target postgresql@16-main.service redis-server.service
+Wants=postgresql@16-main.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/app/server
+EnvironmentFile=/root/app/server/.env
+Environment=PROCESS_ROLE=api
+ExecStart=/root/.nvm/versions/node/v20.20.2/bin/node src/index.js
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,9 +1,9 @@
 {
-  "id": "011",
-  "status": "ok",
-  "summary": "Worker BullMQ reescrito con runTask — last_seen actualizado en equipos SNMP",
-  "completed_at": "2026-09-01T04:14:30.000Z",
-  "report": "reports/011-report.md",
+  "id": "012",
+  "status": "needs_cursor",
+  "summary": "Lab L009+Loco: AP online -45dBm; CPE offline (sin enlace). QA 012 parcial. Sync fixes VPS→repo.",
+  "completed_at": "2026-09-01T20:35:00.000Z",
+  "report": "reports/012-report.md",
   "errors": [],
   "project": "FibraNexus-Manager"
 }
