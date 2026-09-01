@@ -1,0 +1,9 @@
+{
+  "id": "011",
+  "status": "ok",
+  "summary": "Worker BullMQ reescrito con runTask — last_seen actualizado en equipos SNMP",
+  "completed_at": "2026-09-01T04:14:30.000Z",
+  "report": "reports/011-report.md",
+  "errors": [],
+  "project": "FibraNexus-Manager"
+}

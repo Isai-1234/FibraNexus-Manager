@@ -2,26 +2,23 @@
  * Cola Redis BullMQ — enqueue hacia worker-bullmq.js (queue "*")
  */
 import { Queue } from 'bullmq';
-import { getRedisConnection } from './redisConnection.js';
 
-const QUEUE_NAME = '*';
+const connection = {
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+};
 
 let queue;
-
 function getQueue() {
-  if (!queue) {
-    queue = new Queue(QUEUE_NAME, { connection: getRedisConnection() });
-  }
+  if (!queue) queue = new Queue('*', { connection });
   return queue;
 }
 
 export async function enqueueRedis(jobName, payload = {}) {
   const q = getQueue();
   const job = await q.add(jobName, payload, {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2000 },
-    removeOnComplete: { age: 3600 },
-    removeOnFail: { age: 86400 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
   });
   console.log(`[queue] enqueued ${jobName}#${job.id}`);
   return { queued: true, jobId: job.id };

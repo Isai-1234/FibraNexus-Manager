@@ -1,0 +1,12 @@
+{
+  "id": "010",
+  "status": "done",
+  "task": "Verificar device tracking end-to-end: SNMP → equipment.last_seen actualizado",
+  "needs_cursor": false,
+  "vps_commands": [
+    "pm2 logs fibranexus-worker --nostream --lines 20 | grep -E 'scheduler|SNMP|processing'",
+    "sudo -u postgres psql -d fibranexus_prod -c 'SELECT id, name, status, last_seen FROM equipment ORDER BY last_seen DESC LIMIT 5;'",
+    "redis-cli DBSIZE"
+  ],
+  "completed_at": "2026-09-01T04:01:02.420Z"
+}

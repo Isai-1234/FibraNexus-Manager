@@ -51,12 +51,6 @@ console.log(
   config.databaseUrl ? `present (len=${config.databaseUrl.length})` : 'MISSING — set it in Render → Environment',
 );
 
-// Guardrail: cola Redis no implementada
-if (process.env.USE_JOB_QUEUE === 'true') {
-  console.error('FATAL: USE_JOB_QUEUE=true pero la cola Redis es un stub. Desactiva la flag o implementa bullmq.');
-  process.exit(1);
-}
-
 // CORS estricto: solo FRONTEND_URL (lista separada por comas) o localhost en desarrollo
 const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')

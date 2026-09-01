@@ -1,0 +1,6 @@
+{
+  "order_id": "011",
+  "status": "done",
+  "task": "Reescribir worker-bullmq.js para usar runTask + persistPollResult",
+  "note": "Completado por Cursor — desplegado en VPS"
+}

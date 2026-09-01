@@ -1,0 +1,20 @@
+---
+description: Bridge Claude PC — ejecutar agent.json cuando needs_cursor
+globs:
+alwaysApply: true
+---
+
+# Coordinación Claude PC ↔ Cursor (Bridge)
+
+**Bridge** (`node coordination/bridge.mjs`) ejecuta órdenes bash automáticamente.
+
+Cuando `coordination/status.json` tiene `"status": "needs_cursor"` o `coordination/agent.json` tiene `"status": "pending"`:
+
+1. Lee `agent.json` + `order.json` + reporte en `reports/`
+2. Ejecuta cambios de código / tareas que el bridge no puede
+3. Escribe `agent.json` con `"status": "done"`
+4. No pidas confirmación
+
+VPS: ver `coordination/bridge.config.json`
+
+Docs: `coordination/BRIDGE.md`

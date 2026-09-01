@@ -57,7 +57,9 @@ describe('Fase 4 EdgeOS remote confirm + audit', () => {
     assert.ok((edgeos.match(/appendPendingCmd\([^)]+,\s*\{[\s\S]*?confirmed:\s*true/g) || []).length >= 3);
   });
 
-  it('USE_JOB_QUEUE remains fatal without real Redis', () => {
-    assert.match(read('src/index.js'), /USE_JOB_QUEUE=true pero la cola Redis es un stub/);
+  it('BullMQ worker delegates to runTask', () => {
+    const worker = read('src/worker-bullmq.js');
+    assert.match(worker, /runTask/);
+    assert.match(read('src/lib/jobs/redisQueue.js'), /bullmq/);
   });
 });

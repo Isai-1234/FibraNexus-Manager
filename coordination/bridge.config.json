@@ -1,0 +1,13 @@
+{
+  "pollIntervalSec": 5,
+  "projectName": "FibraNexus-Manager",
+  "ssh": {
+    "host": "root@134.209.43.175",
+    "keyPath": "~/.ssh/id_ed25519",
+    "nvmBin": "/root/.nvm/versions/node/v20.20.2/bin",
+    "connectTimeoutSec": 20
+  },
+  "dirs": {
+    "coordination": "coordination"
+  }
+}

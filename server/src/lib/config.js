@@ -119,5 +119,7 @@ export function runsWorker() {
 }
 
 export function shouldUseJobQueue() {
-  return config.useJobQueue && Boolean(config.redisUrl);
+  if (!config.useJobQueue) return false;
+  if (config.redisUrl) return true;
+  return Boolean(process.env.REDIS_HOST);
 }
