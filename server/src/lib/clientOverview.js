@@ -84,6 +84,8 @@ export async function buildClientOverview(orgId) {
     ipAddress: equipment.ipAddress,
     siteId: equipment.siteId,
     siteName: sites.name,
+    snmpCommunity: equipment.snmpCommunity,
+    credentials: equipment.credentials,
   })
     .from(equipment)
     .leftJoin(sites, eq(equipment.siteId, sites.id))
@@ -120,6 +122,9 @@ export async function buildClientOverview(orgId) {
     const tks = ticketsByClient.get(c.id) || [];
     const clientEquip = equipByClient.get(c.id) || [];
     const cpe = clientEquip.find((e) => e.type === 'cpe') || clientEquip[0];
+    const cpeMonitored = Boolean(cpe?.snmpCommunity?.trim());
+    const cpeLinkDown = Boolean(cpe?.credentials?.lastSnmp?.linkDown);
+    const cpeRadioDown = cpeMonitored && (cpe?.status === 'offline' || cpeLinkDown);
     const activeSvc = svcs.find((s) => s.status === 'active');
     const suspendedSvc = svcs.find((s) => s.status === 'suspended' || s.status === 'cut');
     const openTickets = tks.filter((t) => ['open', 'in_progress', 'waiting_client'].includes(t.status));
@@ -138,7 +143,13 @@ export async function buildClientOverview(orgId) {
       connectionStatus = 'suspended';
       connectionDetail = 'Servicio suspendido';
     } else if (activeSvc) {
-      if (activeSvc.pppoeUsername && onlinePppoe.has(activeSvc.pppoeUsername)) {
+      const pppoeUp = Boolean(activeSvc.pppoeUsername && onlinePppoe.has(activeSvc.pppoeUsername));
+      if (cpeRadioDown) {
+        connectionStatus = 'offline';
+        connectionDetail = pppoeUp
+          ? 'PPPoE activo · enlace radio caído'
+          : (cpeLinkDown ? 'Sin enlace airMAX' : 'Antena offline');
+      } else if (pppoeUp) {
         connectionStatus = 'online';
         connectionDetail = 'PPPoE conectado';
       } else if (activeSvc.pppoeUsername) {
@@ -166,7 +177,11 @@ export async function buildClientOverview(orgId) {
       alerts.push({ type: 'debt', label: 'Deuda pendiente', severity: 'high' });
     }
     if (connectionStatus === 'offline') {
-      alerts.push({ type: 'offline', label: 'Desconectado', severity: 'medium' });
+      alerts.push({
+        type: 'offline',
+        label: cpeRadioDown && activeSvc?.pppoeUsername ? 'Sin enlace radio' : 'Desconectado',
+        severity: cpeRadioDown ? 'high' : 'medium',
+      });
     }
     if (suspendedSvc) alerts.push({ type: 'suspended', label: 'Servicio suspendido', severity: 'high' });
     if (!activeSvc && svcs.length > 0) alerts.push({ type: 'inactive', label: 'Sin servicio activo', severity: 'medium' });
@@ -203,13 +218,18 @@ export async function buildClientOverview(orgId) {
       connectionStatus,
       connectionDetail,
       planName: activeSvc?.planName || suspendedSvc?.planName || null,
-      ipAddress: (cpe?.ipAddress?.split('/')[0] || activeSvc?.ipAddress || null),
+      ipAddress: (
+        activeSvc?.ipAddress?.split('/')[0]
+        || cpe?.credentials?.resolvedIp
+        || cpe?.ipAddress?.split('/')[0]
+        || null
+      ),
       equipmentId: cpe?.equipmentId || null,
       equipmentName: cpe?.equipmentName || null,
       siteId: cpe?.siteId || null,
       siteName: cpe?.siteName || null,
       pppoeUsername: activeSvc?.pppoeUsername || null,
-      antennaOnline: cpe?.status === 'online',
+      antennaOnline: cpeMonitored && cpe?.status === 'online' && !cpeLinkDown,
       openTickets: openTickets.length,
       pendingAmount,
       overdueDays: maxOverdueDays,
