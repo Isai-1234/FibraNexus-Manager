@@ -141,6 +141,15 @@ export default function EquipmentInventory({ API, onOpenRedIsp, onOpenClient }: 
 
   useEffect(() => { void load() }, [])
 
+  // Auto-refresh cada 30s (solo si la pestaña esta visible) para que la
+  // recuperacion de un equipo apagado/encendido se vea sin refrescar a mano.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') void load()
+    }, 30_000)
+    return () => clearInterval(t)
+  }, [])
+
   async function refreshOne(id: number) {
     setRefreshingId(id)
     try {

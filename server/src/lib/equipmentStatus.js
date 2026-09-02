@@ -10,8 +10,12 @@ const STALE_MS = 45 * 1000;
 /** Heartbeat ~30s; métricas del agente válidas un poco más que un ciclo. */
 const METRICS_FRESH_MS = 90 * 1000;
 const OFFLINE_AFTER_FAILURES = 3;
-/** Un equipo que no responde retiene el puente SNMP del router: se reintenta espaciado. */
-const FAILED_RETRY_MS = 10 * 60 * 1000;
+/**
+ * Un equipo que no responde retiene el puente SNMP del router: se reintenta espaciado.
+ * 90s: un intento fallido cuesta poco y con 10 min un equipo que vuelve tardaba
+ * demasiado en re-evaluarse (recuperación debía ser manual).
+ */
+const FAILED_RETRY_MS = 90 * 1000;
 
 function isInFailureBackoff(item) {
   const creds = item.credentials || {};
