@@ -46,10 +46,27 @@ export function appPublicBaseUrl() {
   return base;
 }
 
+const SMTP_BY_DOMAIN = [
+  { suffix: 'gmail.com', host: 'smtp.gmail.com', port: 465, secure: 'ssl' },
+  { suffix: 'googlemail.com', host: 'smtp.gmail.com', port: 465, secure: 'ssl' },
+  { suffix: 'outlook.com', host: 'smtp-mail.outlook.com', port: 587, secure: 'starttls' },
+  { suffix: 'hotmail.com', host: 'smtp-mail.outlook.com', port: 587, secure: 'starttls' },
+  { suffix: 'live.com', host: 'smtp-mail.outlook.com', port: 587, secure: 'starttls' },
+  { suffix: 'yahoo.com', host: 'smtp.mail.yahoo.com', port: 465, secure: 'ssl' },
+  { suffix: 'yahoo.es', host: 'smtp.mail.yahoo.com', port: 465, secure: 'ssl' },
+  { suffix: 'icloud.com', host: 'smtp.mail.me.com', port: 587, secure: 'starttls' },
+];
+
+/** Servidor SMTP por defecto segun el dominio del correo (Gmail/Outlook/etc). */
+export function inferSmtpForEmail(email) {
+  const domain = String(email || '').split('@')[1]?.toLowerCase();
+  if (!domain) return null;
+  return SMTP_BY_DOMAIN.find((d) => domain.endsWith(d.suffix)) || null;
+}
+
 /**
- * Resuelve la configuración de correo de una org: remitente y API key propios
- * (settings del ISP) con fallback a las variables de la plataforma.
- * Retorna { from, apiKey | null, replyTo }.
+ * Resuelve la configuración de correo de una org: SMTP propio del ISP,
+ * API key Resend propia, o fallback a la plataforma.
  */
 export async function getOrgMailConfig(orgId) {
   try {
@@ -68,23 +85,69 @@ export async function getOrgMailConfig(orgId) {
       if (merged.mailApiKey) {
         try { apiKey = decryptSecret(merged.mailApiKey); } catch { /* legacy */ }
       }
+      let smtpPassword = null;
+      if (merged.mailSmtpPassword) {
+        try { smtpPassword = decryptSecret(merged.mailSmtpPassword); } catch { /* legacy */ }
+      }
+      // Host vacio: autodetectar por dominio del correo (Gmail/Outlook/...).
+      let smtpHost = merged.mailSmtpHost;
+      let smtpPort = Number(merged.mailSmtpPort) || 587;
+      let smtpSecure = merged.mailSmtpSecure || 'starttls';
+      if (!smtpHost && merged.mailSmtpUser) {
+        const inferred = inferSmtpForEmail(merged.mailSmtpUser);
+        if (inferred) {
+          smtpHost = inferred.host;
+          smtpPort = inferred.port;
+          smtpSecure = inferred.secure;
+        }
+      }
+      const smtp = smtpHost && merged.mailSmtpUser && smtpPassword
+        ? {
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpSecure === 'ssl',
+          requireTLS: smtpSecure !== 'none',
+          auth: { user: merged.mailSmtpUser, pass: smtpPassword },
+        }
+        : null;
       let from = getMailFrom();
       if (merged.mailFromName && merged.mailFromEmail) {
         from = `${merged.mailFromName} <${merged.mailFromEmail}>`;
       } else if (merged.mailFromEmail) {
         from = merged.mailFromEmail;
+      } else if (smtp) {
+        // Sin remitente explicito, el usuario SMTP es remitente por defecto.
+        from = smtp.auth.user;
       }
-      return { from, apiKey, replyTo: merged.mailReplyTo || null };
+      return { from, apiKey, smtp, replyTo: merged.mailReplyTo || null };
     }
   } catch (err) {
     console.error('[mailer] getOrgMailConfig fallo, usando default:', err.message);
   }
-  return { from: getMailFrom(), apiKey: null, replyTo: null };
+  return { from: getMailFrom(), apiKey: null, smtp: null, replyTo: null };
 }
 
-/** Envía correo con la identidad del ISP (o la de la plataforma si no configuro nada). */
+/** Envía correo con la identidad del ISP (SMTP propio, Resend propio o plataforma). */
 export async function sendMailForOrg(orgId, { to, subject, text, html }) {
   const cfg = await getOrgMailConfig(orgId);
+
+  if (cfg.smtp) {
+    const nodemailer = (await import('nodemailer')).default;
+    const transport = nodemailer.createTransport({
+      ...cfg.smtp,
+      from: cfg.from,
+    });
+    await transport.sendMail({
+      from: cfg.from,
+      to,
+      replyTo: cfg.replyTo || undefined,
+      subject,
+      text,
+      html: html || undefined,
+    });
+    return { provider: 'smtp', ok: true };
+  }
+
   const apiKey = cfg.apiKey || process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.log('[mail:console]', { to, subject, text });

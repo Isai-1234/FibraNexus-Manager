@@ -39,11 +39,16 @@ export const DEFAULT_ORG_SETTINGS = {
   // Importación WispHub (solo lectura sobre su API)
   wisphubApiKey: '',
   wisphubBaseUrl: '',
-  // Correo del ISP: remitente y API key propios (Resend). Vacío = usa el de la plataforma.
+  // Correo del ISP: SMTP propio (host/user/password) o API key Resend. Vacío = plataforma.
   mailFromName: '',
   mailFromEmail: '',
   mailReplyTo: '',
   mailApiKey: '',
+  mailSmtpHost: '',
+  mailSmtpPort: 587,
+  mailSmtpSecure: 'starttls', // 'starttls' | 'ssl' | 'none'
+  mailSmtpUser: '',
+  mailSmtpPassword: '',
 };
 
 /**

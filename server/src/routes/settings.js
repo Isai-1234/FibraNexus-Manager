@@ -58,6 +58,28 @@ settingsRouter.get('/billing', requireRole('admin'), async (req, res) => {
   }
 });
 
+/** Prueba de envío de correo con la configuración del ISP. */
+settingsRouter.post('/billing/mail-test', requireRole('admin'), async (req, res) => {
+  try {
+    const orgId = requireOrganizationId(req, res);
+    if (!orgId) return;
+    const to = String(req.body?.to || '').trim();
+    if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+      return res.status(400).json({ error: 'Correo de destino inválido' });
+    }
+    const { sendMailForOrg } = await import('../lib/mailer.js');
+    const result = await sendMailForOrg(orgId, {
+      to,
+      subject: 'FibraNexus — prueba de correo',
+      text: 'Esta es una prueba de envío desde tu configuración de correo. Si lo estás leyendo, funciona.',
+      html: '<p>Esta es una <strong>prueba de envío</strong> desde tu configuración de correo.</p><p>Si lo estás leyendo, funciona ✔</p>',
+    });
+    res.json({ ok: true, provider: result.provider, to });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
@@ -76,6 +98,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       'flowDelegacionBoletaActiva',
       'wisphubBaseUrl',
       'mailFromName', 'mailFromEmail', 'mailReplyTo',
+      'mailSmtpHost', 'mailSmtpPort', 'mailSmtpSecure', 'mailSmtpUser',
     ];
     const patch = {};
     for (const key of allowed) {
@@ -120,11 +143,17 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
     } else if (typeof req.body.wisphubApiKey === 'string' && req.body.wisphubApiKey.trim()) {
       patch.wisphubApiKey = encryptSecret(req.body.wisphubApiKey.trim());
     }
-    // clearMailCredentials: true borra la API key de correo del ISP.
+    // clearMailCredentials: true borra la API key y la contraseña SMTP del ISP.
     if (req.body.clearMailCredentials === true) {
       patch.mailApiKey = '';
-    } else if (typeof req.body.mailApiKey === 'string' && req.body.mailApiKey.trim()) {
-      patch.mailApiKey = encryptSecret(req.body.mailApiKey.trim());
+      patch.mailSmtpPassword = '';
+    } else {
+      if (typeof req.body.mailApiKey === 'string' && req.body.mailApiKey.trim()) {
+        patch.mailApiKey = encryptSecret(req.body.mailApiKey.trim());
+      }
+      if (typeof req.body.mailSmtpPassword === 'string' && req.body.mailSmtpPassword.trim()) {
+        patch.mailSmtpPassword = encryptSecret(req.body.mailSmtpPassword.trim());
+      }
     }
 
     const settings = mergeOrgSettings({ ...current, ...patch });

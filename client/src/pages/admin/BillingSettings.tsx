@@ -34,6 +34,11 @@ type BillingSettingsData = {
   mailFromEmail?: string
   mailReplyTo?: string
   hasMailApiKey?: boolean
+  mailSmtpHost?: string
+  mailSmtpPort?: number
+  mailSmtpSecure?: string
+  mailSmtpUser?: string
+  hasMailSmtpPassword?: boolean
 }
 
 type WisphubImportSummary = {
@@ -70,6 +75,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   const [dteApiKeyInput, setDteApiKeyInput] = useState('')
   const [wisphubApiKeyInput, setWisphubApiKeyInput] = useState('')
   const [mailApiKeyInput, setMailApiKeyInput] = useState('')
+  const [smtpPasswordInput, setSmtpPasswordInput] = useState('')
+  const [mailTestTo, setMailTestTo] = useState('')
+  const [testingMail, setTestingMail] = useState(false)
 
   function api() {
     return axios.create({
@@ -104,7 +112,9 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       delete payload.hasDteApiKey
       delete payload.hasWisphubApiKey
       delete payload.hasMailApiKey
+      delete payload.hasMailSmtpPassword
       if (mailApiKeyInput.trim()) payload.mailApiKey = mailApiKeyInput.trim()
+      if (smtpPasswordInput.trim()) payload.mailSmtpPassword = smtpPasswordInput.trim()
       if (flowApiKeyInput.trim()) payload.flowApiKey = flowApiKeyInput.trim()
       if (flowSecretInput.trim()) payload.flowSecretKey = flowSecretInput.trim()
       if (dteApiKeyInput.trim()) payload.dteApiKey = dteApiKeyInput.trim()
@@ -731,57 +741,109 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
             <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
               <h2 className="font-semibold text-ink">Correo del ISP</h2>
               <p className="text-sm text-ink-muted">
-                Remitente con tu marca para los avisos de deuda y recuperación de contraseña.
-                Con tu propia API key de Resend (dominio verificado) los correos salen a nombre tuyo;
-                sin configurar nada se usa el correo de la plataforma.
+                Usa el correo de tu empresa (Gmail, Outlook, tu hosting) para enviar avisos de deuda y
+                recuperación de contraseña. Coloca el correo y su contraseña, envía una prueba y listo.
               </p>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-ink-soft mb-1">Nombre del remitente</label>
-                  <input type="text" value={settings.mailFromName || ''}
-                    placeholder="Ej: Internetsur Pagos"
-                    onChange={(e) => setSettings({ ...settings, mailFromName: e.target.value })}
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Correo (usuario SMTP)</label>
+                  <input type="email" value={settings.mailSmtpUser || ''}
+                    placeholder="pagos@tuisp.cl"
+                    onChange={(e) => setSettings({ ...settings, mailSmtpUser: e.target.value, mailFromEmail: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-ink-soft mb-1">Email del remitente</label>
-                  <input type="email" value={settings.mailFromEmail || ''}
-                    placeholder="pagos@tuisp.cl"
-                    onChange={(e) => setSettings({ ...settings, mailFromEmail: e.target.value })}
+                  <label className="block text-sm font-medium text-ink-soft mb-1">
+                    Contraseña {settings.hasMailSmtpPassword ? '· guardada ✓' : ''}
+                  </label>
+                  <input type="password" autoComplete="new-password" value={smtpPasswordInput}
+                    placeholder={settings.hasMailSmtpPassword ? '•••• (dejar vacío para mantener)' : 'Contraseña del correo'}
+                    onChange={(e) => setSmtpPasswordInput(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-ink-soft mb-1">Responder a (reply‑to, opcional)</label>
-                <input type="email" value={settings.mailReplyTo || ''}
-                  placeholder="soporte@tuisp.cl"
-                  onChange={(e) => setSettings({ ...settings, mailReplyTo: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-ink-soft mb-1">
-                  API key de Resend {settings.hasMailApiKey ? '· configurada ✓' : ''}
-                </label>
-                <div className="flex gap-2">
-                  <input type="password" value={mailApiKeyInput}
-                    placeholder={settings.hasMailApiKey ? '•••• (dejar vacío para mantener)' : 're_... (opcional, tu propia cuenta)'}
-                    onChange={(e) => setMailApiKeyInput(e.target.value)}
-                    className="flex-1 border rounded-lg px-3 py-2 text-sm" />
-                  {settings.hasMailApiKey && (
+
+              <details className="text-sm">
+                <summary className="cursor-pointer text-ink-soft">Servidor de correo (opcional — se detecta solo para Gmail/Outlook)</summary>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Servidor SMTP</label>
+                    <input type="text" value={settings.mailSmtpHost || ''}
+                      placeholder="smtp.gmail.com"
+                      onChange={(e) => setSettings({ ...settings, mailSmtpHost: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Puerto</label>
+                    <input type="number" value={settings.mailSmtpPort ?? 587}
+                      onChange={(e) => setSettings({ ...settings, mailSmtpPort: parseInt(e.target.value, 10) || 587 })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Seguridad</label>
+                    <select value={settings.mailSmtpSecure || 'starttls'}
+                      onChange={(e) => setSettings({ ...settings, mailSmtpSecure: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm">
+                      <option value="starttls">STARTTLS (587, lo normal)</option>
+                      <option value="ssl">SSL/TLS (465)</option>
+                      <option value="none">Sin cifrar (no recomendado)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">Nombre del remitente</label>
+                    <input type="text" value={settings.mailFromName || ''}
+                      placeholder="Ej: Internetsur Pagos"
+                      onChange={(e) => setSettings({ ...settings, mailFromName: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+              </details>
+
+              <div className="border-t border-line pt-4 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input type="email" value={mailTestTo} placeholder="correo@para.probar"
+                    onChange={(e) => setMailTestTo(e.target.value)}
+                    className="flex-1 min-w-52 border rounded-lg px-3 py-2 text-sm" />
+                  <button type="button" disabled={testingMail || !mailTestTo.trim()}
+                    onClick={async () => {
+                      setTestingMail(true); setMessage('')
+                      try {
+                        await api().patch('/settings/billing', {
+                          mailSmtpHost: settings.mailSmtpHost || '',
+                          mailSmtpPort: settings.mailSmtpPort ?? 587,
+                          mailSmtpSecure: settings.mailSmtpSecure || 'starttls',
+                          mailSmtpUser: settings.mailSmtpUser || '',
+                          mailFromEmail: settings.mailFromEmail || '',
+                          mailFromName: settings.mailFromName || '',
+                          ...(smtpPasswordInput.trim() ? { mailSmtpPassword: smtpPasswordInput.trim() } : {}),
+                        })
+                        const res = await api().post('/settings/billing/mail-test', { to: mailTestTo.trim() })
+                        setMessage(`Correo de prueba enviado por ${res.data.provider} a ${res.data.to} ✔`)
+                      } catch (err: any) {
+                        setMessage(err.response?.data?.error || err.message)
+                      }
+                      setTestingMail(false)
+                    }}
+                    className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {testingMail ? 'Enviando…' : 'Enviar prueba'}
+                  </button>
+                  {(settings.hasMailSmtpPassword || settings.hasMailApiKey) && (
                     <button type="button"
                       onClick={async () => {
                         try {
                           const res = await api().patch('/settings/billing', { clearMailCredentials: true })
-                          setSettings(res.data.settings); setMessage('API key de correo eliminada')
+                          setSettings(res.data.settings); setMessage('Credenciales de correo eliminadas')
                         } catch (err: any) { setMessage(err.response?.data?.error || err.message) }
                       }}
                       className="px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50">
-                      Quitar
+                      Quitar credenciales
                     </button>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Verifica tu dominio en resend.com/domains y usa esa key para enviar desde tu correo. Vacío = usa la key de la plataforma.
+                <p className="text-xs text-gray-400">
+                  Guarda primero los cambios (botón Guardar) o el botón probará con lo escrito hasta ahora.
+                  Gmail: activa "contraseñas de aplicación" en tu cuenta de Google.
                 </p>
               </div>
             </section>
