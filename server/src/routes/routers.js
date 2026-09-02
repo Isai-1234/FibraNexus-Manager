@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { equipment } from '../db/schema.js';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and, ne, sql } from 'drizzle-orm';
 import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId, inferConnectionMethod } from '../lib/tenant.js';
 import crypto from 'crypto';
@@ -497,12 +497,23 @@ routersRouter.post('/', requireRole('admin'), async (req, res) => {
   }
 });
 
+/** Lookup por agentToken usando el índice idx_equipment_agent_token. */
+export async function findRouterByAgentToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  const rows = await db.select().from(equipment)
+    .where(and(
+      eq(equipment.type, 'router'),
+      sql`credentials->>'agentToken' = ${token}`,
+    ))
+    .limit(1);
+  return rows[0] || null;
+}
+
 export async function agentHeartbeatHandler(req, res) {
   try {
     const { agentToken, routerInfo, ifaceStats, arpData, dhcpData, snmpData, cpeMetrics } = req.body;
     if (!agentToken) return res.status(403).json({ error: 'Token de agente requerido' });
-    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
-    const router = allRouters.find(r => r.credentials && r.credentials.agentToken === agentToken);
+    const router = await findRouterByAgentToken(agentToken);
     if (!router) return res.status(403).json({ error: 'Token de agente inválido' });
 
     const updates = { status: 'online', lastSeen: new Date() };
@@ -684,8 +695,7 @@ export async function agentCmdResultHandler(req, res) {
     const { agentToken, cmdId, success, output } = req.body;
     if (!agentToken || !cmdId) return res.status(400).json({ error: 'agentToken y cmdId requeridos' });
 
-    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
-    const router = allRouters.find(r => r.credentials?.agentToken === agentToken);
+    const router = await findRouterByAgentToken(agentToken);
     if (!router) return res.status(403).json({ error: 'Token inválido' });
 
     console.log(`[cmd-result] router=${router.id} (${router.name}) cmdId=${cmdId} success=${success} output="${String(output || '').slice(0, 300)}"`);
@@ -777,8 +787,7 @@ routersRouter.get('/agent/heartbeat-script', async (req, res) => {
   try {
     const { token } = req.query;
     if (!token) return res.status(400).send('token requerido');
-    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
-    const router = allRouters.find(r => r.credentials?.agentToken === token);
+    const router = await findRouterByAgentToken(token);
     if (!router) return res.status(403).send('token invalido');
     const serverUrl = `${serverBaseUrl()}/api/routers/agent/heartbeat`;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

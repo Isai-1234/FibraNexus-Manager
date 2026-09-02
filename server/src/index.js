@@ -17,7 +17,7 @@ import { portalRouter } from './routes/portal.js';
 import { platformRouter } from './routes/platform.js';
 import { ipManagementRouter } from './routes/ipManagement.js';
 import { sitesRouter } from './routes/sites.js';
-import { routersRouter, agentHeartbeatHandler, agentCmdResultHandler, buildEdgeosHeartbeatScript } from './routes/routers.js';
+import { routersRouter, agentHeartbeatHandler, agentCmdResultHandler, buildEdgeosHeartbeatScript, findRouterByAgentToken } from './routes/routers.js';
 import { edgeosRouter } from './routes/edgeos.js';
 import { devicesRouter } from './routes/devices.js';
 import { staffRouter } from './routes/staff.js';
@@ -172,8 +172,7 @@ app.post(
 // Uso: curl https://app.fibranexus.cl/hs/TOKEN | sudo tee /config/scripts/fibranexus/heartbeat.sh
 app.get('/hs/:token', async (req, res) => {
   try {
-    const allRouters = await db.select().from(equipment).where(eq(equipment.type, 'router'));
-    const router = allRouters.find(r => r.credentials?.agentToken === req.params.token);
+    const router = await findRouterByAgentToken(req.params.token);
     if (!router) return res.status(403).send('token invalido');
     const serverUrl = (process.env.PUBLIC_URL || process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'https://app.fibranexus.cl') + '/api/routers/agent/heartbeat';
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

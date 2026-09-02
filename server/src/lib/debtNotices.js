@@ -1,11 +1,12 @@
 /**
- * Proveedor de avisos de deuda — desacoplado (console / email stub).
- * No envía SMS/WhatsApp reales en MVP.
+ * Proveedores de avisos de deuda — desacoplados.
+ * - console: solo log (lab).
+ * - email: envío real vía Resend (RESEND_API_KEY) con fallback a log.
  */
 
 export function getMessagingProvider() {
   const mode = (process.env.DEBT_NOTICE_PROVIDER || 'console').toLowerCase();
-  if (mode === 'email') return emailStubProvider();
+  if (mode === 'email') return emailProvider();
   return consoleProvider();
 }
 
@@ -20,13 +21,26 @@ function consoleProvider() {
   };
 }
 
-function emailStubProvider() {
+function emailProvider() {
   return {
-    name: 'email-stub',
-    async sendDebtNotice(payload) {
-      const line = `[debt-notice:email-stub] would-email ${payload.to || 'sin-email'} invoice=${payload.invoiceId} total=${payload.total}`;
-      console.log(line);
-      return { ok: true, provider: 'email-stub', message: line };
+    name: 'email',
+    async sendDebtNotice({ to, invoiceId, total, daysOverdue: days }) {
+      if (!to) {
+        return { ok: false, provider: 'email', message: 'Abonado sin email registrado' };
+      }
+      const { sendMail, appPublicBaseUrl } = await import('./mailer.js');
+      const pesos = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(total);
+      const portalUrl = `${appPublicBaseUrl()}`;
+      const subject = `Aviso: factura pendiente (${pesos}, ${days} días de atraso)`;
+      const text = `Tienes una factura pendiente de ${pesos} con ${days} días de atraso.\n\nPuedes pagarla desde tu portal: ${portalUrl}\n\nSi ya pagaste, ignora este mensaje.`;
+      const html = `<p>Tienes una <strong>factura pendiente de ${pesos}</strong> con ${days} días de atraso.</p><p>Puedes pagarla desde tu <a href="${portalUrl}">portal de abonado</a>.</p><p style="color:#64748b">Si ya pagaste, ignora este mensaje.</p>`;
+      try {
+        await sendMail({ to, subject, text, html });
+        return { ok: true, provider: 'email', message: `Enviado a ${to} (factura ${invoiceId})` };
+      } catch (err) {
+        console.error(`[debt-notice:email] fallo factura ${invoiceId}:`, err.message);
+        return { ok: false, provider: 'email', message: err.message };
+      }
     },
   };
 }
