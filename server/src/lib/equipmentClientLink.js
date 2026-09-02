@@ -3,6 +3,7 @@ import { equipment, clients, clientServices, users, sites } from '../db/schema.j
 import { and, eq, inArray, desc } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { revertDetectedDeviceForEquipment, markDetectedDeviceAdopted, syncDetectedDeviceStates, clearOrphanServiceMac } from './detectedDeviceSync.js';
+import { deviceMgmtIp } from './equipmentIdentity.js';
 
 const ACTIVE_SERVICE_STATUSES = ['active', 'suspended', 'pending'];
 
@@ -81,11 +82,29 @@ export async function assignEquipmentToClient(equipmentId, clientId, orgId) {
 
   if (clientId) {
     await syncEquipmentToClientService(updated, clientId, orgId);
-    const [svc] = await db.select({ id: clientServices.id })
-      .from(clientServices)
-      .where(and(eq(clientServices.clientId, clientId), eq(clientServices.macAddress, updated.macAddress)))
-      .orderBy(desc(clientServices.createdAt))
-      .limit(1);
+    const svcFilters = [eq(clientServices.clientId, clientId)];
+    let svc = null;
+    if (updated.macAddress) {
+      [svc] = await db.select({ id: clientServices.id })
+        .from(clientServices)
+        .where(and(...svcFilters, eq(clientServices.macAddress, updated.macAddress)))
+        .orderBy(desc(clientServices.createdAt))
+        .limit(1);
+    }
+    if (!svc && updated.ipAddress) {
+      [svc] = await db.select({ id: clientServices.id })
+        .from(clientServices)
+        .where(and(...svcFilters, eq(clientServices.ipAddress, deviceMgmtIp(updated))))
+        .orderBy(desc(clientServices.createdAt))
+        .limit(1);
+    }
+    if (!svc) {
+      [svc] = await db.select({ id: clientServices.id })
+        .from(clientServices)
+        .where(and(...svcFilters))
+        .orderBy(desc(clientServices.createdAt))
+        .limit(1);
+    }
     await markDetectedDeviceAdopted(updated, orgId, svc?.id ?? null);
     await syncDetectedDeviceStates(orgId);
   }

@@ -1,0 +1,134 @@
+/**
+ * FibraNexus Worker — BullMQ Real
+ * Procesa jobs desde Redis queues
+ */
+import dotenv from 'dotenv';
+dotenv.config();
+
+if (!process.env.PROCESS_ROLE || process.env.PROCESS_ROLE === 'all') {
+  process.env.PROCESS_ROLE = 'worker';
+}
+
+import { runMigrations } from './db/migrate.js';
+import { db } from './db/index.js';
+import { equipment, organizations } from './db/schema.js';
+import { eq } from 'drizzle-orm';
+import { Worker } from 'bullmq';
+import { createClient } from 'redis';
+import { pollEquipmentList } from './lib/snmpPoller.js';
+import { syncDetectedDeviceStates, reconcileDetectedGhosts } from './lib/detectedDeviceSync.js';
+import { config } from './lib/config.js';
+
+const redisClient = createClient({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+});
+
+// Job handlers
+const handlers = {
+  'snmp-poll-org': async (job) => {
+    const { orgId } = job.data;
+    console.log(`[snmp-poll-org] org=${orgId}`);
+    
+    const equipmentList = await db.select()
+      .from(equipment)
+      .where(eq(equipment.organizationId, orgId));
+
+    if (!equipmentList.length) {
+      console.log(`[snmp-poll-org] org=${orgId}: sin equipos`);
+      return { status: 'ok', count: 0 };
+    }
+
+    const results = await pollEquipmentList(equipmentList);
+    console.log(`[snmp-poll-org] org=${orgId}: polled ${results.length} devices`);
+    
+    // TODO: Store results en DB (equipment status, detected_devices updates)
+    return { status: 'ok', count: results.length };
+  },
+
+  'device-scan-org': async (job) => {
+    const { orgId } = job.data;
+    console.log(`[device-scan-org] org=${orgId}`);
+    
+    const healed = await syncDetectedDeviceStates(orgId);
+    console.log(`[device-scan-org] org=${orgId}: healed=${healed}`);
+    return { status: 'ok', healed };
+  },
+
+  'router-poll-org': async (job) => {
+    const { orgId } = job.data;
+    console.log(`[router-poll-org] org=${orgId}`);
+    return { status: 'ok', message: 'Router polling not implemented yet' };
+  },
+
+  'ap-station-sync-org': async (job) => {
+    const { orgId } = job.data;
+    console.log(`[ap-station-sync-org] org=${orgId}`);
+    return { status: 'ok', message: 'AP station sync not implemented yet' };
+  },
+
+  'ip-resolve-org': async (job) => {
+    const { orgId } = job.data;
+    console.log(`[ip-resolve-org] org=${orgId}`);
+    return { status: 'ok', message: 'IP resolve not implemented yet' };
+  },
+};
+
+async function main() {
+  // Run migrations
+  if (config.databaseUrl) {
+    try {
+      await runMigrations(config.databaseUrl);
+      console.log('[Worker] Migrations completed');
+    } catch (err) {
+      console.error('[Worker] Migration error:', err);
+    }
+  }
+
+  // Create BullMQ Worker
+  const worker = new Worker('*', async (job) => {
+    const handler = handlers[job.name];
+    if (!handler) {
+      console.warn(`[Worker] no handler for: ${job.name}`);
+      return { skipped: true, message: `No handler for ${job.name}` };
+    }
+    
+    try {
+      const result = await handler(job);
+      return result;
+    } catch (err) {
+      console.error(`[Worker] ${job.name}#${job.id} error: ${err.message}`);
+      throw err;
+    }
+  }, {
+    connection: redisClient,
+    concurrency: 1, // Serial execution
+  });
+
+  worker.on('completed', (job, result) => {
+    console.log(`[Worker] ${job.name}#${job.id} completed:`, JSON.stringify(result || {}));
+  });
+
+  worker.on('failed', (job, err) => {
+    console.error(`[Worker] ${job.name}#${job.id} FAILED: ${err.message}`);
+  });
+
+  console.log('[Worker] BullMQ worker started, listening for jobs...');
+}
+
+main().catch((err) => {
+  console.log('[Worker] BullMQ worker started, listening for jobs...');
+
+  const role = (process.env.PROCESS_ROLE || 'worker').toLowerCase();
+  if (role === 'worker' || role === 'all') {
+    console.log('[scheduler:init] Starting scheduler in worker process...');
+    try {
+      const { startScheduler } = await import('./lib/scheduler.js');
+      startScheduler();
+      console.log('[scheduler:init] Scheduler initialized OK');
+    } catch (err) {
+      console.error('[scheduler:init] Error:', err.message);
+    }
+  }
+}
+}

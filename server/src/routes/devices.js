@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 import { orgFilter, requireOrganizationId } from '../lib/tenant.js';
 import { dispatch, JobNames } from '../lib/jobs/queue.js';
 import { syncDetectedDeviceStates, enrichDetectedRowsWithLiveClient, clearOrphanServiceMac, reconcileDetectedGhosts } from '../lib/detectedDeviceSync.js';
+import { normalizeMac, macsEqual, matchEquipmentRow, mergeEquipmentIdentity } from '../lib/equipmentIdentity.js';
 import bcrypt from 'bcryptjs';
 
 export const devicesRouter = Router();
@@ -291,16 +292,36 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
       .limit(1);
     if (!clientRow) return res.status(404).json({ error: 'Cliente no encontrado en esta organización' });
 
-    // Verificar conflicto de MAC con otro abonado (no puede haber dos clientes con el mismo equipo)
-    const [macConflict] = await db.select({ id: equipment.id, clientId: equipment.clientId })
+    // Emparejar inventario: MAC primero, IP después (DHCP puede cambiar la IP).
+    const orgCpeRows = await db.select({
+      id: equipment.id,
+      clientId: equipment.clientId,
+      macAddress: equipment.macAddress,
+      ipAddress: equipment.ipAddress,
+      name: equipment.name,
+    })
       .from(equipment)
-      .where(and(eq(equipment.macAddress, device.macAddress), orgFilter(equipment, orgId)))
-      .limit(1);
+      .where(and(eq(equipment.type, 'cpe'), orgFilter(equipment, orgId)));
 
-    if (macConflict?.clientId && macConflict.clientId !== clientId) {
+    const macNorm = normalizeMac(device.macAddress);
+    if (macNorm) {
+      const macOwner = orgCpeRows.find((r) => macsEqual(r.macAddress, device.macAddress) && r.clientId && r.clientId !== clientId);
+      if (macOwner) {
+        return res.status(409).json({
+          error: 'Esta MAC ya está asignada a otro abonado',
+          conflictClientId: macOwner.clientId,
+        });
+      }
+    }
+
+    const { row: existingEquip, matchedBy, conflict } = matchEquipmentRow(orgCpeRows, {
+      macAddress: device.macAddress,
+      ipAddress: device.ipAddress,
+      clientId,
+    });
+    if (conflict === 'ip_mac_mismatch') {
       return res.status(409).json({
-        error: 'Esta MAC ya está asignada a otro abonado',
-        conflictClientId: macConflict.clientId,
+        error: 'La IP coincide con otro equipo con MAC distinta. Revisa el inventario antes de adoptar.',
       });
     }
 
@@ -320,11 +341,22 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
 
     // Crear o vincular equipo CPE en la pestaña "Equipos del Abonado"
     let equipmentId;
-    if (macConflict) {
-      // Equipo ya existe (sin cliente o re-vinculado) — reutilizar
+    if (existingEquip) {
+      const { patch: identityPatch, conflict: idConflict } = mergeEquipmentIdentity(existingEquip, {
+        macAddress: device.macAddress,
+        ipAddress: device.ipAddress,
+      });
+      if (idConflict) {
+        return res.status(409).json({ error: 'Conflicto de MAC al vincular el equipo detectado.' });
+      }
       const [relinked] = await db.update(equipment)
-        .set({ clientId, detectedDeviceId: device.id, ...(device.ipAddress ? { ipAddress: device.ipAddress } : {}), updatedAt: new Date() })
-        .where(eq(equipment.id, macConflict.id))
+        .set({
+          clientId,
+          detectedDeviceId: device.id,
+          ...identityPatch,
+          updatedAt: new Date(),
+        })
+        .where(eq(equipment.id, existingEquip.id))
         .returning({ id: equipment.id });
       equipmentId = relinked.id;
     } else {
@@ -359,6 +391,7 @@ devicesRouter.post('/:id/adopt', requireRole('admin'), async (req, res) => {
       equipmentId,
       clientId,
       ipAddress: device.ipAddress,
+      matchedBy: matchedBy || 'new',
     });
   } catch (err) {
     if (err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {

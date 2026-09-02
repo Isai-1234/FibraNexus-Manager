@@ -2,19 +2,9 @@ import { db } from '../db/index.js';
 import { detectedDevices, equipment, clients, users, clientServices } from '../db/schema.js';
 import { and, eq, inArray, desc, isNull, isNotNull } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
+import { normalizeMac, macsEqual, deviceMgmtIp } from './equipmentIdentity.js';
 
-function normalizeMac(mac) {
-  if (!mac) return null;
-  const clean = String(mac).toLowerCase().replace(/[^0-9a-f]/g, '');
-  if (clean.length !== 12) return null;
-  return clean.replace(/(.{2})(?=.)/g, '$1:');
-}
-
-function macsEqual(a, b) {
-  const na = normalizeMac(a);
-  const nb = normalizeMac(b);
-  return Boolean(na && nb && na === nb);
-}
+export { normalizeMac, macsEqual };
 
 /** Quita MAC del servicio si ya no hay CPE vinculado al abonado con esa MAC. */
 export async function clearOrphanServiceMac(clientId, macAddress, orgId, serviceIdHint = null) {
@@ -96,9 +86,9 @@ export async function revertDetectedDeviceForEquipment(row, orgId) {
   }
 }
 
-/** Mark detected_devices adopted when CPE is linked to abonado (by detectedDeviceId or MAC). */
+/** Mark detected_devices adopted when CPE is linked to abonado (detectedDeviceId → MAC → IP). */
 export async function markDetectedDeviceAdopted(row, orgId, clientServiceId = null) {
-  if (!row?.macAddress && !row?.detectedDeviceId) return;
+  if (!row?.macAddress && !row?.detectedDeviceId && !row?.ipAddress) return;
 
   const patch = {
     status: 'adopted',
@@ -115,13 +105,23 @@ export async function markDetectedDeviceAdopted(row, orgId, clientServiceId = nu
   }
 
   const mac = normalizeMac(row.macAddress);
-  if (!mac) return;
+  if (mac) {
+    await db.update(detectedDevices).set(patch).where(and(
+      orgFilter(detectedDevices, orgId),
+      eq(detectedDevices.macAddress, mac),
+      inArray(detectedDevices.status, ['detected', 'adopted']),
+    ));
+    return;
+  }
 
-  await db.update(detectedDevices).set(patch).where(and(
-    orgFilter(detectedDevices, orgId),
-    eq(detectedDevices.macAddress, mac),
-    inArray(detectedDevices.status, ['detected', 'adopted']),
-  ));
+  const ip = deviceMgmtIp(row);
+  if (ip) {
+    await db.update(detectedDevices).set(patch).where(and(
+      orgFilter(detectedDevices, orgId),
+      eq(detectedDevices.ipAddress, ip),
+      inArray(detectedDevices.status, ['detected', 'adopted']),
+    ));
+  }
 }
 
 /**
@@ -148,10 +148,13 @@ export async function syncDetectedDeviceStates(orgId) {
   ]);
 
   const cpeByMac = new Map();
+  const cpeByIp = new Map();
   const cpeByDetectedId = new Map();
   for (const cpe of cpeRows) {
     const mac = normalizeMac(cpe.macAddress);
     if (mac) cpeByMac.set(mac, cpe);
+    const ip = deviceMgmtIp(cpe);
+    if (ip && !cpeByIp.has(ip)) cpeByIp.set(ip, cpe);
     if (cpe.detectedDeviceId) cpeByDetectedId.set(cpe.detectedDeviceId, cpe);
   }
 
@@ -160,7 +163,9 @@ export async function syncDetectedDeviceStates(orgId) {
     if (dd.status === 'ignored') continue;
 
     const mac = normalizeMac(dd.macAddress);
-    const cpe = cpeByDetectedId.get(dd.id) || (mac ? cpeByMac.get(mac) : null);
+    const cpe = cpeByDetectedId.get(dd.id)
+      || (mac ? cpeByMac.get(mac) : null)
+      || (deviceMgmtIp(dd) ? cpeByIp.get(deviceMgmtIp(dd)) : null);
     const linked = Boolean(cpe?.clientId);
 
     if (linked && dd.status !== 'adopted') {
@@ -342,14 +347,17 @@ export async function enrichDetectedRowsWithLiveClient(rows, orgId) {
     ));
 
   const byMac = new Map();
+  const byIp = new Map();
   for (const row of linked) {
     const mac = normalizeMac(row.macAddress);
     if (mac) byMac.set(mac, row);
+    const ip = deviceMgmtIp(row);
+    if (ip && !byIp.has(ip)) byIp.set(ip, row);
   }
 
   return rows.map((r) => {
     const mac = normalizeMac(r.macAddress);
-    const live = mac ? byMac.get(mac) : null;
+    const live = (mac ? byMac.get(mac) : null) || (deviceMgmtIp(r) ? byIp.get(deviceMgmtIp(r)) : null);
     const effectivelyLinked = Boolean(live?.clientId);
 
     let effectiveStatus = r.status;

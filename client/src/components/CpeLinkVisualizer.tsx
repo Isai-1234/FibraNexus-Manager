@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import { AlertTriangle, Maximize2, Radio, RefreshCw, Wifi } from 'lucide-react'
 import cpeArt from '../assets/link/cpe-dish@3x.png'
 import towerArt from '../assets/link/tower-sector@3x.png'
+import { useThemeMode } from '../lib/useThemeMode'
 
 /** Layout responsivo: viewBox 580×280; centros en % del ancho (hardware + etiquetas) */
 type ImgBox = {
@@ -133,6 +134,12 @@ interface EquipmentMetrics {
     wirelessTxRate?: number | null
     wirelessRxRate?: number | null
     wirelessWarnings?: WirelessWarning[]
+    apStationSignal?: number | null
+    apStationCcq?: number | null
+    apStationSnr?: number | null
+    apStationTxRate?: number | null
+    apStationRxRate?: number | null
+    apStationWarnings?: WirelessWarning[]
     linkQuality?: number | null
     snmpPolledAt?: string | null
     snmpUptime?: string | null
@@ -328,13 +335,13 @@ function LinkHardwareSvg({
   )
 }
 
-function LinkHardwareLabelsSvg({ cpeLabel, apLabel }: { cpeLabel: string; apLabel: string }) {
+function LinkHardwareLabelsSvg({ cpeLabel, apLabel, labelFill = '#64748b' }: { cpeLabel: string; apLabel: string; labelFill?: string }) {
   const labelY = LINK_SCENE.viewH - 6
   const fit = (text: string, max = 22) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
   const labelProps = {
     y: labelY,
     textAnchor: 'middle' as const,
-    fill: '#64748b',
+    fill: labelFill,
     fontSize: 10,
     fontFamily: 'system-ui,sans-serif',
   }
@@ -353,10 +360,13 @@ function LinkHardwareLabelsSvg({ cpeLabel, apLabel }: { cpeLabel: string; apLabe
   )
 }
 
-function QualityRing({ score, color, uid }: { score: number; color: string; uid: string }) {
+function QualityRing({ score, color, uid, isLight }: { score: number; color: string; uid: string; isLight?: boolean }) {
   const r = 36
   const c = 2 * Math.PI * r
   const offset = c - (score / 100) * c
+  const trackStroke = isLight ? 'rgba(40,35,30,0.08)' : 'rgba(255,255,255,0.06)'
+  const scoreFill = isLight ? '#28231e' : '#ffffff'
+  const linkFill = isLight ? '#7a6e60' : '#64748b'
   return (
     <svg viewBox="0 0 96 96" className="w-20 h-20 sm:w-24 sm:h-24 shrink-0" aria-hidden>
       <defs>
@@ -365,7 +375,7 @@ function QualityRing({ score, color, uid }: { score: number; color: string; uid:
           <stop offset="100%" stopColor="#4ade80" stopOpacity="0.8" />
         </linearGradient>
       </defs>
-      <circle cx="48" cy="48" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+      <circle cx="48" cy="48" r={r} fill="none" stroke={trackStroke} strokeWidth="6" />
       <circle
         cx="48" cy="48" r={r} fill="none"
         stroke={`url(#${uid}-ringGrad)`}
@@ -376,8 +386,8 @@ function QualityRing({ score, color, uid }: { score: number; color: string; uid:
         transform="rotate(-90 48 48)"
         style={{ transition: 'stroke-dashoffset 1s ease-out' }}
       />
-      <text x="48" y="44" textAnchor="middle" fill="white" fontSize="18" fontWeight="700" fontFamily="system-ui,sans-serif">{score}</text>
-      <text x="48" y="58" textAnchor="middle" fill="#64748b" fontSize="8" fontFamily="system-ui,sans-serif" letterSpacing="1">LINK</text>
+      <text x="48" y="44" textAnchor="middle" fill={scoreFill} fontSize="18" fontWeight="700" fontFamily="system-ui,sans-serif">{score}</text>
+      <text x="48" y="58" textAnchor="middle" fill={linkFill} fontSize="8" fontFamily="system-ui,sans-serif" letterSpacing="1">LINK</text>
     </svg>
   )
 }
@@ -485,7 +495,7 @@ function SignalBeams({
 function MetricBar({ value, max, ok, color }: { value: number; max: number; ok: boolean; color: string }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
   return (
-    <div className="mt-2 h-1 rounded-full bg-surface-card/5 overflow-hidden">
+    <div className="mt-2 h-1 rounded-full bg-surface-raised overflow-hidden">
       <div
         className="h-full rounded-full transition-all duration-700 ease-out"
         style={{ width: `${pct}%`, background: ok ? color : '#fbbf24' }}
@@ -501,15 +511,20 @@ export default function CpeLinkVisualizer({
   towerImageUrl = LINK_VISUAL_ASSETS.tower,
 }: Props) {
   const uid = useId().replace(/:/g, '')
+  const isLight = useThemeMode() === 'light'
+  const svgLabelFill = isLight ? '#7a6e60' : '#64748b'
+  const metricCardClass = 'rounded-2xl bg-surface-raised/80 border border-line px-3 py-2.5 hover:bg-surface-raised transition-colors'
+  const metricValueOk = 'text-ink'
+  const metricValueWarn = 'text-amber-700 dark:text-amber-300'
 
   if (!equipment) {
     return (
-      <div className="rounded-3xl bg-[#070b14] p-10 text-center border border-white/[0.06]">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-card/[0.03] flex items-center justify-center">
-          <Radio className="h-7 w-7 text-slate-600" />
+      <div className="fn-card-elevated p-10 text-center rounded-3xl">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-raised flex items-center justify-center">
+          <Radio className="h-7 w-7 text-ink-muted" />
         </div>
         <p className="text-sm text-ink-muted">Sin antena CPE vinculada</p>
-        <p className="text-xs text-slate-600 mt-1">Asigna una LiteBeam en la pestaña Equipos</p>
+        <p className="text-xs text-ink-muted mt-1">Asigna una LiteBeam en la pestaña Equipos</p>
       </div>
     )
   }
@@ -520,14 +535,15 @@ export default function CpeLinkVisualizer({
   const beamStrength = signalStrengthPercent(signal)
   const ccq = linkDown ? null : equipment.wirelessCcq
   const snr = linkDown ? null : equipment.wirelessSnr
-  const warnings = linkDown ? [] : (equipment.wirelessWarnings || [])
+  const warnings = linkDown
+    ? []
+    : [...(equipment.wirelessWarnings || []), ...(equipment.apStationWarnings || [])]
   const peer = equipment.linkPeer || null
   const peerOnline = peer?.status === 'online'
-  // En panel de abonado: métricas de la sectorial = vista del enlace hacia ESTE CPE.
-  // Si el CPE está caído, la sectorial puede seguir online pero sin estación → sin dBm.
-  const peerSignal = linkDown ? null : (peer?.wirelessSignal ?? peer?.wirelessRssi ?? null)
-  const peerCcq = linkDown ? null : (peer?.wirelessCcq ?? null)
-  const peerSnr = linkDown ? null : (peer?.wirelessSnr ?? null)
+  // Sectorial: vista del AP hacia este CPE (ubntStaTable), no el auto-poll del AP.
+  const peerSignal = linkDown ? null : (equipment.apStationSignal ?? null)
+  const peerCcq = linkDown ? null : (equipment.apStationCcq ?? null)
+  const peerSnr = linkDown ? null : (equipment.apStationSnr ?? null)
   const apLabel = siteName || equipment.siteName || peer?.name || 'Torre sectorial'
   const cpeOwner = (clientName || '').trim()
   const cpeLabel = cpeOwner ? `CPE de ${cpeOwner}` : 'CPE del abonado'
@@ -543,8 +559,8 @@ export default function CpeLinkVisualizer({
     note?: string | null,
   ) => (
     <div className="space-y-2">
-      <p className="text-[10px] uppercase tracking-widest text-cyan-400/60 font-medium px-1">{label}</p>
-      {note && <p className="text-[11px] text-slate-500 px-1 -mt-1">{note}</p>}
+      <p className="text-[10px] uppercase tracking-widest text-sky-700/70 dark:text-cyan-400/60 font-medium px-1">{label}</p>
+      {note && <p className="text-[11px] text-ink-muted px-1 -mt-1">{note}</p>}
       <div className="grid grid-cols-2 gap-2">
         {[
           {
@@ -566,12 +582,12 @@ export default function CpeLinkVisualizer({
         ].map((m) => (
           <div
             key={`${label}-${m.label}`}
-            className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.06] px-3 py-2.5 hover:bg-surface-card/[0.05] transition-colors"
+            className={metricCardClass}
           >
             <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
             <p className="mt-0.5 flex items-baseline gap-1">
-              <span className={`text-base font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
-              <span className="text-[10px] text-slate-600">{m.unit}</span>
+              <span className={`text-base font-bold tabular-nums ${m.ok ? metricValueOk : metricValueWarn}`}>{m.value}</span>
+              <span className="text-[10px] text-ink-muted">{m.unit}</span>
             </p>
             {m.bar > 0 && <MetricBar value={m.bar} max={m.max} ok={m.ok} color={m.color} />}
           </div>
@@ -581,11 +597,8 @@ export default function CpeLinkVisualizer({
   )
 
   return (
-    <div className={`relative overflow-hidden rounded-3xl border border-white/[0.08] shadow-[0_24px_80px_-20px_rgba(0,0,0,0.8)] cpe-viz ${immersive ? 'min-h-[70vh] flex flex-col' : ''} ${className}`}>
+    <div className={`relative overflow-hidden rounded-3xl cpe-viz ${immersive ? 'min-h-[70vh] flex flex-col' : ''} ${className}`}>
       <style>{`
-        .cpe-viz {
-          background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #060a12 45%, #030508 100%);
-        }
         @keyframes beam-tx-flow {
           to { stroke-dashoffset: -90; }
         }
@@ -610,7 +623,7 @@ export default function CpeLinkVisualizer({
       `}</style>
 
       {/* aurora atmosphere */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden cpe-viz-aurora">
         <div className="aurora-blob absolute -top-20 left-1/4 w-72 h-72 rounded-full bg-cyan-500/[0.07] blur-3xl" />
         <div className="aurora-blob absolute top-10 right-1/4 w-56 h-56 rounded-full bg-emerald-500/[0.05] blur-3xl" style={{ animationDelay: '-3s' }} />
       </div>
@@ -618,19 +631,19 @@ export default function CpeLinkVisualizer({
       {/* header */}
       <div className="relative px-6 pt-6 pb-2 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <QualityRing score={linkScore} color={theme.ring} uid={uid} />
+          <QualityRing score={linkScore} color={theme.ring} uid={uid} isLight={isLight} />
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] uppercase tracking-[0.25em] text-cyan-400/50 font-medium">Radio enlace</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-card/[0.05] text-ink-muted border border-white/[0.06]">
+              <span className="text-[10px] uppercase tracking-[0.25em] text-sky-700/60 dark:text-cyan-400/50 font-medium">Radio enlace</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-raised text-ink-muted border border-line">
                 {theme.label}
               </span>
             </div>
-            <h3 className="text-xl font-semibold text-white tracking-tight">{equipment.name || 'Antena CPE'}</h3>
+            <h3 className="text-xl font-semibold text-ink tracking-tight">{equipment.name || 'Antena CPE'}</h3>
             <p className="text-sm text-ink-muted mt-0.5">
               {equipment.brand || 'Ubiquiti'} {equipment.model || 'LiteBeam M5'}
             </p>
-            <p className="text-xs font-mono text-slate-600 mt-1">{equipment.displayIp || equipment.ipAddress || 'sin IP'}</p>
+            <p className="text-xs font-mono text-ink-muted mt-1">{equipment.displayIp || equipment.ipAddress || 'sin IP'}</p>
           </div>
         </div>
 
@@ -642,7 +655,7 @@ export default function CpeLinkVisualizer({
                 onClick={onRefresh}
                 disabled={refreshing}
                 title="Actualizar SNMP"
-                className="p-2 rounded-xl bg-surface-card/[0.05] border border-white/[0.08] text-ink-muted hover:text-cyan-300 hover:border-cyan-500/30 transition disabled:opacity-40"
+                className="p-2 rounded-xl bg-surface-card border border-line text-ink-muted hover:text-sky-600 dark:hover:text-cyan-300 hover:border-sky-500/30 transition disabled:opacity-40"
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
@@ -652,7 +665,7 @@ export default function CpeLinkVisualizer({
                 type="button"
                 onClick={onExpand}
                 title="Pantalla completa"
-                className="p-2 rounded-xl bg-surface-card/[0.05] border border-white/[0.08] text-ink-muted hover:text-cyan-300 hover:border-cyan-500/30 transition"
+                className="p-2 rounded-xl bg-surface-card border border-line text-ink-muted hover:text-sky-600 dark:hover:text-cyan-300 hover:border-sky-500/30 transition"
               >
                 <Maximize2 className="h-4 w-4" />
               </button>
@@ -660,14 +673,14 @@ export default function CpeLinkVisualizer({
           </div>
           <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm ${
             online
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20 shadow-[0_0_20px_-5px_rgba(52,211,153,0.4)]'
-              : 'bg-red-500/10 text-red-300 border border-red-400/20'
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 dark:border-emerald-400/20'
+              : 'bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/25 dark:border-red-400/20'
           }`}>
             <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]' : 'bg-red-400'}`} />
             {online ? 'En línea' : 'Sin enlace'}
           </span>
           {equipment.snmpUptime && (
-            <span className="text-[10px] text-slate-600 font-mono">uptime {equipment.snmpUptime}</span>
+            <span className="text-[10px] text-ink-muted font-mono">uptime {equipment.snmpUptime}</span>
           )}
         </div>
       </div>
@@ -692,7 +705,7 @@ export default function CpeLinkVisualizer({
               </linearGradient>
               <linearGradient id={`${uid}-horizon`} x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="transparent" />
-                <stop offset="100%" stopColor="rgba(34,211,238,0.04)" />
+                <stop offset="100%" stopColor={isLight ? 'rgba(2,132,199,0.06)' : 'rgba(34,211,238,0.04)'} />
               </linearGradient>
               <radialGradient id={`${uid}-shadow`} cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stopColor="#000" stopOpacity="0.35" />
@@ -708,7 +721,7 @@ export default function CpeLinkVisualizer({
               </linearGradient>
             </defs>
 
-            <g className="floor-grid" opacity="0.04">
+            <g className="floor-grid" opacity={isLight ? 0.08 : 0.04}>
               {Array.from({ length: 12 }, (_, i) => (
                 <line key={`h${i}`} x1="0" y1={198 + i * 8} x2="580" y2={198 + i * 8} stroke="#94a3b8" strokeWidth="0.5" />
               ))}
@@ -745,15 +758,15 @@ export default function CpeLinkVisualizer({
                   width="90"
                   height="18"
                   rx="9"
-                  fill="rgba(255,255,255,0.06)"
-                  stroke="rgba(255,255,255,0.1)"
+                  fill={isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.06)'}
+                  stroke={isLight ? 'rgba(40,35,30,0.12)' : 'rgba(255,255,255,0.1)'}
                   strokeWidth="0.5"
                 />
                 <text
                   x={linkBeam.mid.x}
                   y={linkBeam.mid.y - 20}
                   textAnchor="middle"
-                  fill="#94a3b8"
+                  fill={svgLabelFill}
                   fontSize="8"
                   fontFamily="system-ui,sans-serif"
                 >
@@ -763,13 +776,13 @@ export default function CpeLinkVisualizer({
             )}
 
 
-            <LinkHardwareLabelsSvg cpeLabel={cpeLabel} apLabel={apLabel} />
+            <LinkHardwareLabelsSvg cpeLabel={cpeLabel} apLabel={apLabel} labelFill={svgLabelFill} />
           </svg>
         </div>
       </div>
 
       {/* métricas: cliente + sectorial */}
-      <div className="relative p-4 pt-2 border-t border-white/[0.05]">
+      <div className="relative p-4 pt-2 border-t border-line">
         {peer ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {metricSide(
@@ -812,12 +825,12 @@ export default function CpeLinkVisualizer({
             ].map((m) => (
               <div
                 key={m.label}
-                className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.06] px-4 py-3 hover:bg-surface-card/[0.05] transition-colors"
+                className={`${metricCardClass} px-4 py-3`}
               >
                 <p className="text-[10px] uppercase tracking-widest text-ink-muted">{m.label}</p>
                 <p className="mt-1 flex items-baseline gap-1">
-                  <span className={`text-lg font-bold tabular-nums ${m.ok ? 'text-white' : 'text-amber-300'}`}>{m.value}</span>
-                  <span className="text-[10px] text-slate-600">{m.unit}</span>
+                  <span className={`text-lg font-bold tabular-nums ${m.ok ? metricValueOk : metricValueWarn}`}>{m.value}</span>
+                  <span className="text-[10px] text-ink-muted">{m.unit}</span>
                 </p>
                 {m.bar > 0 && <MetricBar value={m.bar} max={m.max} ok={m.ok} color={m.color} />}
               </div>
@@ -827,8 +840,8 @@ export default function CpeLinkVisualizer({
       </div>
 
       {linkDown && (
-        <div className="mx-4 mb-4 rounded-2xl border border-red-500/20 bg-red-500/[0.08] backdrop-blur-sm px-4 py-3 flex items-start gap-2.5 text-sm text-red-100/90">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
+        <div className="mx-4 mb-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 flex items-start gap-2.5 text-sm text-red-800 dark:text-red-100/90">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-500 dark:text-red-400" />
           <span>
             {peerOnline
               ? 'El CPE del cliente no está enlazado. La sectorial sigue en línea; este abonado ya no aparece en su tabla de estaciones.'
@@ -838,10 +851,10 @@ export default function CpeLinkVisualizer({
       )}
 
       {!linkDown && warnings.length > 0 && (
-        <div className="mx-4 mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.08] backdrop-blur-sm px-4 py-3 space-y-2">
+        <div className="mx-4 mb-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 space-y-2">
           {warnings.map((w) => (
-            <div key={w.label} className="flex items-start gap-2.5 text-sm text-amber-100/90">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+            <div key={w.label} className="flex items-start gap-2.5 text-sm text-amber-900 dark:text-amber-100/90">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <span>{w.label}</span>
             </div>
           ))}
@@ -849,7 +862,7 @@ export default function CpeLinkVisualizer({
       )}
 
       {!signal && online && (
-        <div className="mx-4 mb-4 flex flex-col gap-1 text-xs text-ink-muted rounded-xl bg-surface-card/[0.02] border border-white/[0.04] px-4 py-3">
+        <div className="mx-4 mb-4 flex flex-col gap-1 text-xs text-ink-muted rounded-xl bg-surface-raised border border-line px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Wifi className="h-3.5 w-3.5 text-cyan-600/60 shrink-0" />
             <span>
@@ -861,7 +874,7 @@ export default function CpeLinkVisualizer({
             </span>
           </div>
           {equipment.snmpPollMethod === 'router' && (
-            <p className="text-[10px] text-slate-600 pl-6">
+            <p className="text-[10px] text-ink-muted pl-6">
               Poll enrutado: Render → túnel → MikroTik Torre → 172.16.x.x (no requiere IP pública en la antena).
             </p>
           )}
@@ -869,7 +882,7 @@ export default function CpeLinkVisualizer({
       )}
 
       {equipment.snmpPolledAt && (
-        <p className="px-6 pb-4 text-[10px] text-slate-700 font-mono flex items-center gap-2">
+        <p className="px-6 pb-4 text-[10px] text-ink-muted font-mono flex items-center gap-2">
           <span>
             {(equipment.snmpPollMethod === 'heartbeat' ? 'heartbeat' : 'snmp')}
             {' · '}

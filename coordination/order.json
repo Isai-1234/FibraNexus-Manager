@@ -1,12 +1,87 @@
 {
-  "id": "010",
+  "id": "012",
   "status": "done",
-  "task": "Verificar device tracking end-to-end: SNMP → equipment.last_seen actualizado",
-  "needs_cursor": false,
-  "vps_commands": [
-    "pm2 logs fibranexus-worker --nostream --lines 20 | grep -E 'scheduler|SNMP|processing'",
-    "sudo -u postgres psql -d fibranexus_prod -c 'SELECT id, name, status, last_seen FROM equipment ORDER BY last_seen DESC LIMIT 5;'",
-    "redis-cli DBSIZE"
+  "task": "QA EXHAUSTIVO: Pruebas funcionales completas de FibraNexus (usuarios, suspensiones, UI, redundancia, inconsistencias)",
+  "needs_cursor": true,
+  "description": "Testing detallado de TODA la plataforma. Crear usuarios, suspender, revisar UI, botones, flujos, datos redundantes, inconsistencias.",
+  "test_cases": [
+    {
+      "feature": "Gestión de Usuarios",
+      "tests": [
+        "Crear usuario (todos los roles: admin, tech, operator)",
+        "Editar datos de usuario",
+        "Suspender/reactivar usuario",
+        "Verificar que datos se actualizan en BD",
+        "Verificar permisos por rol"
+      ]
+    },
+    {
+      "feature": "Gestión de Planes/Servicios",
+      "tests": [
+        "Crear plan",
+        "Asignar a cliente",
+        "Cambiar plan",
+        "Verificar facturación actualiza",
+        "Buscar inconsistencias en precios"
+      ]
+    },
+    {
+      "feature": "Gestión de Equipos",
+      "tests": [
+        "Crear equipo (SNMP)",
+        "Status online/offline actualiza en tiempo real",
+        "last_seen refleja correctamente",
+        "CCQ/señal se actualiza",
+        "Botones de acción funcionan (reiniciar, reset, etc)"
+      ]
+    },
+    {
+      "feature": "Dashboard/UI",
+      "tests": [
+        "Revisar redundancia de información (campos duplicados)",
+        "Botones deshabilitados cuando deben estarlo",
+        "Validaciones en formularios",
+        "Mensajes de error claros",
+        "Responsive en mobile (si aplica)",
+        "Performance con muchos datos"
+      ]
+    },
+    {
+      "feature": "Facturación/Pagos",
+      "tests": [
+        "Crear factura",
+        "Marcar pagada",
+        "Verificar estado de deuda",
+        "Inconsistencias de saldos"
+      ]
+    },
+    {
+      "feature": "Tickets/Soporte",
+      "tests": [
+        "Crear ticket",
+        "Asignar a técnico",
+        "Cambiar estado",
+        "Verificar historial",
+        "Notificaciones funcionan"
+      ]
+    },
+    {
+      "feature": "Datos/BD",
+      "tests": [
+        "Verificar integridad referencial",
+        "No hay orfandad de datos",
+        "Campos NULL donde no deberían",
+        "Datos activos vs desactivados consistentes"
+      ]
+    }
   ],
-  "completed_at": "2026-09-01T04:01:02.420Z"
+  "report_format": {
+    "feature": "...",
+    "test": "...",
+    "result": "✅ OK | ⚠️ Warning | ❌ Error",
+    "details": "...",
+    "fix_needed": "..."
+  },
+  "vps_commands": [],
+  "completed_at": "2026-09-01T04:22:47.571Z"
 }

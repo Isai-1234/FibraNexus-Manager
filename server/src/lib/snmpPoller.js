@@ -1,5 +1,6 @@
 import snmp from 'net-snmp';
 import { snmpGetViaRouter, snmpWalkViaRouter, mikrotikSnmpGet } from './mikrotikNetwork.js';
+import { compactMac, findApStationForDevice, deviceMgmtIp } from './equipmentIdentity.js';
 
 function withHardTimeout(promise, ms, label = '') {
   return Promise.race([
@@ -43,14 +44,17 @@ const UBNT_STA_COLS = {
   name: 2,
   signal: 3,
   noiseFloor: 4,
+  ccq: 6,
+  amp: 7,
+  amq: 8,
+  amc: 9,
   remoteIp: 10,
   txRate: 11,
   rxRate: 12,
-  ccq: 16,
 };
 
 function normalizeMac(mac) {
-  return String(mac || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+  return compactMac(mac);
 }
 
 function isUbiquitiEquipment(eq, sysDescr = '') {
@@ -59,7 +63,35 @@ function isUbiquitiEquipment(eq, sysDescr = '') {
   );
 }
 
-function wirelessFromRaw(merged, attempts) {
+function deviceWantsApStationView(device, result) {
+  if (!isUbiquitiEquipment(device)) return false;
+  if (device.clientId) return true;
+  const r = result;
+  return Boolean(device.macAddress) && (!r || !r.online || !r.wireless);
+}
+
+function normalizeCcq(value) {
+  const n = Number(value);
+  if (Number.isNaN(n)) return null;
+  if (n > 100) return Math.round(n / 10);
+  return n;
+}
+
+/** Señal RX estilo UISP en CPE estación: wlStatRssi positivo + offset 101 cuando aplica. */
+function pickUbntClientSignalDbm(merged) {
+  const sigDbm = normalizeDbm(merged.signal ?? merged.rssi);
+  const rssiRaw = Number(merged.rssi);
+  if (Number.isNaN(rssiRaw) || rssiRaw <= 0 || rssiRaw >= 128) return sigDbm;
+  if (sigDbm == null || sigDbm >= -20) return sigDbm;
+
+  const fromRssi = rssiRaw - 101;
+  if (fromRssi > -95 && fromRssi < -20 && rssiRaw > Math.abs(sigDbm)) {
+    return fromRssi;
+  }
+  return sigDbm;
+}
+
+function wirelessFromRaw(merged, attempts, { role = 'client' } = {}) {
   const rawNums = ['signal', 'rssi', 'ccq', 'noiseFloor', 'txRate', 'rxRate']
     .map((k) => Number(merged[k]))
     .filter((n) => !Number.isNaN(n));
@@ -74,7 +106,9 @@ function wirelessFromRaw(merged, attempts) {
     };
   }
 
-  const signal = normalizeDbm(merged.signal ?? merged.rssi);
+  const signal = role === 'ap-station'
+    ? normalizeDbm(merged.signal ?? merged.rssi)
+    : pickUbntClientSignalDbm(merged);
   const rssi = normalizeDbm(merged.rssi ?? merged.signal);
   const ccq = normalizeCcq(merged.ccq);
   const noiseFloor = normalizeDbm(merged.noiseFloor);
@@ -183,12 +217,8 @@ async function resolveCommunity(eq) {
  */
 export async function enrichFromApStations(results, devices, router) {
   const byId = new Map(results.map((r) => [r.id, { ...r }]));
-  const needMac = devices.filter((d) => {
-    const r = byId.get(d.id);
-    const needs = !r || !r.online || !r.wireless;
-    return d.macAddress && needs;
-  });
-  if (!needMac.length || !router) return results;
+  const needStation = devices.filter((d) => deviceWantsApStationView(d, byId.get(d.id)));
+  if (!needStation.length || !router) return results;
 
   const apCandidates = devices.filter((d) => {
     if (!isUbiquitiEquipment(d) || !d.snmpCommunity || !d.ipAddress) return false;
@@ -197,6 +227,7 @@ export async function enrichFromApStations(results, devices, router) {
   });
 
   const stationByMac = new Map();
+  const stationByRemoteIp = new Map();
   // Al menos un AP respondió con su tabla de estaciones → la ausencia de una MAC es evidencia de enlace caído.
   let apTableConfirmed = false;
   for (const ap of apCandidates) {
@@ -216,20 +247,23 @@ export async function enrichFromApStations(results, devices, router) {
         }
       }
       for (const [mac, row] of map) {
-        if (!stationByMac.has(mac)) stationByMac.set(mac, { ...row, apHost: host, apName: ap.name });
+        if (!stationByMac.has(mac)) stationByMac.set(mac, { ...row, macKey: mac, apHost: host, apName: ap.name });
+        const rip = String(row.remoteIp || '').trim().split('/')[0];
+        if (rip && !stationByRemoteIp.has(rip)) stationByRemoteIp.set(rip, { ...row, macKey: mac, apHost: host, apName: ap.name });
       }
     } catch {
       /* AP sin tabla de estaciones */
     }
   }
 
-  // CPEs cliente Ubiquiti: si el AP respondió y la MAC no está, es desconexión (estilo UISP).
+  const stationSeen = (device) => Boolean(findApStationForDevice(device, stationByMac, stationByRemoteIp));
+
+  // CPEs cliente Ubiquiti: si el AP respondió y la estación no está, es desconexión (estilo UISP).
   if (apTableConfirmed) {
-    for (const device of needMac) {
+    for (const device of needStation) {
       const r = byId.get(device.id);
       if (r?.online) continue;
-      const mac = normalizeMac(device.macAddress);
-      if (!mac || stationByMac.has(mac)) continue;
+      if (stationSeen(device)) continue;
       const watchedClient = Boolean(device.clientId) && isUbiquitiEquipment(device);
       const wasApMonitored = device.credentials?.lastSnmp?.pollMethod === 'ap-station'
         || Boolean(device.credentials?.lastSnmp?.linkDown);
@@ -247,9 +281,8 @@ export async function enrichFromApStations(results, devices, router) {
     return [...byId.values()].length ? results.map((r) => byId.get(r.id) || r) : results;
   }
 
-  for (const device of needMac) {
-    const mac = normalizeMac(device.macAddress);
-    const sta = stationByMac.get(mac);
+  for (const device of needStation) {
+    const sta = findApStationForDevice(device, stationByMac, stationByRemoteIp);
     if (!sta?.signal) continue;
     const built = wirelessFromRaw({
       signal: sta.signal,
@@ -257,25 +290,36 @@ export async function enrichFromApStations(results, devices, router) {
       ccq: sta.ccq,
       txRate: sta.txRate,
       rxRate: sta.rxRate,
-    }, ['ap-station']);
+    }, ['ap-station'], { role: 'ap-station' });
     if (!built.wireless) continue;
+    const prev = byId.get(device.id) || { id: device.id, name: device.name };
+    const directWireless = prev.wireless && prev.pollMethod && prev.pollMethod !== 'ap-station'
+      ? prev.wireless
+      : null;
+    const stationDebug = {
+      ...built.wirelessDebug,
+      apHost: sta.apHost,
+      apName: sta.apName,
+      hint: directWireless
+        ? `Vista AP (ubntStaTable) · CPE directo: ${prev.pollMethod}`
+        : `Señal leída desde el AP ${sta.apName || sta.apHost} (ubntStaTable).`,
+    };
     byId.set(device.id, {
-      id: device.id,
-      name: device.name,
+      ...prev,
       online: true,
       sysName: sta.name || device.name,
-      wireless: built.wireless,
-      wirelessDebug: {
-        ...built.wirelessDebug,
-        apHost: sta.apHost,
-        apName: sta.apName,
-        hint: `Señal leída desde el AP ${sta.apName || sta.apHost} (el CPE no responde SNMP directo).`,
-      },
+      // Vista del CPE: solo poll SNMP directo al equipo (estilo UISP "Remote" / -47)
+      wireless: directWireless,
+      wirelessDebug: directWireless ? prev.wirelessDebug : stationDebug,
+      // Vista del AP hacia esta estación (estilo UISP "Local" en el AP / -53)
+      apStationWireless: built.wireless,
+      apStationWirelessDebug: stationDebug,
       polledAt: new Date().toISOString(),
-      host: sta.remoteIp || device.ipAddress,
+      host: sta.remoteIp || prev.host || device.ipAddress,
       stationRemoteIp: sta.remoteIp || null,
-      pollMethod: 'ap-station',
-      community: '***',
+      stationMac: sta.macKey || null,
+      pollMethod: directWireless ? prev.pollMethod : 'ap-station',
+      community: prev.community || '***',
     });
   }
 
@@ -302,13 +346,6 @@ function normalizeDbm(value) {
   const n = Number(value);
   if (Number.isNaN(n)) return null;
   if (n > 0 && n < 256) return -n;
-  return n;
-}
-
-function normalizeCcq(value) {
-  const n = Number(value);
-  if (Number.isNaN(n)) return null;
-  if (n > 100) return Math.round(n / 10);
   return n;
 }
 

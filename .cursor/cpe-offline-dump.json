@@ -1,0 +1,202 @@
+﻿{
+    "id":  3,
+    "name":  "Loco Cliente Lab",
+    "type":  "cpe",
+    "brand":  "Ubiquiti",
+    "model":  "airOS CPE",
+    "ipAddress":  "172.16.11.251",
+    "macAddress":  "6c:63:f8:d8:78:18",
+    "status":  "offline",
+    "siteId":  1,
+    "clientId":  83,
+    "notes":  "Station PPPoE gestion .251",
+    "lastSeen":  "2026-07-26T03:40:03.000Z",
+    "createdAt":  "2026-07-25T02:25:32.000Z",
+    "siteName":  "Torre Lab Camino A",
+    "siteCity":  "Lab",
+    "linkPeer":  {
+                     "id":  2,
+                     "name":  "Loco Sectorial Lab",
+                     "type":  "cpe",
+                     "brand":  "Ubiquiti",
+                     "model":  "airOS CPE",
+                     "ipAddress":  "172.16.11.254",
+                     "macAddress":  "6c:63:f8:d8:7a:dc",
+                     "status":  "online",
+                     "siteId":  1,
+                     "clientId":  null,
+                     "notes":  "AP/sectorial SSID ubnt - gesti�n 172.16.11.254",
+                     "lastSeen":  "2026-07-26T03:40:03.000Z",
+                     "displayIp":  "172.16.11.254",
+                     "snmpOnline":  true,
+                     "snmpUptime":  "0m",
+                     "snmpPolledAt":  "2026-07-26T03:39:29.267Z",
+                     "snmpError":  null,
+                     "snmpPollMethod":  "router",
+                     "snmpSysDescr":  "Linux 2.6.32.68 #1 Tue Jun 14 04:26:27 EEST 2022 mips",
+                     "wirelessSignal":  -96,
+                     "wirelessRssi":  0,
+                     "wirelessCcq":  null,
+                     "wirelessSnr":  0,
+                     "wirelessTxRate":  0,
+                     "wirelessRxRate":  0,
+                     "wirelessWarnings":  [
+                                              {
+                                                  "type":  "alignment",
+                                                  "label":  "Señal débil — posible desalineación",
+                                                  "severity":  "high"
+                                              },
+                                              {
+                                                  "type":  "ccq",
+                                                  "label":  "CCQ bajo (0%) — interferencia o mala alineación",
+                                                  "severity":  "high"
+                                              },
+                                              {
+                                                  "type":  "noise",
+                                                  "label":  "SNR bajo (0 dB) — ruido elevado",
+                                                  "severity":  "medium"
+                                              }
+                                          ],
+                     "wirelessDebugHint":  null,
+                     "linkQuality":  0,
+                     "statusLabel":  "Online",
+                     "hasSnmpCommunity":  true,
+                     "snmpCommunitySet":  true,
+                     "credentials":  {
+                                         "lastSnmp":  {
+                                                          "id":  2,
+                                                          "name":  "Loco Sectorial Lab",
+                                                          "online":  true,
+                                                          "sysName":  "NanoStation 5AC loco",
+                                                          "sysDescr":  "Linux 2.6.32.68 #1 Tue Jun 14 04:26:27 EEST 2022 mips",
+                                                          "uptime":  "0m",
+                                                          "uptimeTicks":  "1581200",
+                                                          "wireless":  {
+                                                                           "signalDbm":  -96,
+                                                                           "rssiDbm":  0,
+                                                                           "ccqPercent":  0,
+                                                                           "noiseFloorDbm":  -96,
+                                                                           "snrDb":  0,
+                                                                           "txRateMbps":  0,
+                                                                           "rxRateMbps":  0,
+                                                                           "warnings":  [
+                                                                                            {
+                                                                                                "type":  "alignment",
+                                                                                                "label":  "Señal débil — posible desalineación",
+                                                                                                "severity":  "high"
+                                                                                            },
+                                                                                            {
+                                                                                                "type":  "ccq",
+                                                                                                "label":  "CCQ bajo (0%) — interferencia o mala alineación",
+                                                                                                "severity":  "high"
+                                                                                            },
+                                                                                            {
+                                                                                                "type":  "noise",
+                                                                                                "label":  "SNR bajo (0 dB) — ruido elevado",
+                                                                                                "severity":  "medium"
+                                                                                            }
+                                                                                        ],
+                                                                           "linkQuality":  0
+                                                                       },
+                                                          "wirelessDebug":  {
+                                                                                "attempts":  [
+                                                                                                 "router-walk"
+                                                                                             ],
+                                                                                "raw":  {
+                                                                                            "signal":  "-96",
+                                                                                            "rssi":  "0",
+                                                                                            "ccq":  "0",
+                                                                                            "noiseFloor":  "-96",
+                                                                                            "txRate":  "0",
+                                                                                            "rxRate":  "0"
+                                                                                        }
+                                                                            },
+                                                          "polledAt":  "2026-07-26T03:39:29.267Z",
+                                                          "host":  "172.16.11.254",
+                                                          "pollMethod":  "router",
+                                                          "community":  "***"
+                                                      },
+                                         "consecutiveFailures":  0,
+                                         "routerId":  1,
+                                         "hasRouterPass":  false,
+                                         "hasAgentToken":  false,
+                                         "hasTunnelToken":  false,
+                                         "hasWebPass":  false,
+                                         "hasWifiPass":  false,
+                                         "webUser":  null,
+                                         "wifiSsid":  null,
+                                         "agentTokenRotatedAt":  null,
+                                         "pendingCmdCount":  0
+                                     }
+                 },
+    "displayIp":  "172.16.11.251",
+    "snmpOnline":  false,
+    "snmpUptime":  null,
+    "snmpPolledAt":  "2026-07-26T03:40:03.876Z",
+    "snmpError":  "El AP ya no reporta esta estación: enlace caído o CPE apagado.",
+    "snmpPollMethod":  "ap-station",
+    "snmpSysDescr":  null,
+    "wirelessSignal":  null,
+    "wirelessRssi":  null,
+    "wirelessCcq":  null,
+    "wirelessSnr":  null,
+    "wirelessTxRate":  null,
+    "wirelessRxRate":  null,
+    "wirelessWarnings":  [
+
+                         ],
+    "wirelessDebugHint":  "Señal leída desde el AP Loco Sectorial Lab (el CPE no responde SNMP directo).",
+    "linkQuality":  null,
+    "statusLabel":  "Offline",
+    "hasSnmpCommunity":  true,
+    "snmpCommunitySet":  true,
+    "credentials":  {
+                        "routerId":  1,
+                        "lastSnmp":  {
+                                         "id":  3,
+                                         "name":  "Loco Cliente Lab",
+                                         "online":  true,
+                                         "sysName":  "NanoStation 5AC loco",
+                                         "wireless":  null,
+                                         "wirelessDebug":  {
+                                                               "attempts":  [
+                                                                                "ap-station"
+                                                                            ],
+                                                               "raw":  {
+                                                                           "signal":  "-50",
+                                                                           "noiseFloor":  "-85",
+                                                                           "ccq":  "32",
+                                                                           "txRate":  "360000000",
+                                                                           "rxRate":  "216000000"
+                                                                       },
+                                                               "apHost":  "172.16.11.254",
+                                                               "apName":  "Loco Sectorial Lab",
+                                                               "hint":  "Señal leída desde el AP Loco Sectorial Lab (el CPE no responde SNMP directo)."
+                                                           },
+                                         "polledAt":  "2026-07-26T03:40:03.876Z",
+                                         "host":  "172.16.11.251",
+                                         "stationRemoteIp":  "172.16.11.251",
+                                         "pollMethod":  "ap-station",
+                                         "community":  "***",
+                                         "pollAttemptFailed":  true,
+                                         "pollError":  "El AP ya no reporta esta estación: enlace caído o CPE apagado",
+                                         "consecutivePollFailures":  5,
+                                         "linkDown":  true,
+                                         "hint":  "El AP ya no reporta esta estación: enlace caído o CPE apagado."
+                                     },
+                        "consecutiveFailures":  5,
+                        "webUser":  "ubnt",
+                        "resolvedIp":  "172.16.11.251",
+                        "resolvedAt":  "2026-07-26T03:15:12.523Z",
+                        "connectionMode":  "static",
+                        "hasRouterPass":  false,
+                        "hasAgentToken":  false,
+                        "hasTunnelToken":  false,
+                        "hasWebPass":  true,
+                        "hasWifiPass":  false,
+                        "wifiSsid":  null,
+                        "agentTokenRotatedAt":  null,
+                        "pendingCmdCount":  0
+                    },
+    "isStale":  true
+}

@@ -61,6 +61,31 @@ option {
   .fn-card {
     @apply bg-surface-card border border-line rounded-xl shadow-sm;
   }
+  .fn-card-elevated {
+    @apply rounded-xl border border-line bg-surface-card/80 shadow-lg;
+  }
+  .fn-panel {
+    @apply rounded-xl border border-line bg-surface-card overflow-hidden shadow-sm;
+  }
+  .fn-panel-header {
+    @apply px-5 py-3.5 border-b border-line flex items-center justify-between;
+  }
+  .fn-chip {
+    @apply px-3 py-1.5 rounded-lg border border-line bg-surface-card text-ink-soft text-xs hover:bg-surface-raised transition;
+  }
+  /* Visualizador radio enlace — tema claro / oscuro */
+  .cpe-viz {
+    @apply border border-line bg-surface-card;
+    background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #060a12 45%, #030508 100%);
+    box-shadow: 0 24px 80px -20px rgba(0, 0, 0, 0.45);
+  }
+  :root.light .cpe-viz {
+    background: radial-gradient(120% 80% at 50% 0%, #e3f2fb 0%, #fbf7f1 52%, #f4efe8 100%);
+    box-shadow: 0 8px 32px -12px rgba(40, 35, 30, 0.12);
+  }
+  :root.light .cpe-viz .cpe-viz-aurora {
+    opacity: 0.35;
+  }
   .fn-header {
     @apply bg-surface-card border-b border-line;
   }

@@ -8,12 +8,14 @@ import NetworkSuspendStatus, { suspendToastMessage } from '../../components/Netw
 import CpeLinkVisualizer, { computeLinkScore, linkTheme } from '../../components/CpeLinkVisualizer'
 import DeviceIpLink from '../../components/DeviceIpLink'
 import ServiceEditPanel from '../../components/ServiceEditPanel'
+import { ispPermissions } from '../../lib/ispPermissions'
 
 interface Props {
   clientId: number
   API: string
   onBack: () => void
   initialTab?: string
+  userRole?: string
 }
 
 const OPEN_TICKET_STATUSES = ['open', 'in_progress', 'waiting_client']
@@ -74,7 +76,18 @@ function apiErrorMessage(e: any, fallback: string) {
   return String(raw).replace(/^Error al eliminar servicio:\s*/i, '')
 }
 
-export default function ClientDetail({ clientId, API, onBack, initialTab = 'overview' }: Props) {
+export default function ClientDetail({ clientId, API, onBack, initialTab = 'overview', userRole }: Props) {
+  const canEditClient = ispPermissions.editClient(userRole)
+  const canPay = ispPermissions.registerPayment(userRole)
+  const canCreateInvoice = ispPermissions.createManualInvoice(userRole)
+  const canCreateService = ispPermissions.createService(userRole)
+  const canEditService = ispPermissions.editService(userRole)
+  const canDeleteService = ispPermissions.deleteService(userRole)
+  const canSuspend = ispPermissions.suspendService(userRole)
+  const canReactivate = ispPermissions.reactivateService(userRole)
+  const canProvision = ispPermissions.provisionService(userRole)
+  const canEditEquipment = ispPermissions.editEquipment(userRole)
+  const canGenServiceInvoice = ispPermissions.generateServiceInvoice(userRole)
   const [client, setClient] = useState<any>(null)
   const [services, setServices] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
@@ -501,11 +514,24 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
   async function toggleService(serviceId: number, currentStatus: string) {
     try {
+      const svc = services.find((s) => s.id === serviceId) || { status: currentStatus }
       const crmBlocked = ['suspended', 'cut'].includes(client?.lifecycleStatus)
-      // CRM suspendido pero servicio aún "active" (p.ej. import WispHub) → Activar = reactivar CRM (+ servicio si hace falta)
+      const needsActivate = serviceNeedsActivate(svc)
+      if (needsActivate && !canReactivate) {
+        toast('No tienes permiso para activar servicios', 'error')
+        return
+      }
+      if (!needsActivate && !canSuspend) {
+        toast('No tienes permiso para suspender servicios', 'error')
+        return
+      }
+      // CRM suspendido pero servicio aún "active" → reactivar vía API de servicio (también actualiza CRM)
       if (currentStatus === 'active' && crmBlocked) {
-        await api().put(`/clients/${clientId}`, { lifecycleStatus: 'active' })
-        toast('Abonado activado', 'success')
+        const res = await api().put(`/services/${serviceId}/reactivate`)
+        const net = res.data.network
+        const toastMsg = suspendToastMessage(net, 'reactivate')
+        if (toastMsg) toast(toastMsg.text, toastMsg.type)
+        else toast('Abonado activado', 'success')
         loadAll()
         return
       }
@@ -987,7 +1013,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
   )
 
   return (
-    <div className="flex-1 overflow-auto bg-[#060a12] min-h-screen">
+    <div className="flex-1 overflow-auto bg-surface text-ink min-h-screen">
       {/* Pay Modal */}
       {showPayModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1776,24 +1802,24 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       )}
 
       {/* Header perfil — mission control */}
-      <header className="relative sticky top-0 z-20 border-b border-white/[0.06] bg-[#060a12]/90 backdrop-blur-xl">
+      <header className="relative sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-xl">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_20%_0%,rgba(34,211,238,0.08),transparent)] pointer-events-none" />
         <div className="relative max-w-6xl mx-auto px-6 sm:px-8 py-5 flex flex-col lg:flex-row lg:items-center gap-5">
-          <button onClick={onBack} className="p-2.5 rounded-xl bg-surface-card/[0.04] border border-white/[0.08] text-ink-muted hover:text-white hover:border-white/20 transition self-start">
+          <button onClick={onBack} className="p-2.5 rounded-xl bg-surface-card border border-line text-ink-muted hover:text-ink hover:bg-surface-raised transition self-start">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-600/20 border border-white/10 flex items-center justify-center text-xl font-bold text-white shrink-0">
+            <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-600/20 border border-line flex items-center justify-center text-xl font-bold text-ink shrink-0">
               {client.user?.fullName?.charAt(0) || '?'}
               {primaryAntenna && (
-                <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#060a12] ${antennaOnline ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500'}`} />
+                <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-surface ${antennaOnline ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500'}`} />
               )}
             </div>
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.2em] text-ink-muted font-medium">Centro del abonado</p>
-              <h1 className="text-xl sm:text-2xl font-bold text-white truncate tracking-tight">{client.user?.fullName}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-ink truncate tracking-tight">{client.user?.fullName}</h1>
               <p className="text-ink-muted text-sm truncate">{client.user?.email}</p>
-              <p className="text-slate-600 text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicación'}</p>
+              <p className="text-ink-muted text-xs mt-0.5">{[client.city, client.region].filter(Boolean).join(' · ') || 'Sin ubicación'}</p>
               {primaryAntenna?.siteName && (
                 <p className="text-cyan-500/70 text-xs mt-1 flex items-center gap-1">
                   <MapPin className="h-3 w-3 shrink-0" />
@@ -1821,18 +1847,20 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 Link {linkScore}
               </button>
             )}
-          {totalDeuda > 0 && (
+          {totalDeuda > 0 && canPay && (
               <button type="button" onClick={openQuickPay}
                 className="px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-xs font-bold hover:bg-emerald-500/25 inline-flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5" />
                 Registrar pago · ${totalDeuda.toLocaleString('es-CL')}
               </button>
           )}
+            {canCreateInvoice && (
             <button type="button" onClick={() => { setActiveTab('invoices'); openManualInvoice() }}
               className="px-3 py-1.5 rounded-full bg-blue-500/15 border border-blue-400/30 text-blue-200 text-xs font-bold hover:bg-blue-500/25 inline-flex items-center gap-1.5">
               <Plus className="h-3.5 w-3.5" />
               Nueva boleta
             </button>
+            )}
             {(['suspended', 'cut'].includes(client.lifecycleStatus) || services.some((s) => s.status === 'suspended' || s.status === 'cut')) ? (
               <span className="px-3 py-1.5 rounded-full text-xs font-medium border bg-amber-500/15 text-amber-200 border-amber-400/30">
                 {statusLabel[client.lifecycleStatus] || 'Suspendido'}
@@ -1862,8 +1890,8 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
       <div className="p-6 sm:p-8 max-w-6xl mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {statCards.map(s => (
-            <button key={s.label} type="button" onClick={() => setActiveTab(s.tab)}
-              className="text-left rounded-2xl p-4 bg-surface-card/[0.03] border border-white/[0.07] hover:bg-surface-card/[0.06] hover:border-white/[0.12] transition group">
+              <button key={s.label} type="button" onClick={() => setActiveTab(s.tab)}
+              className="text-left rounded-2xl p-4 bg-surface-card border border-line hover:bg-surface-raised hover:border-sky-500/30 transition group">
               <div className="flex items-center gap-2 mb-2">
                 <s.icon className={`h-4 w-4 ${s.accent} opacity-80 group-hover:opacity-100`} />
                 <p className="text-[10px] uppercase tracking-wider text-ink-muted">{s.label}</p>
@@ -1873,7 +1901,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
           ))}
         </div>
 
-        <div className="flex gap-1 mb-6 bg-surface-card/[0.04] border border-white/[0.06] rounded-2xl p-1 w-fit overflow-x-auto max-w-full">
+        <div className="flex gap-1 mb-6 bg-surface-card border border-line rounded-2xl p-1 w-fit overflow-x-auto max-w-full">
           {[
             { id: 'overview', label: 'Resumen' },
             { id: 'equipment', label: `Equipos (${clientEquipment.length})` },
@@ -1883,7 +1911,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap ${
-                activeTab === tab.id ? 'bg-surface-card/[0.1] text-cyan-300 shadow-sm border border-white/[0.08]' : 'text-ink-muted hover:text-ink-soft'
+                activeTab === tab.id ? 'bg-surface-raised text-sky-700 dark:text-cyan-300 shadow-sm border border-line' : 'text-ink-muted hover:text-ink-soft'
               }`}>
               {tab.label}
             </button>
@@ -1924,13 +1952,15 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 Clic en ⛶ para vista inmersiva del enlace
               </p>
             </div>
-            <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
+            <div className="rounded-2xl border border-line bg-surface-card p-6">
               <div className="flex items-center justify-between mb-4 gap-2">
-                <h2 className="font-semibold text-white flex items-center gap-2"><User className="h-4 w-4 text-cyan-400" /> Datos personales</h2>
+                <h2 className="font-semibold text-ink flex items-center gap-2"><User className="h-4 w-4 text-cyan-400" /> Datos personales</h2>
+                {canEditClient && (
                 <button type="button" onClick={openEditPersonal}
                   className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-white/[0.05]">
                   <Pencil className="h-3.5 w-3.5" /> Editar
                 </button>
+                )}
               </div>
               <div className="space-y-3">
                 {[
@@ -1964,7 +1994,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                     <f.icon className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[10px] uppercase tracking-wider text-slate-400">{f.label}</p>
-                      <p className={`text-sm text-white ${f.label === 'Notas' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>{f.value || '—'}</p>
+                      <p className={`text-sm text-ink-soft ${f.label === 'Notas' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>{f.value || '—'}</p>
                     </div>
                   </div>
                 ))}
@@ -1972,6 +2002,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                   <CreditCard className="h-4 w-4 text-cyan-400 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-2">Factura electrónica (SII)</p>
+                    {canEditClient ? (
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1981,23 +2012,26 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         onChange={(e) => toggleClientDte(e.target.checked)}
                       />
                       <span>
-                        <span className="block text-sm text-white">¿Generar factura electrónica?</span>
-                        <span className="block text-xs text-slate-400 mt-0.5">
+                        <span className="block text-sm text-ink">¿Generar factura electrónica?</span>
+                        <span className="block text-xs text-ink-muted mt-0.5">
                           Pilotaje: actívalo solo en 2–3 clientes reales. El resto sigue sin DTE.
                         </span>
                       </span>
                     </label>
+                    ) : (
+                      <p className="text-sm text-ink">{client.dteHabilitado ? 'Habilitada' : 'Deshabilitada'}</p>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
+              <div className="rounded-2xl border border-line bg-surface-card p-6">
                 <div className="flex justify-between items-center mb-4 gap-2">
-                  <h2 className="font-semibold text-white flex items-center gap-2"><Wifi className="h-4 w-4 text-emerald-400" /> Servicio actual</h2>
+                  <h2 className="font-semibold text-ink flex items-center gap-2"><Wifi className="h-4 w-4 text-emerald-400" /> Servicio actual</h2>
                   <div className="flex items-center gap-2 shrink-0">
-                    {services.length > 0 && (
+                    {services.length > 0 && canEditService && (
                       <button
                         type="button"
                         onClick={() => setEditingBillingService(services.find((s: any) => s.status === 'active') || services[0])}
@@ -2019,7 +2053,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                     {(client.planNombre || client.precioEfectivo != null) ? (
                       <div className="text-left space-y-2 mb-4 p-3 rounded-xl border border-white/[0.08] bg-surface-card/[0.02]">
                         <p className="text-[10px] uppercase tracking-wider text-slate-400">Snapshot WispHub (solo lectura)</p>
-                        <p className="text-sm text-white font-medium">{client.planNombre || 'Plan sin nombre'}</p>
+                        <p className="text-sm text-ink font-medium">{client.planNombre || 'Plan sin nombre'}</p>
                         <p className="text-sm text-emerald-300">
                           {client.precioEfectivo != null
                             ? `$${Number(client.precioEfectivo).toLocaleString('es-CL')} / mes`
@@ -2033,13 +2067,15 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         <p className="text-sm">Sin servicios asignados</p>
                       </>
                     )}
+                    {canCreateService && (
                     <button onClick={() => setShowServiceForm(true)} className="mt-2 text-cyan-400 text-sm hover:underline">+ Crear servicio</button>
+                    )}
                   </div>
                 ) : services.map(s => (
-                  <div key={s.id} className="border border-white/[0.08] rounded-xl p-4 mb-3 last:mb-0 bg-surface-card/[0.02]">
+                  <div key={s.id} className="border border-line rounded-xl p-4 mb-3 last:mb-0 bg-surface-raised">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-semibold text-white">{s.plan?.name || 'Plan desconocido'}</p>
+                        <p className="font-semibold text-ink">{s.plan?.name || 'Plan desconocido'}</p>
                         <p className="text-sm text-ink-muted">{s.plan?.downloadSpeed}/{s.plan?.uploadSpeed} Mbps · #{s.id}</p>
                       </div>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -2061,37 +2097,43 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 mt-3">
+                    {(serviceNeedsActivate(s) ? canReactivate : canSuspend) && (
                     <button onClick={() => toggleService(s.id, s.status)}
                         className={`flex-1 min-w-[7rem] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border ${
                           serviceNeedsActivate(s) ? 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10' : 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10'
                         }`}>
                         {serviceNeedsActivate(s) ? <><Power className="h-3.5 w-3.5" /> Activar</> : <><PowerOff className="h-3.5 w-3.5" /> Suspender</>}
                       </button>
-                      {totalDeuda > 0 && (
+                    )}
+                      {totalDeuda > 0 && canPay && (
                         <button type="button" onClick={openQuickPay}
                           className="flex-1 min-w-[7rem] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20">
                           <DollarSign className="h-3.5 w-3.5" /> Pago manual
                         </button>
                       )}
+                      {canDeleteService && (
                       <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                         className="px-3 py-2 rounded-lg text-xs font-medium border border-red-500/30 text-red-300 hover:bg-red-500/10 flex items-center gap-1">
                         <Trash2 className="h-3.5 w-3.5" /> Eliminar
                     </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
+              <div className="rounded-2xl border border-line bg-surface-card p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-semibold text-white flex items-center gap-2"><Antenna className="h-4 w-4 text-orange-400" /> Equipos</h2>
-                  <button onClick={() => setActiveTab('equipment')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Gestionar →</button>
+                  <h2 className="font-semibold text-ink flex items-center gap-2"><Antenna className="h-4 w-4 text-orange-400" /> Equipos</h2>
+                    <button onClick={() => setActiveTab('equipment')} className="text-xs text-cyan-400/80 hover:text-cyan-300">Gestionar →</button>
                 </div>
                 {clientEquipment.length === 0 ? (
                   <div className="text-center py-4 text-ink-muted text-sm">
                     <p>Sin antenas ni dispositivos vinculados</p>
+                    {canEditEquipment && (
                     <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
                       className="mt-2 text-cyan-400 hover:underline">+ Agregar antena</button>
+                    )}
                   </div>
                 ) : clientEquipment.slice(0, 3).map((eq) => (
                   <div key={eq.id} className="flex items-center gap-3 py-2 border-b border-white/[0.05] last:border-0">
@@ -2107,15 +2149,19 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                 ))}
               </div>
 
-              <div className="rounded-2xl bg-surface-card/[0.03] border border-white/[0.08] p-6">
+              <div className="rounded-2xl border border-line bg-surface-card p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-semibold text-white flex items-center gap-2"><DollarSign className="h-4 w-4 text-violet-400" /> Facturas recientes</h2>
+                  <h2 className="font-semibold text-ink flex items-center gap-2"><DollarSign className="h-4 w-4 text-violet-400" /> Facturas recientes</h2>
+                  {canCreateInvoice && (
                   <button type="button" onClick={() => openManualInvoice()} className="text-xs text-cyan-400/80 hover:text-cyan-300">+ Boleta</button>
+                  )}
                 </div>
                 {invoices.length === 0 ? (
                   <div className="text-center py-4 text-ink-muted text-sm">
                     <p>Sin facturas</p>
+                    {canCreateInvoice && (
                     <button type="button" onClick={() => openManualInvoice()} className="mt-2 text-cyan-400 hover:underline">Crear boleta</button>
+                    )}
                   </div>
                 ) : invoices.slice(0, 3).map(inv => (
                   <div key={inv.id} className="flex items-center justify-between py-2 border-b border-white/[0.05] last:border-0">
@@ -2133,7 +2179,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-surface-raised'}`}>
                         {statusLabel[inv.status] || inv.status}
                       </span>
-                      {['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
+                      {canPay && ['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
                         <button onClick={() => openPayModal(inv)} className="px-2 py-0.5 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-500">Pagar</button>
                       )}
                     </div>
@@ -2161,18 +2207,22 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             )}
             <div className="flex justify-between items-center flex-wrap gap-3">
               <p className="text-sm text-ink-muted">Antenas, cámaras y dispositivos del abonado vinculados a nodos de red</p>
+              {canEditEquipment && (
               <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
                 className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Agregar equipo
               </button>
+              )}
             </div>
             {clientEquipment.length === 0 ? (
               <div className="bg-surface-card rounded-xl border p-12 text-center text-gray-400">
                 <Antenna className="h-12 w-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium text-gray-600">Sin equipos asignados</p>
                 <p className="text-sm mt-1 max-w-md mx-auto">Registra la antena Ubiquiti, cámara o router del cliente y asígnala a un nodo (ej. Torre Pangui).</p>
+                {canEditEquipment && (
                 <button onClick={() => { setEquipForm({ type: 'cpe', brand: 'Ubiquiti' }); setShowEquipForm(true) }}
                   className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium">+ Agregar antena CPE</button>
+                )}
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
@@ -2248,10 +2298,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           )}
                         </div>
                         <div className="flex gap-2 mt-4 flex-wrap">
+                          {canEditEquipment && (
                           <button onClick={() => openEditEquip(eq)}
                             className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex items-center gap-1">
                             <Pencil className="h-3 w-3" /> Editar
                           </button>
+                          )}
                           {(eq.snmpCommunity || eq.hasSnmpCommunity || eq.snmpCommunitySet) && (
                             <button
                               onClick={() => expandedMetricsId === eq.id ? setExpandedMetricsId(null) : loadMetrics(eq.id)}
@@ -2259,10 +2311,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                               📶 {expandedMetricsId === eq.id ? 'Ocultar' : 'Ver señal 24h'}
                             </button>
                           )}
+                          {canEditEquipment && (
                           <button onClick={() => unlinkEquipment(eq.id, eq.name)}
                             className="px-3 py-1.5 text-xs bg-surface text-gray-600 rounded-lg hover:bg-surface-raised">
                             Desvincular
                           </button>
+                          )}
                         </div>
                         {expandedMetricsId === eq.id && (
                           <div className="mt-3 pt-3 border-t border-line">
@@ -2288,17 +2342,21 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-ink-muted">Gestiona planes, provisión MikroTik y conectividad del abonado</p>
+              {canCreateService && (
               <button onClick={() => setShowServiceForm(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo servicio
               </button>
+              )}
             </div>
           <div className="bg-surface-card rounded-xl shadow-sm border border-line">
             {services.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <Wifi className="h-12 w-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium">Sin servicios asignados</p>
+                  {canCreateService && (
                   <button onClick={() => setShowServiceForm(true)} className="mt-3 text-blue-600 text-sm hover:underline">+ Crear primer servicio</button>
+                  )}
               </div>
             ) : (
               <div className="divide-y">
@@ -2316,10 +2374,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                           <p className="text-xs text-gray-400 mt-1">Servicio #{s.id}</p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {canEditService && (
                         <button type="button" onClick={() => setEditingBillingService(s)}
                           className="px-3 py-1.5 text-xs font-medium bg-cyan-50 text-cyan-700 rounded-lg hover:bg-cyan-100 flex items-center gap-1">
                           <Pencil className="h-3.5 w-3.5" /> Editar
                         </button>
+                        )}
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor[s.status] || 'bg-surface-raised'}`}>
                           {statusLabel[s.status] || s.status}
                         </span>
@@ -2418,10 +2478,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                                 ))}
                               </select>
                             )}
+                            {canProvision && (
                             <button disabled={provisioning || savingRouterCred} onClick={() => provisionNetwork(s.id, s.routerId)}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
                               <Router className="h-4 w-4" /> {provisioning ? 'Provisionando...' : savingRouterCred ? 'Guardando API...' : (s.queueName || s.pppoeUsername ? 'Actualizar en router' : 'Aplicar en router')}
                             </button>
+                            )}
                           </div>
                           {provisionRouterId && !routers.find(r => r.id === (provisionRouterId || s.routerId))?.hasApiCredentials && (
                             <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -2442,24 +2504,30 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         </div>
                       )}
                     <div className="flex gap-2 mt-4 flex-wrap">
+                      {canGenServiceInvoice && (
                       <button onClick={() => generateInvoice(s.id)} disabled={generatingInvoice === s.id || (s.status !== 'active' && !serviceNeedsActivate(s))}
                         className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50">
                         <DollarSign className="h-4 w-4" /> {generatingInvoice === s.id ? 'Generando...' : 'Generar factura'}
                       </button>
+                      )}
+                      {(serviceNeedsActivate(s) ? canReactivate : canSuspend) && (
                       <button onClick={() => toggleService(s.id, s.status)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${serviceNeedsActivate(s) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}`}>
                         {serviceNeedsActivate(s) ? <><Power className="h-4 w-4" /> Activar</> : <><PowerOff className="h-4 w-4" /> Suspender</>}
                       </button>
-                      {totalDeuda > 0 && (
+                      )}
+                      {totalDeuda > 0 && canPay && (
                         <button type="button" onClick={openQuickPay}
                           className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
                           <DollarSign className="h-4 w-4" /> Pago manual
                         </button>
                       )}
+                        {canDeleteService && (
                         <button onClick={() => deleteService(s.id, s.plan?.name || 'servicio')}
                           className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-red-50 text-red-700 hover:bg-red-100">
                           <Trash2 className="h-4 w-4" /> Eliminar
                         </button>
+                        )}
                     </div>
                   </div>
                 ))}
@@ -2475,16 +2543,18 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-ink-muted">Boletas del abonado — mensuales o cargos extras (instalación, TV, cámaras…)</p>
               <div className="flex flex-wrap gap-2">
-                {totalDeuda > 0 && (
+                {totalDeuda > 0 && canPay && (
                   <button type="button" onClick={openQuickPay}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 inline-flex items-center gap-2">
                     <DollarSign className="h-4 w-4" /> Registrar pago
                   </button>
                 )}
+                {canCreateInvoice && (
                 <button type="button" onClick={() => openManualInvoice()}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
                   <Plus className="h-4 w-4" /> Nueva boleta
                 </button>
+                )}
               </div>
             </div>
           <div className="bg-surface-card rounded-xl shadow-sm border border-line">
@@ -2492,10 +2562,12 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
               <div className="text-center py-16 text-gray-400">
                 <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-20" />
                 <p className="font-medium">Sin facturas registradas</p>
+                {canCreateInvoice && (
                 <button type="button" onClick={() => openManualInvoice()}
                   className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 inline-flex items-center gap-2">
                   <Plus className="h-4 w-4" /> Crear primera boleta
                 </button>
+                )}
               </div>
             ) : (
               <table className="w-full">
@@ -2526,7 +2598,7 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
                         </span>
                       </td>
                       <td className="p-4">
-                        {['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
+                        {canPay && ['pending', 'overdue', 'partial'].includes(inv.status) && Number(inv.balance ?? inv.total) > 0 && (
                           <button onClick={() => openPayModal(inv)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
                             Registrar pago
                           </button>
@@ -2762,16 +2834,16 @@ export default function ClientDetail({ clientId, API, onBack, initialTab = 'over
 
       {/* Vista inmersiva del enlace */}
       {linkFullscreen && (
-        <div className="fixed inset-0 z-[100] bg-[#020408]/95 backdrop-blur-md flex flex-col">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
+        <div className="fixed inset-0 z-[100] bg-surface/95 backdrop-blur-md flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-line">
             <div>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-500/60">Monitor de enlace</p>
-              <h2 className="text-lg font-semibold text-white">{client.user?.fullName} · {primaryAntenna?.name || 'CPE'}</h2>
+              <p className="text-[10px] uppercase tracking-[0.25em] text-sky-600 dark:text-cyan-500/60">Monitor de enlace</p>
+              <h2 className="text-lg font-semibold text-ink">{client.user?.fullName} · {primaryAntenna?.name || 'CPE'}</h2>
             </div>
             <button
               type="button"
               onClick={() => setLinkFullscreen(false)}
-              className="p-2.5 rounded-xl bg-surface-card/[0.05] border border-white/[0.1] text-ink-muted hover:text-white transition"
+              className="p-2.5 rounded-xl bg-surface-card border border-line text-ink-muted hover:text-ink hover:bg-surface-raised transition"
             >
               <X className="h-5 w-5" />
             </button>

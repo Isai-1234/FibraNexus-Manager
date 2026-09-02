@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar, Search, Antenna } from 'lucide-react'
+import { Users, Wifi, DollarSign, LogOut, Server, Ticket, LayoutDashboard, TrendingUp, AlertTriangle, Plus, X, Edit2, Trash2, CheckCircle, MapPin, Eye, Router, Network, Settings, WifiOff, Radar, Search, Antenna, PauseCircle, PlayCircle } from 'lucide-react'
 import axios from 'axios'
 import ClientDetail from './ClientDetail'
 import RouterManager from './RouterManager'
@@ -16,6 +16,8 @@ import EquipmentInventory from './EquipmentInventory'
 import DeviceIpLink from '../../components/DeviceIpLink'
 import LiveBandwidthChart from '../../components/LiveBandwidthChart'
 import SubscriberStatusDonut from '../../components/SubscriberStatusDonut'
+import { suspendToastMessage } from '../../components/NetworkSuspendStatus'
+import { ispPermissions, canCreateInTab } from '../../lib/ispPermissions'
 
 export default function AdminDashboard({ user, API }: { user: any, API: string }) {
   const [activeTab, setActiveTab] = useState(user?.role === 'technician' ? 'work-orders' : 'dashboard')
@@ -42,9 +44,9 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   const [orgAlerts, setOrgAlerts] = useState<any[]>([])
   const [alertPanel, setAlertPanel] = useState<null | 'desconectados' | 'morosos' | 'cobros'>(null)
   const [clientSearch, setClientSearch] = useState('')
-  const [clientLifecycleFilter, setClientLifecycleFilter] = useState('all')
-  const [clientConnFilter, setClientConnFilter] = useState('all')
-  const [clientDebtFilter, setClientDebtFilter] = useState(false)
+  const [clientListFilter, setClientListFilter] = useState('active')
+  const [serviceTogglingId, setServiceTogglingId] = useState<number | null>(null)
+  const [actionToast, setActionToast] = useState<{ msg: string; type: 'success' | 'error' | 'warning' } | null>(null)
   const [confirmGenerateInvoices, setConfirmGenerateInvoices] = useState(false)
   const [generatingInvoices, setGeneratingInvoices] = useState(false)
   const [generateInvoicesMsg, setGenerateInvoicesMsg] = useState('')
@@ -396,12 +398,11 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
   }
 
   /** Cambia de pestaña sin flash de vacío: loading inmediato + seed desde overview del dashboard. */
-  function goToTab(id: string, opts?: { lifecycleFilter?: string; connFilter?: string; keepFilters?: boolean }) {
-    if (opts?.lifecycleFilter) setClientLifecycleFilter(opts.lifecycleFilter)
-    else if (id === 'clients' && !opts?.keepFilters) setClientLifecycleFilter('all')
-    if (opts?.connFilter) setClientConnFilter(opts.connFilter)
-    else if (id === 'clients' && !opts?.keepFilters) setClientConnFilter('all')
-    if (id === 'clients' && !opts?.keepFilters) setClientDebtFilter(false)
+  function goToTab(id: string, opts?: { lifecycleFilter?: string; connFilter?: string; listFilter?: string; keepFilters?: boolean }) {
+    if (opts?.listFilter) setClientListFilter(opts.listFilter)
+    else if (opts?.connFilter) setClientListFilter(opts.connFilter)
+    else if (opts?.lifecycleFilter) setClientListFilter(opts.lifecycleFilter)
+    else if (id === 'clients' && !opts?.keepFilters) setClientListFilter('active')
     if (isRedIspMenu(id)) {
       openRedIsp()
       return
@@ -457,14 +458,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
       title: 'Tus abonados',
       hint: 'Personas que contratan internet',
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'office'] },
         { id: 'clients', label: 'Abonados', icon: Users },
         { id: 'services', label: 'Auditoría técnica', icon: Wifi, roles: ['admin', 'technician'] },
-        { id: 'work-orders', label: 'Órdenes de trabajo', icon: Ticket },
-        { id: 'invoices', label: 'Facturación', icon: DollarSign },
+        { id: 'work-orders', label: 'Órdenes de trabajo', icon: Ticket, roles: ['admin', 'technician'] },
+        { id: 'invoices', label: 'Facturación', icon: DollarSign, roles: ['admin', 'office'] },
         { id: 'finance', label: 'Finanzas', icon: TrendingUp, roles: ['admin', 'office'] },
         { id: 'billing-settings', label: 'Ajustes facturación', icon: Settings, roles: ['admin'] },
-        { id: 'tickets', label: 'Soporte', icon: Ticket },
+        { id: 'tickets', label: 'Soporte', icon: Ticket, roles: ['admin', 'technician'] },
         { id: 'staff', label: 'Personal ISP', icon: Users, roles: ['admin'] },
       ],
     },
@@ -650,18 +651,59 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           const hay = `${item.fullName || ''} ${item.email || ''} ${item.city || ''} ${item.phone || ''} ${item.planName || ''} ${item.ipAddress || ''}`.toLowerCase()
           if (!hay.includes(q)) return false
         }
-        if (clientLifecycleFilter === 'suspended') {
-          if (!(item.lifecycleStatus === 'suspended' || item.serviceStatus === 'suspended')) return false
-        } else if (clientLifecycleFilter === 'cut') {
-          if (!(item.lifecycleStatus === 'cut' || item.serviceStatus === 'cut')) return false
-        } else if (clientLifecycleFilter !== 'all' && (item.lifecycleStatus || 'prospect') !== clientLifecycleFilter) {
-          return false
+        switch (clientListFilter) {
+          case 'active':
+            if (['cancelled', 'suspended', 'cut'].includes(item.lifecycleStatus)) return false
+            if (['suspended', 'cut'].includes(item.serviceStatus)) return false
+            return item.lifecycleStatus === 'active' || item.lifecycleStatus === 'pending_install'
+          case 'cancelled':
+            return item.lifecycleStatus === 'cancelled'
+          case 'suspended':
+            return item.lifecycleStatus === 'suspended' || item.lifecycleStatus === 'cut'
+              || item.serviceStatus === 'suspended' || item.serviceStatus === 'cut'
+          case 'online':
+            return item.connectionStatus === 'online'
+          case 'offline':
+            return item.connectionStatus === 'offline'
+          default:
+            return true
         }
-        if (clientConnFilter !== 'all' && item.connectionStatus !== clientConnFilter) return false
-        if (clientDebtFilter && !(item.pendingAmount > 0)) return false
-        return true
       })
     : data
+
+  function clientNeedsActivate(item: any) {
+    if (!item?.serviceId) return false
+    if (item.serviceStatus === 'suspended' || item.serviceStatus === 'cut') return true
+    if (item.serviceStatus === 'active' && ['suspended', 'cut'].includes(item.lifecycleStatus)) return true
+    return false
+  }
+
+  function showActionToast(msg: string, type: 'success' | 'error' | 'warning' = 'success') {
+    setActionToast({ msg, type })
+    window.setTimeout(() => setActionToast(null), 5000)
+  }
+
+  async function toggleClientService(item: any) {
+    if (!item?.serviceId || serviceTogglingId) return
+    const needsActivate = clientNeedsActivate(item)
+    const action = needsActivate ? 'reactivate' : 'suspend'
+    const label = needsActivate ? 'activar' : 'suspender'
+    if (!window.confirm(`${needsActivate ? 'Activar' : 'Suspender'} el servicio de ${item.fullName || 'este abonado'}?`)) return
+    setServiceTogglingId(item.id)
+    try {
+      const res = await api().put(`/services/${item.serviceId}/${action}`)
+      const net = res.data?.network
+      const toastMsg = suspendToastMessage(net, action)
+      if (toastMsg) showActionToast(toastMsg.text, toastMsg.type)
+      else if (net?.error) showActionToast(`Servicio actualizado pero red: ${net.error}`, 'warning')
+      else showActionToast(needsActivate ? 'Servicio activado' : 'Servicio suspendido', 'success')
+      await loadData()
+    } catch (e: any) {
+      showActionToast(e.response?.data?.error || `No se pudo ${label} el servicio`, 'error')
+    } finally {
+      setServiceTogglingId(null)
+    }
+  }
 
   function tabCountLabel(tab: string, n: number) {
     const singular: Record<string, string> = {
@@ -694,6 +736,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
         <ClientDetail
           clientId={selectedClientId}
           API={API}
+          userRole={user?.role}
           initialTab={clientInitialTab}
           onBack={closeClientProfile}
         />
@@ -814,7 +857,8 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
             <span className="text-xs opacity-75">Tú operas <strong>{user.organization.name}</strong> · tus abonados son otra cosa</span>
           </div>
         )}
-        <header className="bg-surface-card shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b border-line">
+        <header className="sticky top-0 z-10 border-b border-line bg-surface/95 backdrop-blur px-4 sm:px-8 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-ink">{tabLabels[activeTab === 'equipment' ? 'inventory' : activeTab] || activeTab}</h1>
             {tabDescriptions[activeTab === 'equipment' ? 'inventory' : activeTab] && (
@@ -828,37 +872,38 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               </p>
             )}
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <ThemeToggle />
             {activeTab !== 'staff' && activeTab !== 'work-orders' && (
-              <button onClick={loadData} className="px-4 py-2 border border-line rounded-lg hover:bg-surface-raised text-sm font-medium text-ink">🔄 Actualizar</button>
+              <button onClick={loadData} className="fn-btn-ghost">🔄 Actualizar</button>
             )}
-            {activeTab === 'invoices' && (
+            {activeTab === 'invoices' && ispPermissions.generateInvoices(role) && (
               <button onClick={handleGenerateInvoices} disabled={generatingInvoices}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2 disabled:opacity-60">
                 📄 {generatingInvoices ? 'Generando…' : 'Generar Facturas'}
               </button>
             )}
-            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
+            {activeTab !== 'dashboard' && activeTab !== 'invoices' && activeTab !== 'equipment' && activeTab !== 'services' && activeTab !== 'detected-devices' && activeTab !== 'red-isp' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && canCreateInTab(activeTab, role) && (
               <button onClick={openNewForm} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
                 <Plus className="h-4 w-4" /> Nuevo
               </button>
             )}
           </div>
+          </div>
         </header>
 
-        <main className="p-8">
-          {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2"><AlertTriangle className="h-5 w-5 flex-shrink-0" /> {error}</div>}
+        <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full">
+          {error && <div className="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200 flex items-center gap-2"><AlertTriangle className="h-5 w-5 flex-shrink-0" /> {error}</div>}
 
           {generateInvoicesMsg && activeTab === 'invoices' && (
-            <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-sm">
+            <div className="mb-4 rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-900 dark:text-sky-100 px-4 py-3 flex items-center justify-between gap-3 text-sm">
               <span>{generateInvoicesMsg}</span>
               <button type="button" onClick={() => setGenerateInvoicesMsg('')} className="text-blue-700 hover:underline text-xs">Cerrar</button>
             </div>
           )}
 
           {confirmGenerateInvoices && activeTab === 'invoices' && (
-            <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-950 px-4 py-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm max-w-xl">
                 <p className="font-semibold">¿Generar facturas del ciclo actual?</p>
                 <p className="text-emerald-900/80 mt-0.5">Solo servicios con cobro vencido hoy. «Forzar» incluye todos los activos (útil al arrancar el ISP).</p>
@@ -937,14 +982,14 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     key={c.label}
                     type="button"
                     onClick={c.onClick}
-                    className={`text-left rounded-2xl border border-slate-800 bg-[#0f172a] p-4 transition ${c.ring}`}
+                    className={`text-left fn-card-elevated p-4 transition ${c.ring}`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-3">
-                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">{c.label}</p>
+                      <p className="text-xs font-medium text-ink-muted uppercase tracking-wide">{c.label}</p>
                       <c.icon className={`h-4 w-4 ${c.accent}`} />
                     </div>
-                    <p className="text-2xl font-bold tabular-nums text-slate-50">{c.value}</p>
-                    <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">{c.hint}</p>
+                    <p className="text-2xl font-bold tabular-nums text-ink">{c.value}</p>
+                    <p className="text-[11px] text-ink-muted mt-1.5 leading-snug">{c.hint}</p>
                   </button>
                 ))}
               </div>
@@ -976,51 +1021,51 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
               {/* Alertas + atención */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="rounded-2xl border border-slate-800 bg-[#0f172a] overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-100">Alertas recientes</h2>
-                    <button type="button" onClick={refreshAlerts} className="text-xs text-slate-400 hover:text-slate-200">Actualizar</button>
+                <div className="fn-panel">
+                  <div className="fn-panel-header">
+                    <h2 className="text-sm font-semibold text-ink">Alertas recientes</h2>
+                    <button type="button" onClick={refreshAlerts} className="text-xs text-ink-muted hover:text-ink">Actualizar</button>
                   </div>
                   {orgAlerts.length === 0 ? (
-                    <p className="px-5 py-10 text-center text-sm text-slate-500">Sin alertas abiertas — red operativa.</p>
+                    <p className="px-5 py-10 text-center text-sm text-ink-muted">Sin alertas abiertas — red operativa.</p>
                   ) : (
-                    <ul className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto">
+                    <ul className="divide-y divide-line max-h-72 overflow-y-auto">
                       {orgAlerts.slice(0, 8).map((a: any) => (
-                        <li key={a.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-900/60">
+                        <li key={a.id} className="px-5 py-3 flex items-start gap-3 hover:bg-surface-raised">
                           <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
                             a.severity === 'critical' ? 'bg-red-400'
                               : a.severity === 'info' ? 'bg-sky-400' : 'bg-amber-400'
                           }`} />
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm text-slate-200 truncate">{a.title}</p>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">{a.message || ALERT_WHY[a.kind] || ''}</p>
+                            <p className="text-sm text-ink truncate">{a.title}</p>
+                            <p className="text-xs text-ink-muted truncate mt-0.5">{a.message || ALERT_WHY[a.kind] || ''}</p>
                           </div>
-                          <button type="button" onClick={() => goFromAlert(a)} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Ir</button>
+                          <button type="button" onClick={() => goFromAlert(a)} className="text-xs text-sky-600 dark:text-sky-400 hover:underline shrink-0">Ir</button>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-[#0f172a] overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-100">Requieren atención</h2>
-                    <button type="button" onClick={() => goToTab('clients')} className="text-xs text-slate-400 hover:text-slate-200">Ver abonados →</button>
+                <div className="fn-panel">
+                  <div className="fn-panel-header">
+                    <h2 className="text-sm font-semibold text-ink">Requieren atención</h2>
+                    <button type="button" onClick={() => goToTab('clients')} className="text-xs text-ink-muted hover:text-ink">Ver abonados →</button>
                   </div>
                   {clientsWithProblems.length === 0 ? (
-                    <p className="px-5 py-10 text-center text-sm text-slate-500">Ningún abonado con deuda o falla ahora.</p>
+                    <p className="px-5 py-10 text-center text-sm text-ink-muted">Ningún abonado con deuda o falla ahora.</p>
                   ) : (
-                    <ul className="divide-y divide-slate-800/80 max-h-72 overflow-y-auto">
+                    <ul className="divide-y divide-line max-h-72 overflow-y-auto">
                       {clientsWithProblems.slice(0, 8).map((c: any) => (
-                        <li key={c.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-900/60">
+                        <li key={c.id} className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-surface-raised">
                           <div className="min-w-0">
-                            <p className="text-sm text-slate-200 truncate">{c.fullName}</p>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                            <p className="text-sm text-ink truncate">{c.fullName}</p>
+                            <p className="text-xs text-ink-muted truncate mt-0.5">
                               {connectionLabel[c.connectionStatus] || c.connectionStatus}
                               {c.pendingAmount > 0 ? ` · $${c.pendingAmount.toLocaleString('es-CL')}` : ''}
                             </p>
                           </div>
-                          <button type="button" onClick={() => openClientProfile(c.id)} className="text-xs text-sky-400 hover:text-sky-300 shrink-0">Gestionar</button>
+                          <button type="button" onClick={() => openClientProfile(c.id)} className="text-xs text-sky-600 dark:text-sky-400 hover:underline shrink-0">Gestionar</button>
                         </li>
                       ))}
                     </ul>
@@ -1029,32 +1074,32 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
               </div>
 
               {alertPanel && (
-                <div className="rounded-2xl border border-amber-500/30 bg-[#0f172a] overflow-hidden">
-                  <div className="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="font-semibold text-amber-200 text-sm flex items-center gap-2">
+                <div className="fn-panel border-amber-500/30">
+                  <div className="fn-panel-header">
+                    <h2 className="font-semibold text-amber-800 dark:text-amber-200 text-sm flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4" />
                       {alertPanel === 'desconectados' && 'Desconectados'}
                       {alertPanel === 'morosos' && 'Morosos'}
                       {alertPanel === 'cobros' && 'Cobros'}
                     </h2>
-                    <button type="button" onClick={() => setAlertPanel(null)} className="text-xs text-slate-400 hover:text-slate-200">Cerrar</button>
+                    <button type="button" onClick={() => setAlertPanel(null)} className="text-xs text-ink-muted hover:text-ink">Cerrar</button>
                   </div>
                   {alertsForBucket(alertPanel).length === 0 ? (
-                    <p className="px-5 py-8 text-sm text-slate-500 text-center">Sin alertas en esta categoría.</p>
+                    <p className="px-5 py-8 text-sm text-ink-muted text-center">Sin alertas en esta categoría.</p>
                   ) : (
-                    <ul className="divide-y divide-slate-800 max-h-80 overflow-y-auto">
+                    <ul className="divide-y divide-line max-h-80 overflow-y-auto">
                       {alertsForBucket(alertPanel).map((a: any) => (
                         <li key={a.id} className="px-5 py-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="min-w-0 flex-1 space-y-1">
-                              <p className="font-medium text-sm text-slate-100">{a.title}</p>
-                              <p className="text-xs text-slate-400">{a.message || 'Sin detalle.'}</p>
-                              <p className="text-xs text-slate-500">{ALERT_WHY[a.kind] || ''}</p>
+                              <p className="font-medium text-sm text-ink">{a.title}</p>
+                              <p className="text-xs text-ink-soft">{a.message || 'Sin detalle.'}</p>
+                              <p className="text-xs text-ink-muted">{ALERT_WHY[a.kind] || ''}</p>
                             </div>
                             <div className="flex gap-2 shrink-0">
-                              <button type="button" onClick={() => goFromAlert(a)} className="text-xs px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-300">Ir</button>
+                              <button type="button" onClick={() => goFromAlert(a)} className="text-xs px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-700 dark:text-sky-300">Ir</button>
                               {a.status === 'open' && (
-                                <button type="button" onClick={() => ackAlert(a.id)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300">Visto</button>
+                                <button type="button" onClick={() => ackAlert(a.id)} className="text-xs px-2.5 py-1 rounded-lg border border-line text-ink-soft hover:bg-surface-raised">Visto</button>
                               )}
                             </div>
                           </div>
@@ -1067,17 +1112,17 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
 
               {/* Accesos rápidos secundarios */}
               <div className="flex flex-wrap gap-2 text-xs">
-                <button type="button" onClick={() => goToTab('invoices')} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                <button type="button" onClick={() => goToTab('invoices')} className="fn-chip">
                   Por cobrar: ${(stats?.pendingAmount || 0).toLocaleString('es-CL')}
                 </button>
-                <button type="button" onClick={() => goToTab('tickets')} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                <button type="button" onClick={() => goToTab('tickets')} className="fn-chip">
                   Tickets abiertos: {stats?.openTickets || 0}
                 </button>
-                <button type="button" onClick={() => openRouters()} className="px-3 py-1.5 rounded-lg border border-slate-800 bg-[#0f172a] text-slate-300 hover:border-slate-600">
+                <button type="button" onClick={() => openRouters()} className="fn-chip">
                   Routers: {stats?.totalRouters || 0}
                 </button>
                 {(stats?.delinquentClients || 0) > 0 && (
-                  <button type="button" onClick={() => goToTab('invoices')} className="px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300">
+                  <button type="button" onClick={() => goToTab('invoices')} className="fn-chip border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300">
                     Morosos: {stats.delinquentClients}
                   </button>
                 )}
@@ -1113,7 +1158,7 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
           {activeTab !== 'dashboard' && activeTab !== 'equipment' && activeTab !== 'detected-devices' && activeTab !== 'network' && activeTab !== 'staff' && activeTab !== 'work-orders' && (
             <div className="space-y-4">
               {activeTab === 'services' && Object.values(duplicateServiceIps).some((n) => n > 1) && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-sm text-amber-900">
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm text-amber-900 dark:text-amber-100">
                   Hay IPs duplicadas entre servicios. Revísalas desde el perfil del abonado.
                 </div>
               )}
@@ -1131,21 +1176,19 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                     />
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-[11px] uppercase tracking-wide text-ink-muted font-medium">CRM</span>
                     {[
-                      { id: 'all', label: 'Todos' },
                       { id: 'active', label: 'Activos' },
-                      { id: 'pending_install', label: 'Instalación' },
+                      { id: 'cancelled', label: 'Bajas' },
                       { id: 'suspended', label: 'Suspendidos' },
-                      { id: 'cut', label: 'Cortados' },
-                      { id: 'cancelled', label: 'Baja' },
+                      { id: 'online', label: 'Online' },
+                      { id: 'offline', label: 'Offline' },
                     ].map((f) => (
                       <button
                         key={f.id}
                         type="button"
-                        onClick={() => setClientLifecycleFilter(f.id)}
+                        onClick={() => setClientListFilter(f.id)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                          clientLifecycleFilter === f.id
+                          clientListFilter === f.id
                             ? 'bg-sky-600 text-white border-sky-600'
                             : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
                         }`}
@@ -1153,37 +1196,6 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                         {f.label}
                       </button>
                     ))}
-                    <span className="text-ink-muted/40 mx-1">|</span>
-                    {[
-                      { id: 'all', label: 'Red: todas' },
-                      { id: 'online', label: 'Online' },
-                      { id: 'offline', label: 'Offline' },
-                      { id: 'unknown', label: 'Sin monitoreo' },
-                    ].map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setClientConnFilter(f.id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                          clientConnFilter === f.id
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setClientDebtFilter((v) => !v)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                        clientDebtFilter
-                          ? 'bg-red-600 text-white border-red-600'
-                          : 'bg-surface text-ink-soft border-line hover:bg-surface-raised'
-                      }`}
-                    >
-                      Con deuda
-                    </button>
                   </div>
                 </div>
               )}
@@ -1235,18 +1247,32 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                   <Search className="h-10 w-10 mb-3 opacity-40" />
                   <p className="font-medium">Ningún abonado coincide con el filtro</p>
                   <button type="button" className="mt-3 text-sm text-blue-600 hover:underline"
-                    onClick={() => { setClientSearch(''); setClientLifecycleFilter('all'); setClientConnFilter('all'); setClientDebtFilter(false) }}>
+                    onClick={() => { setClientSearch(''); setClientListFilter('active') }}>
                     Limpiar filtros
                   </button>
                 </div>
               ) : activeTab === 'clients' ? (
                 <div className="divide-y divide-line/70">
+                  {actionToast && (
+                    <div className={`mx-4 mt-3 px-3 py-2 rounded-lg text-sm border ${
+                      actionToast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : actionToast.type === 'warning' ? 'bg-amber-50 text-amber-900 border-amber-200'
+                          : 'bg-red-50 text-red-800 border-red-200'
+                    }`}>
+                      {actionToast.msg}
+                    </div>
+                  )}
                   {filteredClients.map((item: any) => {
                     const life = item.lifecycleStatus || 'prospect'
                     const showLife = life !== 'active'
                     const conn = item.connectionStatus || 'unknown'
                     const highAlerts = (item.alerts || []).filter((a: any) => a.severity === 'high')
                     const debt = Number(item.pendingAmount || 0) > 0
+                    const needsActivate = clientNeedsActivate(item)
+                    const canSuspend = ispPermissions.suspendService(user?.role) && Boolean(item.serviceId)
+                      && item.serviceStatus === 'active' && !['suspended', 'cut'].includes(item.lifecycleStatus)
+                    const canActivate = ispPermissions.reactivateService(user?.role) && needsActivate
+                    const toggling = serviceTogglingId === item.id
                     return (
                       <div
                         key={item.id}
@@ -1310,6 +1336,30 @@ export default function AdminDashboard({ user, API }: { user: any, API: string }
                           {highAlerts.slice(0, 1).map((a: any) => (
                             <span key={a.type + a.label} className="fn-badge-danger">{a.label}</span>
                           ))}
+                          {canSuspend && (
+                            <button
+                              type="button"
+                              disabled={toggling}
+                              onClick={() => toggleClientService(item)}
+                              title="Suspender servicio"
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              <PauseCircle className="h-3.5 w-3.5" />
+                              Suspender
+                            </button>
+                          )}
+                          {canActivate && (
+                            <button
+                              type="button"
+                              disabled={toggling}
+                              onClick={() => toggleClientService(item)}
+                              title="Activar servicio"
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              <PlayCircle className="h-3.5 w-3.5" />
+                              Activar
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openClientProfile(item.id)}

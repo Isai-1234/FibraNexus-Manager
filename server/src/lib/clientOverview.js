@@ -215,6 +215,7 @@ export async function buildClientOverview(orgId) {
       isActive: c.isActive,
       lastLogin: c.lastLogin,
       serviceStatus,
+      serviceId: activeSvc?.serviceId || suspendedSvc?.serviceId || svcs[0]?.serviceId || null,
       connectionStatus,
       connectionDetail,
       planName: activeSvc?.planName || suspendedSvc?.planName || null,

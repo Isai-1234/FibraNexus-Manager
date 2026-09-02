@@ -71,16 +71,20 @@ Rutas: `/api/platform/*`.
 
 **Puede**
 
-- Ver abonados, planes, servicios, facturas, pagos, equipos (lectura).
-- Suspender servicios; provisionar / sync-queue.
-- Operar red de lectura/acción técnica: test conexión, stats, escaneo, SNMP, sitios (lectura), tickets (crear/actualizar/mensajes).
+- Ver abonados, planes, servicios, facturas (lectura), equipos y señal SNMP.
+- **Suspender y reactivar** servicios (corte/restauración en campo tras reparar enlace).
+- Provisionar / sync-queue en MikroTik.
+- Operar red técnica: test conexión, stats, escaneo, SNMP, sitios (lectura), tickets (crear/actualizar/mensajes).
+- Ver ficha 360° del abonado sin botones de cobranza ni alta/baja estructural.
 
-**No puede** (según `requireRole` en rutas activas)
+**No puede** (API + UI alineados)
 
-- Crear/editar/eliminar abonados, planes, servicios (alta/baja estructural).
-- Registrar pagos.
-- Crear/editar/eliminar routers o sitios (alta estructural).
-- Cambiar ajustes de facturación.
+- Crear/editar/eliminar abonados.
+- Crear/editar/eliminar planes o servicios.
+- Registrar pagos ni crear boletas.
+- Generar facturas masivas o por servicio.
+- Crear/editar/eliminar routers, sitios o equipos en inventario.
+- Cambiar ajustes de facturación ni staff.
 - Eliminar tickets.
 
 > **Hueco de producto:** no hay UI/API de invitación de técnicos. Hoy un `technician` se crea por seed o inserción manual en DB.
@@ -112,8 +116,9 @@ Rutas: `/api/platform/*`.
 | CRM abonados (escritura) | — | ✓ | — | — |
 | Planes (escritura) | — | ✓ | — | — |
 | Suspender servicio | — | ✓ | ✓ | — |
-| Reactivar / borrar servicio | — | ✓ | — | — |
-| Registrar pago | — | ✓ | — | — |
+| Reactivar servicio | — | ✓ | ✓ | — |
+| Borrar servicio | — | ✓ | — | — |
+| Registrar pago / boleta | — | ✓ | — | — |
 | Tickets ISP | — | ✓ | ✓ | — |
 | Tickets propios (portal) | — | — | — | ✓ |
 | Routers / sitios (escritura) | — | ✓ | — | — |
@@ -136,5 +141,5 @@ Rutas: `/api/platform/*`.
 |------|--------|
 | Rol `administrativo` (solo comercial) | Planificado |
 | Invitar técnicos / staff desde UI | Planificado |
-| Permisos granulares (RBAC fino) | Planificado |
+| Permisos granulares (RBAC fino) | Parcial — `client/src/lib/ispPermissions.ts` + menú por rol |
 | Auditoría de quién hizo qué | Planificado (`activity_log` sin uso) |

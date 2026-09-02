@@ -1,9 +1,9 @@
 # INBOX
 
 ```yaml
-order_id: "011"
-status: ok
-summary: "Worker BullMQ reescrito — last_seen actualizado en equipos SNMP"
+order_id: "012"
+status: needs_cursor
+summary: "QA EXHAUSTIVO: Pruebas funcionales completas de FibraNexus (usuarios, suspensiones, UI, redundancia, inconsistencias) — needs_cursor"
 ```
 
-FASE C operacional para equipos con SNMP. Equipos sin community siguen sin last_seen (config inventario).
+Lee `status.json` (compacto) o `reports/012-report.md` (detalle).

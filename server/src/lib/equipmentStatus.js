@@ -3,6 +3,7 @@ import { equipment } from '../db/schema.js';
 import { and, eq, ne } from 'drizzle-orm';
 import { orgFilter } from './tenant.js';
 import { pollEquipmentList } from './snmpPoller.js';
+import { formatMacFromCompact, deviceMgmtIp } from './equipmentIdentity.js';
 import { listDhcpLeases, listIpArp } from './mikrotikNetwork.js';
 
 const STALE_MS = 45 * 1000;
@@ -107,6 +108,7 @@ function mergeFailedPollSnmp(row, result, consecutiveFailures) {
   // Caída confirmada por el AP: no mostrar la última señal como si fuera actual.
   if (result.apConfirmedDown) {
     merged.wireless = null;
+    merged.apStationWireless = null;
     merged.linkDown = true;
     merged.hint = 'El AP ya no reporta esta estación: enlace caído o CPE apagado.';
   }
@@ -115,11 +117,51 @@ function mergeFailedPollSnmp(row, result, consecutiveFailures) {
 
 /** Un timeout de la MIB wireless no debe borrar la última señal conocida del equipo. */
 function carryOverWireless(row, result) {
-  if (!result.online || result.wireless) return result;
-  const budgetExceeded = result.wirelessDebug?.attempts?.includes('wireless-budget-exceeded');
-  const prevWireless = row.credentials?.lastSnmp?.wireless;
-  if (!budgetExceeded || !prevWireless) return result;
-  return { ...result, wireless: prevWireless, wirelessStale: true };
+  let out = result;
+  if (result.online && !result.wireless) {
+    const budgetExceeded = result.wirelessDebug?.attempts?.includes('wireless-budget-exceeded');
+    const prevWireless = row.credentials?.lastSnmp?.wireless;
+    if (budgetExceeded && prevWireless) {
+      out = { ...result, wireless: prevWireless, wirelessStale: true };
+    }
+  }
+  if (result.online && !result.apStationWireless) {
+    const prevAp = row.credentials?.lastSnmp?.apStationWireless;
+    if (prevAp) out = { ...out, apStationWireless: prevAp };
+  }
+  return snmpResultToLastSnmp(out);
+}
+
+/** Normaliza el objeto poll → lastSnmp persistido en credentials. */
+function snmpResultToLastSnmp(result) {
+  if (!result || typeof result !== 'object') return result;
+  const {
+    online, error, apConfirmedDown, pollMethod, polledAt, host, sysName, sysDescr, uptime,
+    wireless, wirelessDebug, wirelessStale,
+    apStationWireless, apStationWirelessDebug,
+    stationRemoteIp, hint, linkDown, community, stationMac,
+  } = result;
+  return {
+    polledAt: polledAt || new Date().toISOString(),
+    pollMethod: pollMethod || null,
+    online: online !== false,
+    host: host || null,
+    sysName: sysName || null,
+    sysDescr: sysDescr || null,
+    uptime: uptime || null,
+    wireless: wireless || null,
+    wirelessDebug: wirelessDebug || null,
+    wirelessStale: wirelessStale || false,
+    apStationWireless: apStationWireless || null,
+    apStationWirelessDebug: apStationWirelessDebug || null,
+    stationRemoteIp: stationRemoteIp || null,
+    stationMac: stationMac || null,
+    hint: hint || null,
+    linkDown: linkDown || false,
+    error: error || null,
+    apConfirmedDown: apConfirmedDown || false,
+    community: community || undefined,
+  };
 }
 
 function resolveStatusAfterPoll(row, failed, consecutiveFailures, result) {
@@ -198,6 +240,24 @@ export async function persistPollResult(row, result) {
     if (syncedNotes !== row.notes) patch.notes = syncedNotes;
   }
 
+  // MAC desde tabla de estaciones del AP (identidad estable aunque cambie la IP DHCP).
+  if (result.stationMac && !row.macAddress) {
+    const mac = formatMacFromCompact(result.stationMac);
+    if (mac) patch.macAddress = mac;
+  }
+
+  // Poll SNMP directo: actualizar IP de gestión si la MAC ya es conocida.
+  if (result.online && result.host && result.pollMethod && result.pollMethod !== 'ap-station') {
+    const polledIp = deviceMgmtIp({ host: result.host });
+    if (polledIp && row.macAddress && polledIp !== row.ipAddress) {
+      if (!patch.ipAddress) {
+        patch.ipAddress = polledIp;
+        const syncedNotes = rewriteIpMentions(row.notes, row.ipAddress, polledIp);
+        if (syncedNotes !== row.notes && patch.notes === undefined) patch.notes = syncedNotes;
+      }
+    }
+  }
+
   const [updated] = await db.update(equipment).set(patch).where(eq(equipment.id, row.id)).returning();
   return updated;
 }
@@ -207,10 +267,17 @@ export function attachSnmpDisplay(item) {
   const lastMetrics = item.credentials?.lastMetrics;
   const pollMethod = lastSnmp?.pollMethod;
   const linkDown = Boolean(lastSnmp?.linkDown);
+  const legacyStationOnly = pollMethod === 'ap-station' && !lastSnmp?.apStationWireless;
+  const apStationSource = lastSnmp?.apStationWireless
+    || (legacyStationOnly ? lastSnmp?.wireless : null);
+  const cpeSource = legacyStationOnly ? null : lastSnmp?.wireless;
   // Offline / caída confirmada: no mostrar la última señal como si fuera actual.
   const wireless = (linkDown || item.status === 'offline')
     ? null
-    : mergeWirelessDisplay(lastSnmp?.wireless, lastMetrics, pollMethod);
+    : mergeWirelessDisplay(cpeSource, lastMetrics, pollMethod);
+  const apStationWireless = (linkDown || item.status === 'offline')
+    ? null
+    : mergeWirelessDisplay(apStationSource, null, 'ap-station');
   const metricsFromHeartbeat = !linkDown
     && isMetricsFresh(lastMetrics)
     && Boolean(lastMetrics?.signal)
@@ -239,6 +306,13 @@ export function attachSnmpDisplay(item) {
     wirelessTxRate: wireless?.txRateMbps ?? null,
     wirelessRxRate: wireless?.rxRateMbps ?? null,
     wirelessWarnings: wireless?.warnings || [],
+    apStationSignal: apStationWireless?.signalDbm ?? null,
+    apStationCcq: apStationWireless?.ccqPercent ?? null,
+    apStationNoise: apStationWireless?.noiseFloorDbm ?? null,
+    apStationSnr: apStationWireless?.snrDb ?? null,
+    apStationTxRate: apStationWireless?.txRateMbps ?? null,
+    apStationRxRate: apStationWireless?.rxRateMbps ?? null,
+    apStationWarnings: apStationWireless?.warnings || [],
     wirelessDebugHint: lastSnmp?.wirelessDebug?.hint || lastSnmp?.hint || null,
     linkQuality: wireless?.linkQuality ?? null,
     linkDown,
@@ -548,7 +622,7 @@ export async function syncApStationPresenceForOrg(orgId) {
     const router = routerBySite.get(siteId);
     if (!router || isEdgeRouterAgent(router)) continue;
 
-    const clientCpes = siteItems.filter((d) => d.clientId && d.macAddress);
+    const clientCpes = siteItems.filter((d) => d.clientId);
     if (!clientCpes.length) continue;
     sites++;
 

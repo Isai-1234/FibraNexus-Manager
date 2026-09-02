@@ -313,7 +313,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                   type="button"
                   onClick={() => setPeriod(v)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                    period === v ? 'bg-sky-600 text-white' : 'text-ink-muted hover:text-white'
+                    period === v ? 'bg-sky-600 text-white' : 'text-ink-muted hover:text-ink'
                   }`}
                 >
                   {label}
@@ -395,7 +395,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                     type="button"
                     onClick={() => setChartPeriod(v)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                      chartPeriod === v ? 'bg-violet-600 text-white' : 'text-ink-muted hover:text-white'
+                      chartPeriod === v ? 'bg-violet-600 text-white' : 'text-ink-muted hover:text-ink'
                     }`}
                   >
                     {label}
@@ -414,7 +414,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                       <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                       <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} width={56} />
                       <Tooltip
-                        contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
+                        contentStyle={{ background: 'rgb(var(--bg-secondary))', border: '1px solid rgb(var(--border))', borderRadius: 8, color: 'rgb(var(--text-primary))' }}
                         labelStyle={{ color: '#e2e8f0' }}
                         formatter={(v: number) => formatCLP(v)}
                       />
@@ -437,7 +437,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                       <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                       <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} width={56} />
                       <Tooltip
-                        contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
+                        contentStyle={{ background: 'rgb(var(--bg-secondary))', border: '1px solid rgb(var(--border))', borderRadius: 8, color: 'rgb(var(--text-primary))' }}
                         labelStyle={{ color: '#e2e8f0' }}
                         formatter={(v: number) => formatCLP(v)}
                       />
@@ -507,7 +507,7 @@ export default function FinanceDashboard({ API }: { API: string }) {
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-rose-300">{formatCLP(Number(exp.amount))}</td>
                         <td className="px-4 py-3 text-right">
-                          <button type="button" onClick={() => openEdit(exp)} className="p-1.5 rounded-lg hover:bg-slate-700 text-ink-muted hover:text-white" title="Editar">
+                          <button type="button" onClick={() => openEdit(exp)} className="p-1.5 rounded-lg hover:bg-surface-raised text-ink-muted hover:text-ink" title="Editar">
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button type="button" onClick={() => deleteExpense(exp.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-ink-muted hover:text-rose-400" title="Eliminar">

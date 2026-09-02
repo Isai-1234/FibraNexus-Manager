@@ -415,7 +415,7 @@ servicesRouter.put('/:id/suspend', requireRole('admin', 'technician'), async (re
   }
 });
 
-servicesRouter.put('/:id/reactivate', requireRole('admin'), async (req, res) => {
+servicesRouter.put('/:id/reactivate', requireRole('admin', 'technician'), async (req, res) => {
   try {
     const orgId = requireOrganizationId(req, res);
     if (!orgId) return;
