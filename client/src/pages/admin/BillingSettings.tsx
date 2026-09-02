@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ArrowLeft, Save, Play, Settings, Plug, Download } from 'lucide-react'
 import axios from 'axios'
 import ThemeToggle from '../../components/ThemeToggle'
+import Toast, { useToast } from '../../components/Toast'
 
 type BillingSettingsData = {
   billingAutoEnabled: boolean
@@ -69,7 +70,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   const [testingDte, setTestingDte] = useState(false)
   const [importingWisphub, setImportingWisphub] = useState(false)
   const [wisphubImportResult, setWisphubImportResult] = useState<WisphubImportSummary | null>(null)
-  const [message, setMessage] = useState('')
+  const { toast, showToast: setMessage, hideToast } = useToast()
   const [flowApiKeyInput, setFlowApiKeyInput] = useState('')
   const [flowSecretInput, setFlowSecretInput] = useState('')
   const [dteApiKeyInput, setDteApiKeyInput] = useState('')
@@ -312,6 +313,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
 
   return (
     <div className="flex-1 overflow-auto bg-surface">
+      <Toast toast={toast} onHide={hideToast} />
       <header className="bg-surface-card shadow-sm px-8 py-4 flex justify-between items-center sticky top-0 z-10 border-b border-line">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-surface-raised rounded-lg text-ink"><ArrowLeft className="h-5 w-5" /></button>
@@ -336,12 +338,6 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       </header>
 
       <main className="p-8 max-w-2xl">
-        {message && (
-          <div className={`mb-6 px-4 py-3 rounded-lg text-sm ${message.startsWith('Error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'}`}>
-            {message}
-          </div>
-        )}
-
         {settings && (
           <div className="space-y-6">
             <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
