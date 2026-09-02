@@ -75,6 +75,7 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       'dteProvider', 'dteApiUrl', 'dteRutEmisor', 'dteRazonSocial', 'dteAmbiente',
       'flowDelegacionBoletaActiva',
       'wisphubBaseUrl',
+      'mailFromName', 'mailFromEmail', 'mailReplyTo',
     ];
     const patch = {};
     for (const key of allowed) {
@@ -118,6 +119,12 @@ settingsRouter.patch('/billing', requireRole('admin'), async (req, res) => {
       patch.wisphubApiKey = '';
     } else if (typeof req.body.wisphubApiKey === 'string' && req.body.wisphubApiKey.trim()) {
       patch.wisphubApiKey = encryptSecret(req.body.wisphubApiKey.trim());
+    }
+    // clearMailCredentials: true borra la API key de correo del ISP.
+    if (req.body.clearMailCredentials === true) {
+      patch.mailApiKey = '';
+    } else if (typeof req.body.mailApiKey === 'string' && req.body.mailApiKey.trim()) {
+      patch.mailApiKey = encryptSecret(req.body.mailApiKey.trim());
     }
 
     const settings = mergeOrgSettings({ ...current, ...patch });

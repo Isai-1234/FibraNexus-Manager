@@ -65,6 +65,7 @@ export function sanitizeSettingsForApi(settings) {
     flowSecretKey,
     webpayCommerceCode,
     webpayApiKey,
+    mailApiKey,
     ...safe
   } = s;
   return {
@@ -72,5 +73,6 @@ export function sanitizeSettingsForApi(settings) {
     hasFlowApiKey: Boolean(flowApiKey),
     hasFlowSecretKey: Boolean(flowSecretKey),
     hasWebpayCredentials: Boolean(webpayCommerceCode && webpayApiKey),
+    hasMailApiKey: Boolean(mailApiKey),
   };
 }

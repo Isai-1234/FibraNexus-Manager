@@ -24,18 +24,18 @@ function consoleProvider() {
 function emailProvider() {
   return {
     name: 'email',
-    async sendDebtNotice({ to, invoiceId, total, daysOverdue: days }) {
+    async sendDebtNotice({ organizationId, to, invoiceId, total, daysOverdue: days }) {
       if (!to) {
         return { ok: false, provider: 'email', message: 'Abonado sin email registrado' };
       }
-      const { sendMail, appPublicBaseUrl } = await import('./mailer.js');
+      const { sendMailForOrg, appPublicBaseUrl } = await import('./mailer.js');
       const pesos = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(total);
       const portalUrl = `${appPublicBaseUrl()}`;
       const subject = `Aviso: factura pendiente (${pesos}, ${days} días de atraso)`;
       const text = `Tienes una factura pendiente de ${pesos} con ${days} días de atraso.\n\nPuedes pagarla desde tu portal: ${portalUrl}\n\nSi ya pagaste, ignora este mensaje.`;
       const html = `<p>Tienes una <strong>factura pendiente de ${pesos}</strong> con ${days} días de atraso.</p><p>Puedes pagarla desde tu <a href="${portalUrl}">portal de abonado</a>.</p><p style="color:#64748b">Si ya pagaste, ignora este mensaje.</p>`;
       try {
-        await sendMail({ to, subject, text, html });
+        await sendMailForOrg(organizationId, { to, subject, text, html });
         return { ok: true, provider: 'email', message: `Enviado a ${to} (factura ${invoiceId})` };
       } catch (err) {
         console.error(`[debt-notice:email] fallo factura ${invoiceId}:`, err.message);

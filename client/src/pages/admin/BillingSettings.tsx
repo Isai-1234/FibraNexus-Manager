@@ -30,6 +30,10 @@ type BillingSettingsData = {
   flowDelegacionBoletaActiva?: boolean
   wisphubBaseUrl?: string
   hasWisphubApiKey?: boolean
+  mailFromName?: string
+  mailFromEmail?: string
+  mailReplyTo?: string
+  hasMailApiKey?: boolean
 }
 
 type WisphubImportSummary = {
@@ -65,6 +69,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
   const [flowSecretInput, setFlowSecretInput] = useState('')
   const [dteApiKeyInput, setDteApiKeyInput] = useState('')
   const [wisphubApiKeyInput, setWisphubApiKeyInput] = useState('')
+  const [mailApiKeyInput, setMailApiKeyInput] = useState('')
 
   function api() {
     return axios.create({
@@ -98,6 +103,8 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
       delete payload.hasWebpayCredentials
       delete payload.hasDteApiKey
       delete payload.hasWisphubApiKey
+      delete payload.hasMailApiKey
+      if (mailApiKeyInput.trim()) payload.mailApiKey = mailApiKeyInput.trim()
       if (flowApiKeyInput.trim()) payload.flowApiKey = flowApiKeyInput.trim()
       if (flowSecretInput.trim()) payload.flowSecretKey = flowSecretInput.trim()
       if (dteApiKeyInput.trim()) payload.dteApiKey = dteApiKeyInput.trim()
@@ -676,7 +683,7 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={!!settings.debtNoticesEnabled} onChange={() => toggle('debtNoticesEnabled')} className="rounded" />
-                <span className="text-sm">Enviar avisos de deuda al correr jobs (console/email stub)</span>
+                <span className="text-sm">Enviar avisos de deuda por correo al correr jobs</span>
               </label>
               <div>
                 <label className="block text-sm font-medium text-ink-soft mb-1">Días de gracia antes de suspender</label>
@@ -694,6 +701,64 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                 <p className="text-xs text-gray-400 mt-1">
                   Página del ISP que ve el abonado suspendido (Wi‑Fi cautivo / HTTP). Vacío = /mora/tu-slug con tu marca.
                   YouTube y sitios HTTPS no pueden redirigirse sin MITM: solo se bloquean.
+                </p>
+              </div>
+            </section>
+
+            <section className="bg-surface-card rounded-xl border shadow-sm p-6 space-y-4">
+              <h2 className="font-semibold text-ink">Correo del ISP</h2>
+              <p className="text-sm text-ink-muted">
+                Remitente con tu marca para los avisos de deuda y recuperación de contraseña.
+                Con tu propia API key de Resend (dominio verificado) los correos salen a nombre tuyo;
+                sin configurar nada se usa el correo de la plataforma.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Nombre del remitente</label>
+                  <input type="text" value={settings.mailFromName || ''}
+                    placeholder="Ej: Internetsur Pagos"
+                    onChange={(e) => setSettings({ ...settings, mailFromName: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-ink-soft mb-1">Email del remitente</label>
+                  <input type="email" value={settings.mailFromEmail || ''}
+                    placeholder="pagos@tuisp.cl"
+                    onChange={(e) => setSettings({ ...settings, mailFromEmail: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Responder a (reply‑to, opcional)</label>
+                <input type="email" value={settings.mailReplyTo || ''}
+                  placeholder="soporte@tuisp.cl"
+                  onChange={(e) => setSettings({ ...settings, mailReplyTo: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink-soft mb-1">
+                  API key de Resend {settings.hasMailApiKey ? '· configurada ✓' : ''}
+                </label>
+                <div className="flex gap-2">
+                  <input type="password" value={mailApiKeyInput}
+                    placeholder={settings.hasMailApiKey ? '•••• (dejar vacío para mantener)' : 're_... (opcional, tu propia cuenta)'}
+                    onChange={(e) => setMailApiKeyInput(e.target.value)}
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+                  {settings.hasMailApiKey && (
+                    <button type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await api().patch('/settings/billing', { clearMailCredentials: true })
+                          setSettings(res.data.settings); setMessage('API key de correo eliminada')
+                        } catch (err: any) { setMessage(err.response?.data?.error || err.message) }
+                      }}
+                      className="px-3 py-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50">
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Verifica tu dominio en resend.com/domains y usa esa key para enviar desde tu correo. Vacío = usa la key de la plataforma.
                 </p>
               </div>
             </section>

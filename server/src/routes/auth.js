@@ -231,12 +231,12 @@ authRouter.post(
         ipAddress: clientIp(req),
       });
 
-      const { sendMail, appPublicBaseUrl } = await import('../lib/mailer.js');
+      const { sendMailForOrg, appPublicBaseUrl } = await import('../lib/mailer.js');
       const resetUrl = `${appPublicBaseUrl()}/reset-password?token=${rawToken}`;
       const mailConfigured = Boolean(process.env.RESEND_API_KEY);
       let mailProvider = 'none';
       try {
-        const sent = await sendMail({
+        const sent = await sendMailForOrg(user.organizationId, {
           to: email,
           subject: 'Recuperar contraseña — FibraNexus',
           text: `Hola${user.fullName ? ` ${user.fullName}` : ''},\n\nPara restablecer tu contraseña abre este enlace (válido 1 hora):\n${resetUrl}\n\nSi no pediste esto, ignora el correo.`,
