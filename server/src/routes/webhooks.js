@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, urlencoded } from 'express';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
@@ -114,6 +114,58 @@ async function processPaidWebhook({ provider, event, intent, inv, orgId, invoice
     idempotent: result.idempotent,
   });
 }
+
+/**
+ * Webhook real de Flow: POST form-encoded con solo `token` (urlConfirmation).
+ * El estado NO viene en el webhook: se consulta firmado a /payment/getStatus
+ * con las credenciales de la org dueña del intent. Flow no firma sus webhooks;
+ * la autenticidad la da el getStatus firmado con el secret del ISP.
+ */
+webhooksRouter.post(
+  '/payments/flow',
+  urlencoded({ extended: false }),
+  rateLimit({ name: 'payment_webhook', windowMs: 60_000, max: 120 }),
+  async (req, res) => {
+    try {
+      const token = String(req.body?.token || req.query?.token || '');
+      if (!token) return res.status(400).json({ error: 'token requerido' });
+
+      const [intent] = await db.select().from(paymentIntents)
+        .where(and(eq(paymentIntents.externalId, token), eq(paymentIntents.provider, 'flow')))
+        .limit(1);
+      if (!intent) return res.status(404).json({ error: 'Intent no encontrado' });
+
+      const orgId = intent.organizationId;
+      const invoiceId = intent.invoiceId;
+      const [inv] = await db.select().from(invoices)
+        .where(and(eq(invoices.id, invoiceId), orgFilter(invoices, orgId)))
+        .limit(1);
+      if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+
+      const { createOrgPaymentGateway } = await import('../lib/orgPayment.js');
+      const gateway = await createOrgPaymentGateway(orgId);
+      if (typeof gateway.getPaymentStatus !== 'function') {
+        return res.status(503).json({ error: 'Flow no configurado para esta organización' });
+      }
+
+      const statusInfo = await gateway.getPaymentStatus(token);
+      const event = {
+        eventId: `flow:${token}`,
+        organizationId: orgId,
+        invoiceId,
+        externalId: token,
+        amount: statusInfo.amount ?? Number(intent.amount),
+        status: statusInfo.status,
+        method: 'flow',
+      };
+
+      return await processPaidWebhook({ provider: 'flow', event, intent, inv, orgId, invoiceId, req, res });
+    } catch (error) {
+      console.error('Webhook flow error:', error.message);
+      res.status(500).json({ error: 'Error procesando webhook Flow' });
+    }
+  },
+);
 
 /**
  * Webhook firmado de pasarela.

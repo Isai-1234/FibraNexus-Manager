@@ -401,6 +401,29 @@ export default function BillingSettings({ API, onBack }: { API: string; onBack: 
                       Déjalo vacío para producción. Sandbox: según documentación Flow.
                     </p>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-ink-soft mb-1">URL de confirmación (webhook) para pegar en Flow</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${window.location.origin}/api/webhooks/payments/flow`}
+                        className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono bg-gray-50 text-ink-soft"
+                      />
+                      <button type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/api/webhooks/payments/flow`
+                          navigator.clipboard?.writeText(url)
+                          setMessage('URL de webhook copiada')
+                        }}
+                        className="px-3 py-2 text-sm rounded-lg border hover:bg-gray-50">
+                        Copiar
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      En flow.cl → Tipo de cobro → <strong>URL de confirmación</strong>, pega esta URL. Ahí Flow avisa cada pago y el sistema lo registra solo.
+                    </p>
+                  </div>
                   {(settings.hasFlowApiKey || settings.hasFlowSecretKey) && (
                     <button type="button" onClick={clearFlow} disabled={saving}
                       className="text-sm text-red-600 hover:underline disabled:opacity-50">

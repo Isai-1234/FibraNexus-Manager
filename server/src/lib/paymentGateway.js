@@ -167,6 +167,30 @@ function createFlowGateway({ apiKey, secretKey, apiBase: apiBaseIn } = {}) {
         method: 'flow',
       };
     },
+    /**
+     * Flujo real de confirmación: Flow notifica solo el token (POST form-encoded
+     * a urlConfirmation) y el estado se consulta firmado a /payment/getStatus.
+     * status: 1=pagada 2=pendiente 3=cancelada 4=fallida.
+     */
+    async getPaymentStatus(token) {
+      const params = { apiKey, token: String(token) };
+      params.s = flowSign(params, secretKey);
+      const qs = new URLSearchParams(params);
+      const res = await fetch(`${apiBase}/payment/getStatus?${qs}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || `Flow getStatus failed (${res.status})`);
+      }
+      return {
+        rawStatus: Number(data.status),
+        status: mapFlowStatus(data.status),
+        amount: data.amount != null ? Number(data.amount) : null,
+        subject: data.subject || null,
+        email: data.email || null,
+        commerceOrder: data.commerce_order || data.commerceOrder || null,
+        flowOrder: data.flowOrder || null,
+      };
+    },
   };
 }
 
